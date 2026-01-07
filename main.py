@@ -35,7 +35,7 @@ from phone_agent.xctest import list_devices as list_ios_devices
 
 
 def check_system_requirements(
-    device_type: DeviceType = DeviceType.ADB, wda_url: str = "http://localhost:8100"
+    device_type: DeviceType = DeviceType.ADB, wda_url: str = "http://localhost:8100", device_id: str = None
 ) -> bool:
     """
     Check system requirements before running the agent.
@@ -49,6 +49,7 @@ def check_system_requirements(
     Args:
         device_type: Type of device tool (ADB, HDC, or IOS).
         wda_url: WebDriverAgent URL (for iOS only).
+        device_id: Specific device ID for multi-device setups.
 
     Returns:
         True if all checks pass, False otherwise.
@@ -195,8 +196,24 @@ def check_system_requirements(
     if device_type == DeviceType.ADB:
         print("3. Checking ADB Keyboard...", end=" ")
         try:
+            # If no device_id specified, get the first available device
+            if not device_id:
+                from phone_agent.device_factory import get_device_factory, set_device_type
+                set_device_type(DeviceType.ADB)
+                factory = get_device_factory()
+                devices = factory.list_devices()
+                if devices:
+                    device_id = devices[0].device_id
+                    print(f"(using device: {device_id})...", end=" ")
+            
+            # Build adb command with device ID
+            adb_cmd = ["adb"]
+            if device_id:
+                adb_cmd.extend(["-s", device_id])
+            adb_cmd.extend(["shell", "ime", "list", "-s"])
+            
             result = subprocess.run(
-                ["adb", "shell", "ime", "list", "-s"],
+                adb_cmd,
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -208,16 +225,34 @@ def check_system_requirements(
             else:
                 print("❌ FAILED")
                 print("   Error: ADB Keyboard is not installed on the device.")
-                print("   Solution:")
-                print("     1. Download ADB Keyboard APK from:")
-                print(
-                    "        https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk"
-                )
-                print("     2. Install it on your device: adb install ADBKeyboard.apk")
-                print(
-                    "     3. Enable it in Settings > System > Languages & Input > Virtual Keyboard"
-                )
-                all_passed = False
+                print("   Attempting automatic installation...")
+                
+                # Import and use the auto-install function
+                try:
+                    from gui_app.app import ensure_adb_keyboard_installed
+                    ok, installed_now = ensure_adb_keyboard_installed(device_id)
+                    if ok:
+                        if installed_now:
+                            print("   ✅ ADB Keyboard automatically installed and enabled!")
+                            print("   Note: If input fails, enable it in Settings > System > Languages & Input > Virtual Keyboard")
+                        else:
+                            print("   ✅ ADB Keyboard already available")
+                    else:
+                        print("   ❌ Automatic installation failed")
+                        print("   Manual solution:")
+                        print("     1. Download ADB Keyboard APK from:")
+                        print("        https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk")
+                        print("     2. Install it on your device: adb install ADBKeyboard.apk")
+                        print("     3. Enable it in Settings > System > Languages & Input > Virtual Keyboard")
+                        all_passed = False
+                except ImportError:
+                    print("   ❌ Auto-install function not available")
+                    print("   Manual solution:")
+                    print("     1. Download ADB Keyboard APK from:")
+                    print("        https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk")
+                    print("     2. Install it on your device: adb install ADBKeyboard.apk")
+                    print("     3. Enable it in Settings > System > Languages & Input > Virtual Keyboard")
+                    all_passed = False
         except subprocess.TimeoutExpired:
             print("❌ FAILED")
             print("   Error: ADB command timed out.")
@@ -737,6 +772,7 @@ def main():
         wda_url=args.wda_url
         if device_type == DeviceType.IOS
         else "http://localhost:8100",
+        device_id=args.device_id,
     ):
         sys.exit(1)
 

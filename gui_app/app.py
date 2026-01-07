@@ -194,6 +194,7 @@ class TaskWorker(QtCore.QThread):
                 ok = check_system_requirements(
                     self.device_type,
                     wda_url=self.wda_url if self.device_type == DeviceType.IOS else "http://localhost:8100",
+                    device_id=self.device_id,
                 )
                 if not ok:
                     self.timeline.emit("System check failed")
@@ -493,6 +494,7 @@ class DiagnosticWorker(QtCore.QThread):
                         wda_url=self.wda_url
                         if self.device_type == DeviceType.IOS
                         else "http://localhost:8100",
+                        device_id=self.device_id,
                     )
                     self.summary.emit(
                         [
@@ -581,6 +583,7 @@ class DiagnosticWorker(QtCore.QThread):
                         wda_url=self.wda_url
                         if self.device_type == DeviceType.IOS
                         else "http://localhost:8100",
+                        device_id=self.device_id,
                     )
                     summary.append(
                         {
@@ -674,19 +677,28 @@ class ApkInstallWorker(QtCore.QThread):
 
     def run(self):
         try:
+            self.log.emit(" ApkInstallWorker线程启动\n")
+            self.log.emit(f" APK文件路径: {self.apk_path}\n")
+            self.log.emit(f" 设备类型: {self.device_type}\n")
+            self.log.emit(f" 设备ID: {self.device_id}\n")
+            
             # ADB-only interface, no need to check device type
-            self.log.emit(f"开始安装: {self.apk_path}\n")
+            self.log.emit(f" 开始安装: {os.path.basename(self.apk_path)}\n")
             self.progress.emit(10)
 
             # Always use ADB for ADB-only interface
             cmd_prefix = ["adb"]
             if self.device_id:
                 cmd_prefix = ["adb", "-s", self.device_id]
+                self.log.emit(f" 使用指定设备: {self.device_id}\n")
+            else:
+                self.log.emit(" 未指定设备ID，使用默认ADB\n")
+            
             install_cmd = cmd_prefix + ["install", "-r", self.apk_path]
-
-            self.log.emit(f"执行命令: {' '.join(install_cmd)}\n")
+            self.log.emit(f" 执行命令: {' '.join(install_cmd)}\n")
             self.progress.emit(30)
 
+            self.log.emit(" 等待ADB命令执行...\n")
             result = subprocess.run(
                 install_cmd,
                 capture_output=True,
@@ -696,19 +708,25 @@ class ApkInstallWorker(QtCore.QThread):
 
             self.progress.emit(90)
             output = (result.stdout + result.stderr).strip()
-            self.log.emit(f"{output}\n")
+            self.log.emit(f" ADB命令输出:\n{output}\n")
+            self.log.emit(f" 返回码: {result.returncode}\n")
 
             if result.returncode == 0 and "Success" in output:
                 self.progress.emit(100)
+                self.log.emit(" 安装成功！\n")
                 self.finished.emit(True, "安装成功！")
             else:
-                self.progress.emit(100)
-                self.finished.emit(False, f"安装失败: {output}")
-
+                self.log.emit(" 安装失败！\n")
+                self.finished.emit(False, f"安装失败 (返回码: {result.returncode})")
+                
         except subprocess.TimeoutExpired:
-            self.finished.emit(False, "安装超时（超过5分钟）")
+            self.log.emit(" 安装超时 (5分钟)\n")
+            self.finished.emit(False, "安装超时")
         except Exception as exc:
-            self.finished.emit(False, f"安装错误: {str(exc)}")
+            self.log.emit(f" 安装过程异常: {type(exc).__name__}: {str(exc)}\n")
+            import traceback
+            self.log.emit(f" 异常详情:\n{traceback.format_exc()}\n")
+            self.finished.emit(False, f"安装异常: {str(exc)}")
 
 
 class MultiDeviceTaskWorker(QtCore.QThread):
@@ -1061,6 +1079,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.diagnostic_worker = None
         self.preview_worker = None
         self.apk_install_worker = None
+        self.apk_install_workers = {}  # For multi-device APK installation
+        self.apk_install_results = {}
+        self.apk_install_total = 0
+        self.apk_install_completed = 0
         self.multi_device_manager = MultiDeviceTaskManager(self)
         self.preview_inflight = False
         self.preview_timer = QtCore.QTimer(self)
@@ -1069,6 +1091,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.last_preview_image = None
         self.editor_process = None
         self.editor_temp_path = None
+        
+        # Multi-device preview support
+        self.preview_devices = []  # List of available devices for preview
+        self.preview_current_index = 0  # Current device index
+        self.preview_multi_mode = False  # Multi-device preview mode
+        self.preview_workers = {}  # Multiple preview workers
+        self.preview_images = {}  # Store preview images for each device
+        self.preview_multi_timer = QtCore.QTimer(self)  # Timer for multi-device cycling
+        self.preview_multi_timer.setInterval(3000)  # Switch device every 3 seconds
+        self.preview_multi_timer.timeout.connect(self._cycle_multi_preview)
 
         # Scheduled tasks countdown update timer
         self.sched_countdown_timer = QtCore.QTimer(self)
@@ -1132,9 +1164,44 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         """Handle window close event."""
-        self.scheduled_tasks_manager.stop()
-        self.preview_timer.stop()
-        self.sched_countdown_timer.stop()
+        try:
+            # Stop all managers and timers
+            self.scheduled_tasks_manager.stop()
+            self.preview_timer.stop()
+            self.sched_countdown_timer.stop()
+            
+            # Stop all worker threads
+            if hasattr(self, 'task_worker') and self.task_worker:
+                self.task_worker.terminate()
+                self.task_worker.wait(1000)  # Wait up to 1 second
+            
+            if hasattr(self, 'script_worker') and self.script_worker:
+                self.script_worker.terminate()
+                self.script_worker.wait(1000)
+            
+            if hasattr(self, 'diagnostic_worker') and self.diagnostic_worker:
+                self.diagnostic_worker.terminate()
+                self.diagnostic_worker.wait(1000)
+            
+            if hasattr(self, 'preview_worker') and self.preview_worker:
+                self.preview_worker.terminate()
+                self.preview_worker.wait(1000)
+            
+            if hasattr(self, 'apk_install_worker') and self.apk_install_worker:
+                self.apk_install_worker.terminate()
+                self.apk_install_worker.wait(1000)
+            
+            if hasattr(self, 'gemini_task_worker') and self.gemini_task_worker:
+                self.gemini_task_worker.terminate()
+                self.gemini_task_worker.wait(1000)
+            
+            # Clean up multi-device manager
+            if hasattr(self, 'multi_device_manager'):
+                self.multi_device_manager.stop_all()
+            
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+        
         super().closeEvent(event)
 
     def _apply_style(self):
@@ -1616,7 +1683,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _switch_page(self, index):
         self.stack.setCurrentIndex(index)
         if index == self.task_runner_index:
+            # Auto refresh devices when switching to task runner page
+            QtCore.QTimer.singleShot(500, self._refresh_task_devices)
+            QtCore.QTimer.singleShot(600, self._refresh_preview_devices)  # Refresh preview devices too
             self._start_preview()
+        elif index == self.apk_installer_index:
+            # Auto refresh devices when switching to APK installer page
+            QtCore.QTimer.singleShot(500, self._refresh_apk_devices)
         elif index == 1:  # Device hub page
             # Auto detect devices when switching to device hub
             QtCore.QTimer.singleShot(500, self._auto_detect_and_clean)
@@ -2030,6 +2103,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.device_list = QtWidgets.QListWidget()
         self.device_list.setMinimumHeight(150)
         self.device_list.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
+        self.device_list.itemClicked.connect(self._on_device_selected)
+        self.device_list.itemDoubleClicked.connect(self._on_device_double_clicked)
 
         devices_layout.addWidget(devices_title)
         devices_layout.addWidget(self.device_list)
@@ -2688,14 +2763,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stop_task_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self.stop_task_btn.clicked.connect(self._stop_multi_task)
 
-        self.import_script_btn = QtWidgets.QPushButton("导入脚本")
-        self.import_script_btn.setObjectName("secondary")
-        self.import_script_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        self.import_script_btn.clicked.connect(self._import_task_script)
-
         actions.addWidget(self.run_task_btn)
         actions.addWidget(self.stop_task_btn)
-        actions.addWidget(self.import_script_btn)
         actions.addStretch()
 
         left_layout.addWidget(template_header)
@@ -2763,6 +2832,72 @@ class MainWindow(QtWidgets.QMainWindow):
         preview_header_layout.addStretch()
         preview_header_layout.addWidget(self.preview_status)
 
+        # Device Selection and Navigation
+        preview_nav_layout = QtWidgets.QHBoxLayout()
+        
+        # Previous device button
+        self.preview_prev_btn = QtWidgets.QPushButton("◀")
+        self.preview_prev_btn.setObjectName("secondary")
+        self.preview_prev_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.preview_prev_btn.setMaximumWidth(40)
+        self.preview_prev_btn.setToolTip("切换到上一个设备")
+        self.preview_prev_btn.clicked.connect(self._preview_prev_device)
+        self.preview_prev_btn.setEnabled(False)
+        
+        # Device selector
+        self.preview_device_combo = QtWidgets.QComboBox()
+        self.preview_device_combo.setObjectName("deviceSelector")
+        self.preview_device_combo.setMinimumHeight(30)
+        self.preview_device_combo.setMinimumWidth(120)
+        self.preview_device_combo.setToolTip("选择要预览的设备")
+        self.preview_device_combo.setStyleSheet("""
+            QComboBox {
+                padding: 4px 8px;
+                border: 1px solid #27272a;
+                border-radius: 6px;
+                background: #18181b;
+                color: #fafafa;
+                font-size: 12px;
+                min-width: 100px;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox QAbstractItemView {
+                background: #18181b;
+                border: 1px solid #27272a;
+                border-radius: 6px;
+                selection-background-color: #3f3f46;
+                selection-color: #fafafa;
+                padding: 2px;
+            }
+        """)
+        self.preview_device_combo.currentIndexChanged.connect(self._preview_device_changed)
+        
+        # Next device button
+        self.preview_next_btn = QtWidgets.QPushButton("▶")
+        self.preview_next_btn.setObjectName("secondary")
+        self.preview_next_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.preview_next_btn.setMaximumWidth(40)
+        self.preview_next_btn.setToolTip("切换到下一个设备")
+        self.preview_next_btn.clicked.connect(self._preview_next_device)
+        self.preview_next_btn.setEnabled(False)
+        
+        # Multi-device toggle
+        self.preview_multi_btn = QtWidgets.QPushButton("多设备轮播")
+        self.preview_multi_btn.setObjectName("secondary")
+        self.preview_multi_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.preview_multi_btn.setMinimumWidth(80)
+        self.preview_multi_btn.setCheckable(True)
+        self.preview_multi_btn.setToolTip("启用后自动轮流预览所有已连接设备")
+        self.preview_multi_btn.clicked.connect(self._toggle_multi_preview)
+        
+        preview_nav_layout.addWidget(self.preview_prev_btn)
+        preview_nav_layout.addWidget(self.preview_device_combo, 1)
+        preview_nav_layout.addWidget(self.preview_next_btn)
+        preview_nav_layout.addWidget(self.preview_multi_btn)
+
         # Device Preview Frame
         self.preview_label = QtWidgets.QLabel()
         self.preview_label.setMinimumSize(180, 280)
@@ -2772,35 +2907,37 @@ class MainWindow(QtWidgets.QMainWindow):
             """
             background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                 stop:0 #18181b, stop:1 #09090b);
-            border: 2px solid rgba(63, 63, 70, 0.5);
-            border-radius: 16px;
-            """
-        )
+            border: 2px solid #27272a;
+            border-radius: 12px;
+            color: #71717a;
+            font-size: 12px;
+        """)
+        self.preview_label.setText("📱\n\n预览区域\n\n选择设备后开始预览")
 
         # Preview Controls
         preview_controls = QtWidgets.QHBoxLayout()
-        preview_controls.setSpacing(6)
-
-        self.preview_start_btn = QtWidgets.QPushButton("开始")
+        self.preview_start_btn = QtWidgets.QPushButton("开始预览")
         self.preview_start_btn.setObjectName("secondary")
         self.preview_start_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.preview_start_btn.setToolTip("开始实时预览设备屏幕")
         self.preview_start_btn.clicked.connect(self._start_preview)
 
-        self.preview_stop_btn = QtWidgets.QPushButton("暂停")
+        self.preview_stop_btn = QtWidgets.QPushButton("暂停预览")
         self.preview_stop_btn.setObjectName("secondary")
         self.preview_stop_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.preview_stop_btn.setToolTip("暂停实时预览")
         self.preview_stop_btn.clicked.connect(self._stop_preview)
         self.preview_stop_btn.setEnabled(False)
 
-        self.preview_once_btn = QtWidgets.QPushButton("截图")
-        self.preview_once_btn.setObjectName("secondary")
-        self.preview_once_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        self.preview_once_btn.clicked.connect(self._snapshot_preview)
-
+        preview_controls.addStretch()
         preview_controls.addWidget(self.preview_start_btn)
         preview_controls.addWidget(self.preview_stop_btn)
-        preview_controls.addWidget(self.preview_once_btn)
         preview_controls.addStretch()
+
+        right_layout.addLayout(preview_header_layout)
+        right_layout.addLayout(preview_nav_layout)
+        right_layout.addWidget(self.preview_label, 2)
+        right_layout.addLayout(preview_controls)
 
         # Timeline Section
         timeline_header = QtWidgets.QLabel("活动时间线")
@@ -2812,9 +2949,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timeline_list.setMinimumHeight(60)
         self.timeline_list.setMaximumHeight(120)
 
-        right_layout.addLayout(preview_header_layout)
-        right_layout.addWidget(self.preview_label, 2)
-        right_layout.addLayout(preview_controls)
         right_layout.addWidget(timeline_header)
         right_layout.addWidget(self.timeline_list, 1)
 
@@ -2860,11 +2994,55 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setFlags(item.flags() & ~QtCore.Qt.ItemIsSelectable)
             self.task_device_list.addItem(item)
 
+    def _check_task_conflicts(self):
+        """检查是否有任务冲突，如果有正在运行的任务则返回True"""
+        conflicts = []
+        
+        # Check multi-device manager
+        if hasattr(self, 'multi_device_manager') and self.multi_device_manager.workers:
+            running_devices = []
+            for device_id, worker in self.multi_device_manager.workers.items():
+                if worker.isRunning():
+                    running_devices.append(device_id)
+            if running_devices:
+                conflicts.append(f"多设备任务正在运行: {', '.join(running_devices)}")
+        
+        # Check single task worker
+        if hasattr(self, 'task_worker') and self.task_worker and self.task_worker.isRunning():
+            conflicts.append("单设备任务正在运行")
+        
+        # Check script worker
+        if hasattr(self, 'script_worker') and self.script_worker and self.script_worker.isRunning():
+            conflicts.append("脚本任务正在运行")
+        
+        # Check gemini task worker
+        if hasattr(self, 'gemini_task_worker') and self.gemini_task_worker and self.gemini_task_worker.isRunning():
+            conflicts.append("Gemini任务正在运行")
+        
+        # Check scheduled tasks manager
+        if hasattr(self, 'scheduled_tasks_manager') and self.scheduled_tasks_manager:
+            running_scheduled = self.scheduled_tasks_manager.get_running_tasks()
+            if running_scheduled:
+                conflicts.append(f"定时任务正在运行: {len(running_scheduled)} 个")
+        
+        if conflicts:
+            self._append_log("⚠️ 检测到任务冲突:\n")
+            for conflict in conflicts:
+                self._append_log(f"   • {conflict}\n")
+            self._append_log("请先停止正在运行的任务，或等待任务完成。\n")
+            return True
+        
+        return False
+
     def _run_multi_task(self):
         """批量执行多设备任务"""
         task = self.task_input.toPlainText().strip()
         if not task:
             self._append_log("任务输入为空。\n")
+            return
+
+        # Check for task conflicts
+        if self._check_task_conflicts():
             return
 
         selected_items = self.task_device_list.selectedItems()
@@ -2922,26 +3100,52 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _stop_multi_task(self):
         """停止所有设备的任务"""
-        self.multi_device_manager.stop_all()
-        self._append_log("已请求停止所有任务...\n")
+        stopped_tasks = []
+        
+        # Stop multi-device tasks
+        if hasattr(self, 'multi_device_manager') and self.multi_device_manager.workers:
+            running_count = len([w for w in self.multi_device_manager.workers.values() if w.isRunning()])
+            if running_count > 0:
+                self.multi_device_manager.stop_all()
+                stopped_tasks.append(f"多设备任务 ({running_count} 个)")
+        
+        # Stop single task worker
+        if hasattr(self, 'task_worker') and self.task_worker and self.task_worker.isRunning():
+            self.task_worker.terminate()
+            self.task_worker.wait(1000)
+            stopped_tasks.append("单设备任务")
+        
+        # Stop script worker
+        if hasattr(self, 'script_worker') and self.script_worker and self.script_worker.isRunning():
+            self.script_worker.terminate()
+            self.script_worker.wait(1000)
+            stopped_tasks.append("脚本任务")
+        
+        # Stop gemini task worker
+        if hasattr(self, 'gemini_task_worker') and self.gemini_task_worker and self.gemini_task_worker.isRunning():
+            self.gemini_task_worker.terminate()
+            self.gemini_task_worker.wait(1000)
+            stopped_tasks.append("Gemini任务")
+        
+        # Stop scheduled tasks
+        if hasattr(self, 'scheduled_tasks_manager') and self.scheduled_tasks_manager:
+            running_scheduled = self.scheduled_tasks_manager.get_running_tasks()
+            if running_scheduled:
+                self.scheduled_tasks_manager.stop_all()
+                stopped_tasks.append(f"定时任务 ({len(running_scheduled)} 个)")
+        
+        # Re-enable buttons
+        self.run_task_btn.setEnabled(True)
         self.stop_task_btn.setEnabled(False)
-
-    def _import_task_script(self):
-        """导入任务脚本文件"""
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "导入任务脚本",
-            "",
-            "文本文件 (*.txt);;所有文件 (*)"
-        )
-        if file_path:
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                self.task_input.setPlainText(content)
-                self._append_log(f"已导入脚本: {file_path}\n")
-            except Exception as e:
-                self._append_log(f"导入失败: {str(e)}\n")
+        
+        # Log what was stopped
+        if stopped_tasks:
+            self._append_log("🛑 已停止以下任务:\n")
+            for task in stopped_tasks:
+                self._append_log(f"   • {task}\n")
+            self._append_log("所有任务已停止。\n")
+        else:
+            self._append_log("没有正在运行的任务。\n")
 
     def _on_multi_device_log(self, device_id, message):
         """处理多设备日志"""
@@ -2995,6 +3199,41 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
         self._append_timeline(f"批量任务完成: {success} 成功, {failed} 失败")
+        
+        # Show multi-device task completion dialog
+        self._show_multi_device_completion_dialog(success, failed, total)
+
+    def _show_multi_device_completion_dialog(self, success, failed, total):
+        """Show multi-device task completion dialog to user."""
+        try:
+            # Create dialog
+            dialog = QtWidgets.QMessageBox(self)
+            dialog.setWindowTitle("批量任务完成")
+            
+            # Set icon and message based on results
+            if failed == 0:
+                dialog.setIcon(QtWidgets.QMessageBox.Information)
+                dialog.setText(f"所有设备任务执行完成！")
+                dialog.setDetailedText(f"执行结果:\n成功: {success} 个设备\n失败: {failed} 个设备\n总计: {total} 个设备")
+            elif success == 0:
+                dialog.setIcon(QtWidgets.QMessageBox.Critical)
+                dialog.setText(f"所有设备任务执行失败！")
+                dialog.setDetailedText(f"执行结果:\n成功: {success} 个设备\n失败: {failed} 个设备\n总计: {total} 个设备")
+            else:
+                dialog.setIcon(QtWidgets.QMessageBox.Warning)
+                dialog.setText(f"批量任务执行完成（部分失败）！")
+                dialog.setDetailedText(f"执行结果:\n成功: {success} 个设备\n失败: {failed} 个设备\n总计: {total} 个设备")
+            
+            # Add standard buttons
+            dialog.setStandardButtons(QtWidgets.QMessageBox.Ok)
+            dialog.setDefaultButton(QtWidgets.QMessageBox.Ok)
+            
+            # Show dialog (non-blocking)
+            dialog.show()
+            
+        except Exception as e:
+            # Fallback to simple logging if dialog fails
+            self._append_log(f"多设备对话框显示失败: {e}\n")
 
     def _build_scheduled_tasks(self):
         """Build the scheduled tasks management page."""
@@ -3567,15 +3806,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._append_log(f"⏰ 定时任务触发: [{task_name}]\n")
 
         # Execute the task
-        self._execute_scheduled_task(task_content)
+        self._execute_scheduled_task(task_id, task_content)
         self._refresh_scheduled_tasks()
 
-    def _execute_scheduled_task(self, task_content):
+    def _execute_scheduled_task(self, task_id, task_content):
         """Execute a scheduled task content."""
         # Get active model service config
         active_service = self.model_services_manager.get_active_service()
         if not active_service:
             self._append_sched_log("没有激活的模型服务，无法执行定时任务。\n")
+            # Mark task as finished since it couldn't start
+            self.scheduled_tasks_manager.mark_task_finished(task_id)
             return
 
         wda_url = None  # ADB-only interface doesn't use WDA
@@ -3594,10 +3835,16 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.task_worker.log.connect(lambda msg: self._append_sched_log(msg))
         self.task_worker.finished.connect(
-            lambda result: self._append_sched_log(f"任务完成: {result}\n")
+            lambda result: (
+                self._append_sched_log(f"任务完成: {result}\n"),
+                self.scheduled_tasks_manager.mark_task_finished(task_id)  # Mark as finished
+            )
         )
         self.task_worker.failed.connect(
-            lambda msg: self._append_sched_log(f"任务失败: {msg}\n")
+            lambda msg: (
+                self._append_sched_log(f"任务失败: {msg}\n"),
+                self.scheduled_tasks_manager.mark_task_finished(task_id)  # Mark as finished even on failure
+            )
         )
         self.task_worker.start()
 
@@ -3771,6 +4018,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """Clean up Gemini feedback state."""
         if task_id in self.gemini_feedback_state:
             del self.gemini_feedback_state[task_id]
+        # Mark the scheduled task as finished
+        self.scheduled_tasks_manager.mark_task_finished(task_id)
         self._append_sched_log("─" * 40 + "\n")
 
     def _build_apk_installer(self):
@@ -3806,6 +4055,53 @@ class MainWindow(QtWidgets.QMainWindow):
         header_layout.addWidget(header)
         header_layout.addWidget(subtitle)
 
+        # Device Selection Card
+        device_card = QtWidgets.QFrame()
+        device_card.setObjectName("card")
+        device_layout = QtWidgets.QVBoxLayout(device_card)
+        device_layout.setContentsMargins(20, 20, 20, 20)
+
+        device_title = QtWidgets.QLabel("目标设备选择（可多选）")
+        device_title.setObjectName("cardTitle")
+
+        # Device selection list (multi-select)
+        self.apk_device_list = QtWidgets.QListWidget()
+        self.apk_device_list.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
+        self.apk_device_list.setMinimumHeight(100)
+        self.apk_device_list.setMaximumHeight(150)
+        self.apk_device_list.setStyleSheet("""
+            QListWidget {
+                background: #18181b;
+                border: 2px solid #27272a;
+                border-radius: 8px;
+                padding: 4px;
+                color: #fafafa;
+                font-size: 13px;
+            }
+            QListWidget::item {
+                padding: 8px 12px;
+                border-radius: 4px;
+                margin: 2px;
+            }
+            QListWidget::item:selected {
+                background: #3f3f46;
+                color: #fafafa;
+            }
+            QListWidget::item:hover {
+                background: #27272a;
+            }
+        """)
+
+        # Refresh button
+        refresh_apk_devices_btn = QtWidgets.QPushButton("刷新设备列表")
+        refresh_apk_devices_btn.setObjectName("secondary")
+        refresh_apk_devices_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        refresh_apk_devices_btn.clicked.connect(self._refresh_apk_devices)
+
+        device_layout.addWidget(device_title)
+        device_layout.addWidget(self.apk_device_list)
+        device_layout.addWidget(refresh_apk_devices_btn)
+
         # Drop Zone Card
         drop_card = QtWidgets.QFrame()
         drop_card.setObjectName("card")
@@ -3819,24 +4115,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
         drop_layout.addWidget(self.apk_drop_zone)
 
-        # Or select file button
-        select_btn_layout = QtWidgets.QHBoxLayout()
-        select_btn_layout.setSpacing(12)
+        # Status layout
+        status_layout = QtWidgets.QHBoxLayout()
+        status_layout.setSpacing(12)
 
-        self.select_apk_btn = QtWidgets.QPushButton("选择APK文件")
-        self.select_apk_btn.setObjectName("secondary")
-        self.select_apk_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        self.select_apk_btn.clicked.connect(self._select_apk_file)
-
-        self.apk_install_status = QtWidgets.QLabel("就绪")
+        self.apk_install_status = QtWidgets.QLabel("就绪 - 拖拽APK文件到上方区域安装")
         self.apk_install_status.setStyleSheet(
             "font-size: 13px; color: #a1a1aa; background: rgba(39, 39, 42, 0.6); "
             "padding: 8px 16px; border-radius: 8px;"
         )
 
-        select_btn_layout.addWidget(self.select_apk_btn)
-        select_btn_layout.addWidget(self.apk_install_status)
-        select_btn_layout.addStretch()
+        status_layout.addWidget(self.apk_install_status)
+        status_layout.addStretch()
 
         # Progress Bar
         self.apk_progress = QtWidgets.QProgressBar()
@@ -3892,8 +4182,9 @@ class MainWindow(QtWidgets.QMainWindow):
         history_layout.addWidget(self.apk_history_list)
 
         layout.addWidget(header_widget)
+        layout.addWidget(device_card)
         layout.addWidget(drop_card)
-        layout.addLayout(select_btn_layout)
+        layout.addLayout(status_layout)
         layout.addWidget(self.apk_progress)
         layout.addWidget(log_card)
         layout.addWidget(history_card)
@@ -3903,35 +4194,154 @@ class MainWindow(QtWidgets.QMainWindow):
         page_layout.addWidget(scroll_area)
         return page
 
-    def _select_apk_file(self):
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "选择APK文件",
-            "",
-            "APK文件 (*.apk);;所有文件 (*)"
-        )
-        if file_path:
-            self._install_apk(file_path)
-
     def _install_apk(self, file_path):
-        if self.apk_install_worker and self.apk_install_worker.isRunning():
-            self._append_apk_log("正在安装中，请等待...\n")
+        """安装APK文件到选中的设备（支持多设备）"""
+        try:
+            self._append_apk_log("🔧 开始APK安装流程...\n")
+
+            if hasattr(self, 'apk_install_workers') and self.apk_install_workers:
+                # Check if any worker is still running
+                running = [d for d, w in self.apk_install_workers.items() if w.isRunning()]
+                if running:
+                    self._append_apk_log(f"⏳ 正在安装中（{len(running)}个设备），请等待...\n")
+                    return
+
+            device_type = self._current_device_type()
+            self._append_apk_log(f"📱 设备类型: {device_type}\n")
+
+            # Get selected devices (supports multi-select)
+            device_ids = self._get_apk_selected_device_ids()
+
+            if not device_ids:
+                self._append_apk_log("❌ 未选择设备，请先在上方选择目标设备\n")
+                return
+
+            self._append_apk_log(f"🎯 目标设备 ({len(device_ids)}个): {', '.join(device_ids)}\n")
+            self._append_apk_log("─" * 40 + "\n")
+
+            self.apk_install_log.clear()
+            self.apk_progress.setValue(0)
+            self.apk_progress.setVisible(True)
+            self.apk_install_status.setText(f"安装中... (0/{len(device_ids)})")
+            self.apk_drop_zone.setEnabled(False)
+
+            # Track installation progress
+            self.apk_install_workers = {}
+            self.apk_install_results = {}
+            self.apk_install_total = len(device_ids)
+            self.apk_install_completed = 0
+
+            # Start installation for each selected device
+            for device_id in device_ids:
+                self._append_apk_log(f"🔨 正在为设备 {device_id} 创建安装任务...\n")
+                worker = ApkInstallWorker(file_path, device_type, device_id)
+                worker.log.connect(lambda msg, dev=device_id: self._append_apk_log(f"[{dev}] {msg}"))
+                worker.progress.connect(lambda p: self._update_apk_multi_progress())
+                worker.finished.connect(lambda ok, msg, dev=device_id: self._apk_install_device_finished(dev, ok, msg))
+                self.apk_install_workers[device_id] = worker
+                worker.start()
+
+            self._append_apk_log(f"🚀 已启动 {len(device_ids)} 个设备的安装任务\n")
+
+        except Exception as e:
+            self._append_apk_log(f"💥 APK安装流程发生错误: {type(e).__name__}: {str(e)}\n")
+            import traceback
+            self._append_apk_log(f"📋 错误详情:\n{traceback.format_exc()}\n")
+
+            # 恢复界面状态
+            try:
+                self.apk_install_status.setText("安装失败")
+                self.apk_drop_zone.setEnabled(True)
+                self.apk_progress.setVisible(False)
+            except:
+                pass
+
+    def _update_apk_multi_progress(self):
+        """Update progress bar for multi-device installation."""
+        if not hasattr(self, 'apk_install_total') or self.apk_install_total == 0:
+            return
+        progress = int((self.apk_install_completed / self.apk_install_total) * 100)
+        self.apk_progress.setValue(progress)
+
+    def _apk_install_device_finished(self, device_id, success, message):
+        """Handle completion of APK installation on a single device."""
+        self.apk_install_completed += 1
+        self.apk_install_results[device_id] = {'success': success, 'message': message}
+
+        status_icon = "✅" if success else "❌"
+        self._append_apk_log(f"{status_icon} [{device_id}] {'安装成功' if success else '安装失败'}: {message}\n")
+
+        # Update status
+        self.apk_install_status.setText(f"安装中... ({self.apk_install_completed}/{self.apk_install_total})")
+        self._update_apk_multi_progress()
+
+        # Check if all installations are complete
+        if self.apk_install_completed >= self.apk_install_total:
+            self._apk_install_all_finished()
+
+    def _get_apk_selected_device_ids(self):
+        """Get the selected device IDs from APK page device list (supports multi-select)."""
+        device_ids = []
+        try:
+            if hasattr(self, 'apk_device_list') and self.apk_device_list is not None:
+                selected_items = self.apk_device_list.selectedItems()
+                for item in selected_items:
+                    device_id = item.data(QtCore.Qt.UserRole)
+                    if device_id:
+                        device_ids.append(device_id)
+        except Exception as e:
+            self._append_apk_log(f"⚠️ APK设备选择获取失败: {str(e)}\n")
+
+        # Fallback to main device list selection if no devices selected
+        if not device_ids:
+            fallback_id = self._get_selected_device_id()
+            if fallback_id:
+                device_ids.append(fallback_id)
+
+        return device_ids
+
+    def _refresh_apk_devices(self):
+        """Refresh the APK device selection list."""
+        if not hasattr(self, 'apk_device_list') or self.apk_device_list is None:
             return
 
-        device_type = self._current_device_type()
-        device_id = self.device_id_input.text().strip() or None
+        try:
+            self.apk_device_list.clear()
 
-        self.apk_install_log.clear()
-        self.apk_progress.setValue(0)
-        self.apk_progress.setVisible(True)
-        self.apk_install_status.setText("安装中...")
-        self.select_apk_btn.setEnabled(False)
+            # Get current devices
+            devices = self._get_connected_devices()
 
-        self.apk_install_worker = ApkInstallWorker(file_path, device_type, device_id)
-        self.apk_install_worker.log.connect(self._append_apk_log)
-        self.apk_install_worker.progress.connect(self.apk_progress.setValue)
-        self.apk_install_worker.finished.connect(self._apk_install_finished)
-        self.apk_install_worker.start()
+            if not devices:
+                item = QtWidgets.QListWidgetItem("未检测到设备")
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsSelectable)
+                self.apk_device_list.addItem(item)
+                return
+
+            # Add devices to list
+            for device in devices:
+                device_id = device.get('id', '')
+                device_name = device.get('name', device_id)
+                device_type = device.get('type', 'Unknown')
+
+                display_text = f"{device_id} | {device_name} ({device_type})"
+                item = QtWidgets.QListWidgetItem(display_text)
+                item.setData(QtCore.Qt.UserRole, device_id)
+                self.apk_device_list.addItem(item)
+
+            # Auto-select first device if any exist
+            if self.apk_device_list.count() > 0:
+                self.apk_device_list.item(0).setSelected(True)
+
+        except Exception as e:
+            print(f"Error refreshing APK devices: {e}")
+            try:
+                if hasattr(self, 'apk_device_list') and self.apk_device_list is not None:
+                    self.apk_device_list.clear()
+                    item = QtWidgets.QListWidgetItem("设备刷新失败")
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsSelectable)
+                    self.apk_device_list.addItem(item)
+            except:
+                pass
 
     def _append_apk_log(self, text):
         self.apk_install_log.moveCursor(QtGui.QTextCursor.End)
@@ -3942,8 +4352,55 @@ class MainWindow(QtWidgets.QMainWindow):
         self.logs_view.insertPlainText(text)
         self.logs_view.moveCursor(QtGui.QTextCursor.End)
 
+    def _apk_install_all_finished(self):
+        """Handle completion of all APK installations."""
+        self.apk_drop_zone.setEnabled(True)
+        self.apk_progress.setValue(100)
+        self.apk_progress.setVisible(False)
+
+        # Count successes and failures
+        successes = sum(1 for r in self.apk_install_results.values() if r['success'])
+        failures = len(self.apk_install_results) - successes
+
+        self._append_apk_log("\n" + "═" * 40 + "\n")
+        self._append_apk_log(f"📊 安装完成统计:\n")
+        self._append_apk_log(f"   ✅ 成功: {successes} 个设备\n")
+        self._append_apk_log(f"   ❌ 失败: {failures} 个设备\n")
+        self._append_apk_log("═" * 40 + "\n")
+
+        # Update status display
+        if failures == 0:
+            status_msg = f"全部成功 ({successes}个设备)"
+            self.apk_install_status.setText("✓ " + status_msg)
+            self.apk_install_status.setStyleSheet(
+                "font-size: 13px; color: #10b981; background: rgba(16, 185, 129, 0.15); "
+                "padding: 8px 16px; border-radius: 8px;"
+            )
+        elif successes == 0:
+            status_msg = f"全部失败 ({failures}个设备)"
+            self.apk_install_status.setText("✗ " + status_msg)
+            self.apk_install_status.setStyleSheet(
+                "font-size: 13px; color: #ef4444; background: rgba(239, 68, 68, 0.15); "
+                "padding: 8px 16px; border-radius: 8px;"
+            )
+        else:
+            status_msg = f"部分成功 (成功{successes}/失败{failures})"
+            self.apk_install_status.setText("⚠ " + status_msg)
+            self.apk_install_status.setStyleSheet(
+                "font-size: 13px; color: #f59e0b; background: rgba(245, 158, 11, 0.15); "
+                "padding: 8px 16px; border-radius: 8px;"
+            )
+
+        # Add to history
+        timestamp = QtCore.QDateTime.currentDateTime().toString("HH:mm:ss")
+        history_entry = f"{timestamp} - {status_msg}"
+        self.apk_history_list.insertItem(0, history_entry)
+
+        # Clear workers
+        self.apk_install_workers = {}
+
     def _apk_install_finished(self, success, message):
-        self.select_apk_btn.setEnabled(True)
+        self.apk_drop_zone.setEnabled(True)
         self.apk_progress.setVisible(False)
 
         if success:
@@ -4960,7 +5417,9 @@ class MainWindow(QtWidgets.QMainWindow):
                         line = f"{device.device_id} | {status} | {device.connection_type.value}"
                         if device.model:
                             line += f" | {device.model}"
-                        self.device_list.addItem(line)
+                        item = QtWidgets.QListWidgetItem(line)
+                        item.setData(QtCore.Qt.UserRole, device.device_id)  # Store device ID
+                        self.device_list.addItem(item)
                     self._update_device_status(f"发现 {len(devices)} 个设备", "success")
 
             self._refresh_dashboard()
@@ -4969,6 +5428,61 @@ class MainWindow(QtWidgets.QMainWindow):
         finally:
             self.refresh_devices_btn.setEnabled(True)
             self.refresh_devices_btn.setText("刷新")
+
+    def _on_device_selected(self, item):
+        """Handle device selection in device list."""
+        # Get device ID from user data
+        device_id = item.data(QtCore.Qt.UserRole)
+        if not device_id:
+            # Fallback to parsing text
+            text = item.text()
+            if "|" in text:
+                device_id = text.split("|")[0].strip()
+        
+        if device_id:
+            # Update device_id_input to reflect selection
+            self.device_id_input.setText(device_id)
+            # Update preview status
+            self.preview_status.setText(f"已选择设备: {device_id}")
+            # If preview is running, restart it with new device
+            if self.preview_timer.isActive():
+                self._stop_preview()
+                self._start_preview()
+
+    def _on_device_double_clicked(self, item):
+        """Handle device double click - start preview for this device."""
+        # Get device ID from user data
+        device_id = item.data(QtCore.Qt.UserRole)
+        if not device_id:
+            # Fallback to parsing text
+            text = item.text()
+            if "|" in text:
+                device_id = text.split("|")[0].strip()
+        
+        if device_id:
+            # Update device_id_input
+            self.device_id_input.setText(device_id)
+            # Start preview immediately
+            self._start_preview()
+            # Switch to task runner page to see preview
+            self.stack.setCurrentIndex(self.task_runner_index)
+
+    def _get_selected_device_id(self):
+        """Get the currently selected device ID from device list."""
+        selected_items = self.device_list.selectedItems()
+        if selected_items:
+            # Use the first selected device
+            item = selected_items[0]
+            device_id = item.data(QtCore.Qt.UserRole)
+            if device_id:
+                return device_id
+            # Fallback to parsing text if user data not available
+            text = item.text()
+            if "|" in text:
+                return text.split("|")[0].strip()
+        
+        # Fallback to device_id_input
+        return self.device_id_input.text().strip() or None
 
     def _connect_device(self):
         device_type = self._current_device_type()
@@ -5268,6 +5782,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._append_log("任务输入为空。\n")
             return
 
+        # Check for task conflicts
+        if self._check_task_conflicts():
+            return
+
         # Get active model service config
         active_service = self.model_services_manager.get_active_service()
         if not active_service:
@@ -5313,12 +5831,46 @@ class MainWindow(QtWidgets.QMainWindow):
         self._increment_tasks_counter()
         self.run_task_btn.setEnabled(True)
         self.stop_task_btn.setEnabled(False)
+        
+        # Show completion dialog
+        self._show_task_completion_dialog(result, success=True)
 
     def _task_failed(self, message):
         self._append_log(f"\n错误: {message}\n")
         self._append_timeline(f"任务失败: {message}")
         self.run_task_btn.setEnabled(True)
         self.stop_task_btn.setEnabled(False)
+        
+        # Show completion dialog for failure
+        self._show_task_completion_dialog(message, success=False)
+
+    def _show_task_completion_dialog(self, result, success=True):
+        """Show task completion dialog to user."""
+        try:
+            # Create dialog
+            dialog = QtWidgets.QMessageBox(self)
+            dialog.setWindowTitle("任务完成" if success else "任务失败")
+            
+            # Set icon and title based on success
+            if success:
+                dialog.setIcon(QtWidgets.QMessageBox.Information)
+                dialog.setText("任务执行完成！")
+                dialog.setDetailedText(f"执行结果:\n{result}")
+            else:
+                dialog.setIcon(QtWidgets.QMessageBox.Warning)
+                dialog.setText("任务执行失败！")
+                dialog.setDetailedText(f"错误信息:\n{result}")
+            
+            # Add standard buttons
+            dialog.setStandardButtons(QtWidgets.QMessageBox.Ok)
+            dialog.setDefaultButton(QtWidgets.QMessageBox.Ok)
+            
+            # Show dialog (non-blocking)
+            dialog.show()
+            
+        except Exception as e:
+            # Fallback to simple logging if dialog fails
+            self._append_log(f"对话框显示失败: {e}\n")
 
     def _increment_tasks_counter(self):
         """Increment the completed tasks counter on the dashboard."""
@@ -5398,6 +5950,220 @@ class MainWindow(QtWidgets.QMainWindow):
                 os.remove(self.editor_temp_path)
             self.editor_temp_path = None
 
+    def _get_connected_devices(self):
+        """Get list of connected devices as dictionaries with id, name, type."""
+        devices = []
+        device_type = self._current_device_type()
+
+        try:
+            if device_type == DeviceType.IOS:
+                ios_devices = list_ios_devices()
+                for device in ios_devices:
+                    devices.append({
+                        'id': device.device_id,
+                        'name': device.device_name or device.device_id,
+                        'type': 'iOS'
+                    })
+            else:
+                set_device_type(device_type)
+                factory = get_device_factory()
+                device_list = factory.list_devices()
+                for device in device_list:
+                    status = "OK" if device.status == "device" else device.status
+                    type_name = "Android" if device_type == DeviceType.ADB else "HarmonyOS"
+                    devices.append({
+                        'id': device.device_id,
+                        'name': f"{device.device_id} ({status})",
+                        'type': type_name
+                    })
+        except Exception as e:
+            print(f"Error getting connected devices: {e}")
+
+        return devices
+
+    def _refresh_preview_devices(self):
+        """Refresh the preview device selection combo box."""
+        if not hasattr(self, 'preview_device_combo'):
+            return
+
+        try:
+            self.preview_device_combo.clear()
+
+            # Get current devices
+            devices = self._get_connected_devices()
+            self.preview_devices = devices
+            
+            if not devices:
+                self.preview_device_combo.addItem("未检测到设备", None)
+                self.preview_prev_btn.setEnabled(False)
+                self.preview_next_btn.setEnabled(False)
+                self.preview_multi_btn.setEnabled(False)
+                return
+            
+            # Add devices to combo box
+            for i, device in enumerate(devices):
+                device_id = device.get('id', '')
+                device_name = device.get('name', device_id)
+                device_type = device.get('type', 'Unknown')
+                
+                display_text = f"{device_id} | {device_name}"
+                self.preview_device_combo.addItem(display_text, i)
+            
+            # Enable navigation buttons
+            self.preview_prev_btn.setEnabled(len(devices) > 1)
+            self.preview_next_btn.setEnabled(len(devices) > 1)
+            self.preview_multi_btn.setEnabled(len(devices) > 1)
+            
+            # Auto-select first device if none selected
+            if devices and self.preview_device_combo.count() > 0:
+                self.preview_device_combo.setCurrentIndex(0)
+                
+        except Exception as e:
+            print(f"Error refreshing preview devices: {e}")
+
+    def _preview_device_changed(self, index):
+        """Handle preview device selection change."""
+        if index >= 0 and index < len(self.preview_devices):
+            self.preview_current_index = index
+            device = self.preview_devices[index]
+            device_id = device.get('id', '')
+            
+            # Update device_id_input to match selection
+            self.device_id_input.setText(device_id)
+            
+            # Restart preview if running
+            if self.preview_timer.isActive():
+                self._stop_preview()
+                self._start_preview()
+
+    def _preview_prev_device(self):
+        """Switch to previous device in preview."""
+        if len(self.preview_devices) > 1:
+            self.preview_current_index = (self.preview_current_index - 1) % len(self.preview_devices)
+            self.preview_device_combo.setCurrentIndex(self.preview_current_index)
+
+    def _preview_next_device(self):
+        """Switch to next device in preview."""
+        if len(self.preview_devices) > 1:
+            self.preview_current_index = (self.preview_current_index + 1) % len(self.preview_devices)
+            self.preview_device_combo.setCurrentIndex(self.preview_current_index)
+
+    def _toggle_multi_preview(self):
+        """Toggle multi-device preview mode."""
+        self.preview_multi_mode = self.preview_multi_btn.isChecked()
+
+        if self.preview_multi_mode:
+            # Start multi-device preview
+            self.preview_multi_btn.setText("停止轮播")
+            self.preview_device_combo.setEnabled(False)
+            self.preview_prev_btn.setEnabled(False)
+            self.preview_next_btn.setEnabled(False)
+
+            # Start multi-device cycling
+            if self.preview_timer.isActive():
+                self._start_multi_preview()
+        else:
+            # Stop multi-device preview
+            self.preview_multi_btn.setText("多设备轮播")
+            self.preview_device_combo.setEnabled(True)
+            if len(self.preview_devices) > 1:
+                self.preview_prev_btn.setEnabled(True)
+                self.preview_next_btn.setEnabled(True)
+
+            # Stop multi-device cycling
+            self._stop_multi_preview()
+
+    def _start_multi_preview(self):
+        """Start multi-device preview cycling."""
+        if not self.preview_devices:
+            return
+            
+        # Start preview workers for all devices
+        for device in self.preview_devices:
+            device_id = device.get('id', '')
+            if device_id and device_id not in self.preview_workers:
+                self._start_device_preview_worker(device_id)
+        
+        # Start cycling timer
+        self.preview_multi_timer.start()
+        self.preview_status.setText(f"多设备预览 ({len(self.preview_devices)} 设备)")
+
+    def _stop_multi_preview(self):
+        """Stop multi-device preview cycling."""
+        # Stop cycling timer
+        self.preview_multi_timer.stop()
+        
+        # Stop all preview workers
+        for device_id, worker in list(self.preview_workers.items()):
+            if worker and worker.isRunning():
+                worker.terminate()
+                worker.wait(1000)
+        self.preview_workers.clear()
+        self.preview_images.clear()
+
+    def _start_device_preview_worker(self, device_id):
+        """Start preview worker for a specific device."""
+        try:
+            device_type = self._current_device_type()
+            
+            worker = ScreenshotWorker(
+                device_type=device_type,
+                device_id=device_id,
+                wda_url=None,
+            )
+            worker.frame.connect(lambda data, is_sensitive, dev_id=device_id: self._handle_multi_preview_frame(dev_id, data, is_sensitive))
+            worker.failed.connect(lambda msg: self._handle_multi_preview_error(device_id, msg))
+            worker.finished.connect(lambda: self._handle_multi_preview_done(device_id))
+            
+            self.preview_workers[device_id] = worker
+            worker.start()
+            
+        except Exception as e:
+            print(f"Error starting preview worker for {device_id}: {e}")
+
+    def _cycle_multi_preview(self):
+        """Cycle through multi-device preview images."""
+        if not self.preview_multi_mode or not self.preview_images:
+            return
+        
+        # Get current device image
+        if self.preview_current_index < len(self.preview_devices):
+            current_device = self.preview_devices[self.preview_current_index]
+            device_id = current_device.get('id', '')
+            
+            if device_id in self.preview_images:
+                image = self.preview_images[device_id]
+                if image:
+                    pixmap = QtGui.QPixmap.fromImage(image).scaled(
+                        self.preview_label.size(),
+                        QtCore.Qt.KeepAspectRatio,
+                        QtCore.Qt.SmoothTransformation,
+                    )
+                    self.preview_label.setPixmap(pixmap)
+                    
+                    # Update status
+                    device_name = current_device.get('name', device_id)
+                    self.preview_status.setText(f"多设备预览: {device_name}")
+        
+        # Move to next device
+        self.preview_current_index = (self.preview_current_index + 1) % len(self.preview_devices)
+
+    def _handle_multi_preview_frame(self, device_id, data, is_sensitive):
+        """Handle preview frame for multi-device mode."""
+        # Convert bytes to QImage
+        image = QtGui.QImage.fromData(data)
+        if not image.isNull():
+            self.preview_images[device_id] = image
+
+    def _handle_multi_preview_error(self, device_id, message):
+        """Handle preview error for multi-device mode."""
+        print(f"Preview error for {device_id}: {message}")
+
+    def _handle_multi_preview_done(self, device_id):
+        """Handle preview worker completion for multi-device mode."""
+        if device_id in self.preview_workers:
+            del self.preview_workers[device_id]
+
     def _start_preview(self):
         if not self.preview_timer.isActive():
             self.preview_timer.start()
@@ -5420,7 +6186,30 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.preview_inflight = True
         device_type = self._current_device_type()
-        device_id = self.device_id_input.text().strip() or None
+        
+        # Use preview device selection if available, otherwise fallback to device list
+        device_id = None
+        if hasattr(self, 'preview_devices') and self.preview_devices:
+            if self.preview_current_index < len(self.preview_devices):
+                device = self.preview_devices[self.preview_current_index]
+                device_id = device.get('id', '')
+        
+        # Fallback to device list selection
+        if not device_id:
+            device_id = self._get_selected_device_id()
+            
+        if not device_id:
+            self.preview_status.setText("未选择设备")
+            self.preview_inflight = False
+            return
+        
+        # Only update device status when device changes or first time
+        if not hasattr(self, '_last_preview_device_id') or self._last_preview_device_id != device_id:
+            self._last_preview_device_id = device_id
+            # Update device status only when device changes or first time
+            if device_id:
+                self.preview_status.setText(f"预览设备: {device_id}")
+        
         # WDA URL is not needed for ADB-only interface
         self.preview_worker = ScreenshotWorker(
             device_type=device_type,
@@ -5447,11 +6236,16 @@ class MainWindow(QtWidgets.QMainWindow):
             QtCore.Qt.SmoothTransformation,
         )
         self.preview_label.setPixmap(pixmap)
-        timestamp = QtCore.QDateTime.currentDateTime().toString("HH:mm:ss")
-        if is_sensitive:
-            self.preview_status.setText(f"预览已更新(敏感) {timestamp}")
+        
+        # Update status only if there's an error or initial state
+        current_status = self.preview_status.text()
+        if current_status.startswith("预览设备:") or current_status == "预览运行中。":
+            # Keep current status showing device info, don't update with timestamp
+            pass
+        elif is_sensitive:
+            self.preview_status.setText("预览已更新(敏感内容)")
         else:
-            self.preview_status.setText(f"预览已更新 {timestamp}")
+            self.preview_status.setText("预览已更新")
 
     def _handle_preview_error(self, message):
         self.preview_status.setText(f"预览错误: {message}")
@@ -5476,6 +6270,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if not current:
             self._append_script_log("请选择一个脚本来运行。\n")
             return
+
+        # Check for task conflicts
+        if self._check_task_conflicts():
+            return
+
         path = current.text()
         if not os.path.exists(path):
             self._append_script_log("脚本未找到。\n")

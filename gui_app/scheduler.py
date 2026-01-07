@@ -189,6 +189,7 @@ class ScheduledTasksManager(QtCore.QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.tasks: dict[str, ScheduledTask] = {}
+        self.running_tasks: set[str] = set()  # Track running task IDs
         self.config_file = Path.home() / ".autoglm" / "scheduled_tasks.json"
         self.gemini_config_file = Path.home() / ".autoglm" / "gemini_config.json"
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
@@ -306,7 +307,10 @@ class ScheduledTasksManager(QtCore.QObject):
     def _check_tasks(self):
         """Check and trigger tasks that should run."""
         for task in self.tasks.values():
-            if task.should_run_now():
+            if task.should_run_now() and task.id not in self.running_tasks:
+                # Mark as running
+                self.mark_task_running(task.id)
+                
                 # Mark as run
                 task.last_run = datetime.now().isoformat()
                 task.run_count += 1
@@ -359,6 +363,22 @@ class ScheduledTasksManager(QtCore.QObject):
             key=lambda t: t.next_run if t.next_run else "9999"
         )
 
+    def get_running_tasks(self) -> set[str]:
+        """Get set of currently running task IDs."""
+        return self.running_tasks.copy()
+
+    def mark_task_running(self, task_id: str):
+        """Mark a task as running."""
+        self.running_tasks.add(task_id)
+
+    def mark_task_finished(self, task_id: str):
+        """Mark a task as finished."""
+        self.running_tasks.discard(task_id)
+
+    def stop_all(self):
+        """Clear all running tasks (used for emergency stop)."""
+        self.running_tasks.clear()
+
     def set_task_enabled(self, task_id: str, enabled: bool):
         """Enable or disable a task."""
         if task_id in self.tasks:
@@ -372,6 +392,9 @@ class ScheduledTasksManager(QtCore.QObject):
         """Manually trigger a task to run immediately."""
         task = self.tasks.get(task_id)
         if task:
+            # Mark as running
+            self.mark_task_running(task.id)
+            
             task.last_run = datetime.now().isoformat()
             task.run_count += 1
             task.update_next_run()
