@@ -1101,8 +1101,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.model_services_manager = ModelServicesManager()  # 多模型服务管理器
         self.scheduled_tasks_manager = ScheduledTasksManager(self)  # 定时任务管理器
         self.scheduled_tasks_manager.task_triggered.connect(self._on_scheduled_task_triggered)
-        self.scheduled_tasks_manager.task_triggered_with_gemini.connect(self._on_scheduled_task_triggered_with_gemini)
-        self.gemini_feedback_state = {}  # 用于跟踪 Gemini 反馈循环状态
         self.task_worker = None
         self.script_worker = None
         self.diagnostic_worker = None
@@ -1146,6 +1144,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "任务执行",
                 "定时任务",
                 "应用安装",
+                "文件管理",
                 "脚本管理",
                 "应用目录",
                 "系统诊断",
@@ -1164,6 +1163,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "任务执行": self._build_task_runner(),
             "定时任务": self._build_scheduled_tasks(),
             "应用安装": self._build_apk_installer(),
+            "文件管理": self._build_file_manager(),
             "脚本管理": self._build_scripts_page(),
             "应用目录": self._build_apps_page(),
             "系统诊断": self._build_diagnostics_page(),
@@ -1190,6 +1190,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._start_preview()
         self.scheduled_tasks_manager.start()  # 启动定时任务调度器
         self.sched_countdown_timer.start()  # 启动倒计时更新定时器
+        
+        # 设置 PIN 请求回调（当解锁需要 PIN 但未配置时触发）
+        from phone_agent.adb.unlock import set_pin_request_callback
+        set_pin_request_callback(self._request_pin_dialog)
 
     def closeEvent(self, event):
         """Handle window close event."""
@@ -1800,8 +1804,8 @@ class MainWindow(QtWidgets.QMainWindow):
             ("设备中心", 1, "secondary"),    # 设备中心 (index 1)
             ("模型服务", 2, "secondary"),    # 模型服务 (index 2)
             ("定时任务", 4, "secondary"),    # 定时任务 (index 4)
-            ("系统诊断", 8, "secondary"),    # 系统诊断 (index 8)
-            ("系统设置", 10, "secondary"),   # 系统设置 (index 10)
+            ("系统诊断", 9, "secondary"),    # 系统诊断 (index 9)
+            ("系统设置", 11, "secondary"),   # 系统设置 (index 11)
         ]
 
         buttons = []
@@ -2141,6 +2145,72 @@ class MainWindow(QtWidgets.QMainWindow):
         devices_layout.addWidget(devices_title)
         devices_layout.addWidget(self.device_list)
 
+        # PIN Configuration Card
+        pin_card = QtWidgets.QFrame()
+        pin_card.setObjectName("card")
+        pin_layout = QtWidgets.QVBoxLayout(pin_card)
+
+        pin_header = QtWidgets.QHBoxLayout()
+        pin_title = QtWidgets.QLabel("设备 PIN 配置")
+        pin_title.setObjectName("cardTitle")
+
+        pin_header.addWidget(pin_title)
+        pin_header.addStretch()
+
+        pin_desc = QtWidgets.QLabel("为需要 PIN 解锁的设备配置解锁密码（任务执行时自动使用）")
+        pin_desc.setStyleSheet("font-size: 12px; color: #71717a;")
+
+        # PIN 配置表单
+        pin_form = QtWidgets.QHBoxLayout()
+        pin_form.setSpacing(8)
+
+        self.pin_device_combo = QtWidgets.QComboBox()
+        self.pin_device_combo.setMinimumWidth(200)
+        self.pin_device_combo.setPlaceholderText("选择设备...")
+
+        self.pin_input = QtWidgets.QLineEdit()
+        self.pin_input.setPlaceholderText("输入 PIN 码（留空表示无 PIN）")
+        self.pin_input.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.pin_input.setMinimumWidth(150)
+
+        self.pin_show_cb = QtWidgets.QCheckBox("显示")
+        self.pin_show_cb.toggled.connect(
+            lambda checked: self.pin_input.setEchoMode(
+                QtWidgets.QLineEdit.Normal if checked else QtWidgets.QLineEdit.Password
+            )
+        )
+
+        self.pin_save_btn = QtWidgets.QPushButton("保存 PIN")
+        self.pin_save_btn.setObjectName("secondary")
+        self.pin_save_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.pin_save_btn.clicked.connect(self._save_device_pin)
+
+        self.pin_clear_btn = QtWidgets.QPushButton("清除")
+        self.pin_clear_btn.setObjectName("secondary")
+        self.pin_clear_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.pin_clear_btn.clicked.connect(self._clear_device_pin)
+
+        pin_form.addWidget(QtWidgets.QLabel("设备:"))
+        pin_form.addWidget(self.pin_device_combo)
+        pin_form.addWidget(QtWidgets.QLabel("PIN:"))
+        pin_form.addWidget(self.pin_input)
+        pin_form.addWidget(self.pin_show_cb)
+        pin_form.addWidget(self.pin_save_btn)
+        pin_form.addWidget(self.pin_clear_btn)
+        pin_form.addStretch()
+
+        # PIN 状态显示
+        self.pin_status = QtWidgets.QLabel("")
+        self.pin_status.setStyleSheet("font-size: 11px; color: #71717a;")
+
+        # 加载选中设备的 PIN
+        self.pin_device_combo.currentTextChanged.connect(self._load_device_pin)
+
+        pin_layout.addLayout(pin_header)
+        pin_layout.addWidget(pin_desc)
+        pin_layout.addLayout(pin_form)
+        pin_layout.addWidget(self.pin_status)
+
         # Connection History Card
         history_card = QtWidgets.QFrame()
         history_card.setObjectName("card")
@@ -2195,12 +2265,111 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(settings_card)
         layout.addLayout(buttons)
         layout.addWidget(devices_card)
+        layout.addWidget(pin_card)
         layout.addWidget(history_card)
         layout.addWidget(log_card)
 
         scroll_area.setWidget(scroll_content)
         page_layout.addWidget(scroll_area)
         return page
+
+    def _save_device_pin(self):
+        """保存设备 PIN"""
+        from gui_app.device_pin_manager import get_device_pin_manager
+        
+        device_id = self.pin_device_combo.currentText()
+        if not device_id:
+            self.pin_status.setText("请先选择设备")
+            self.pin_status.setStyleSheet("font-size: 11px; color: #ef4444;")
+            return
+        
+        pin = self.pin_input.text().strip()
+        get_device_pin_manager().set_pin(device_id, pin)
+        
+        if pin:
+            self.pin_status.setText(f"✓ 设备 {device_id[:20]}... 的 PIN 已保存")
+            self.pin_status.setStyleSheet("font-size: 11px; color: #10b981;")
+        else:
+            self.pin_status.setText(f"✓ 设备 {device_id[:20]}... 的 PIN 已清除")
+            self.pin_status.setStyleSheet("font-size: 11px; color: #71717a;")
+
+    def _clear_device_pin(self):
+        """清除设备 PIN"""
+        from gui_app.device_pin_manager import get_device_pin_manager
+        
+        device_id = self.pin_device_combo.currentText()
+        if not device_id:
+            return
+        
+        get_device_pin_manager().remove_pin(device_id)
+        self.pin_input.clear()
+        self.pin_status.setText(f"✓ 设备 {device_id[:20]}... 的 PIN 已清除")
+        self.pin_status.setStyleSheet("font-size: 11px; color: #71717a;")
+
+    def _load_device_pin(self, device_id: str):
+        """加载设备已配置的 PIN"""
+        if not device_id:
+            self.pin_input.clear()
+            self.pin_status.setText("")
+            return
+        
+        from gui_app.device_pin_manager import get_device_pin_manager
+        pin = get_device_pin_manager().get_pin(device_id)
+        
+        if pin:
+            self.pin_input.setText(pin)
+            self.pin_status.setText(f"此设备已配置 PIN")
+            self.pin_status.setStyleSheet("font-size: 11px; color: #6366f1;")
+        else:
+            self.pin_input.clear()
+            self.pin_status.setText("此设备未配置 PIN（无需 PIN 或滑动解锁）")
+            self.pin_status.setStyleSheet("font-size: 11px; color: #71717a;")
+
+    def _refresh_pin_device_combo(self):
+        """刷新 PIN 配置的设备下拉框"""
+        current = self.pin_device_combo.currentText()
+        self.pin_device_combo.clear()
+        
+        # 从设备列表获取设备
+        for i in range(self.device_list.count()):
+            item = self.device_list.item(i)
+            data = item.data(QtCore.Qt.UserRole)
+            if data:
+                device_id = data[0] if isinstance(data, tuple) else data
+                self.pin_device_combo.addItem(device_id)
+        
+        # 恢复之前的选择
+        if current:
+            index = self.pin_device_combo.findText(current)
+            if index >= 0:
+                self.pin_device_combo.setCurrentIndex(index)
+
+    def _request_pin_dialog(self, device_id: str) -> str:
+        """弹出对话框请求用户输入 PIN"""
+        from gui_app.device_pin_manager import get_device_pin_manager
+        
+        pin, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "需要 PIN 解锁",
+            f"设备 {device_id[:30]}... 需要 PIN 解锁\n请输入 PIN 码：",
+            QtWidgets.QLineEdit.Password
+        )
+        
+        if ok and pin:
+            # 询问是否保存 PIN
+            save = QtWidgets.QMessageBox.question(
+                self,
+                "保存 PIN",
+                "是否保存此 PIN 到设备配置？\n下次将自动使用此 PIN 解锁。",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+            
+            if save == QtWidgets.QMessageBox.Yes:
+                get_device_pin_manager().set_pin(device_id, pin)
+            
+            return pin
+        
+        return None
 
     def _build_model_service(self):
         page = QtWidgets.QWidget()
@@ -2711,8 +2880,9 @@ class MainWindow(QtWidgets.QMainWindow):
         content_layout = QtWidgets.QHBoxLayout()
         content_layout.setSpacing(12)
 
-        # Left Panel - Task Input & Device Selection (悬停展开)
-        left_card = HoverExpandCard(collapsed_stretch=2, expanded_stretch=4)
+        # Left Panel - Task Input & Device Selection & Status
+        left_card = QtWidgets.QFrame()
+        left_card.setObjectName("card")
         left_layout = QtWidgets.QVBoxLayout(left_card)
         left_layout.setContentsMargins(16, 12, 16, 12)
         left_layout.setSpacing(10)
@@ -2803,19 +2973,27 @@ class MainWindow(QtWidgets.QMainWindow):
         left_layout.addLayout(template_layout)
         left_layout.addWidget(input_header)
         left_layout.addWidget(self.task_input)
-        left_layout.addWidget(device_header)
-        left_layout.addWidget(self.task_device_list)
-        left_layout.addWidget(refresh_devices_btn)
-        left_layout.addLayout(actions)
 
-        # Middle Panel - Multi-device Status (悬停展开)
-        middle_card = HoverExpandCard(collapsed_stretch=3, expanded_stretch=5)
-        middle_layout = QtWidgets.QVBoxLayout(middle_card)
-        middle_layout.setContentsMargins(16, 12, 16, 12)
-        middle_layout.setSpacing(10)
+        # 左栏上部：任务和设备选择行
+        task_device_row = QtWidgets.QHBoxLayout()
+        task_device_row.setSpacing(12)
 
+        # 设备选择区
+        device_section = QtWidgets.QVBoxLayout()
+        device_section.setSpacing(6)
+        device_section.addWidget(device_header)
+        device_section.addWidget(self.task_device_list)
+        device_section.addWidget(refresh_devices_btn)
+        device_section.addLayout(actions)
+
+        task_device_row.addLayout(device_section, 1)
+
+        left_layout.addLayout(task_device_row)
+
+        # 设备执行状态（在快捷模板下方）
         status_header = QtWidgets.QLabel("设备执行状态")
         status_header.setObjectName("cardTitle")
+        status_header.setStyleSheet("margin-top: 8px;")
 
         self.multi_status_label = QtWidgets.QLabel("就绪 - 选择设备后点击批量执行")
         self.multi_status_label.setStyleSheet(
@@ -2824,7 +3002,8 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         self.device_status_list = QtWidgets.QListWidget()
-        self.device_status_list.setMinimumHeight(150)
+        self.device_status_list.setMinimumHeight(80)
+        self.device_status_list.setMaximumHeight(120)
 
         # Log Section
         log_header = QtWidgets.QLabel("执行日志")
@@ -2834,12 +3013,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.task_log = QtWidgets.QPlainTextEdit()
         self.task_log.setReadOnly(True)
         self.task_log.setPlaceholderText("任务执行日志将显示在这里...")
+        self.task_log.setMaximumHeight(150)
 
-        middle_layout.addWidget(status_header)
-        middle_layout.addWidget(self.multi_status_label)
-        middle_layout.addWidget(self.device_status_list)
-        middle_layout.addWidget(log_header)
-        middle_layout.addWidget(self.task_log, 1)
+        left_layout.addWidget(status_header)
+        left_layout.addWidget(self.multi_status_label)
+        left_layout.addWidget(self.device_status_list)
+        left_layout.addWidget(log_header)
+        left_layout.addWidget(self.task_log, 1)
 
         # Right Panel - Preview & Timeline
         right_card = QtWidgets.QFrame()
@@ -2992,9 +3172,8 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.addWidget(timeline_header)
         right_layout.addWidget(self.timeline_list, 1)
 
-        content_layout.addWidget(left_card, 2)
-        content_layout.addWidget(middle_card, 3)
-        content_layout.addWidget(right_card, 2)
+        content_layout.addWidget(left_card, 5)
+        content_layout.addWidget(right_card, 3)
 
         layout.addWidget(header_widget)
         layout.addLayout(content_layout, 1)
@@ -3135,6 +3314,23 @@ class MainWindow(QtWidgets.QMainWindow):
             "wda_url": None,  # ADB-only interface doesn't use WDA
         }
 
+        # 在执行任务前，检查并解锁 ADB 设备，记录之前的锁屏状态
+        from phone_agent.adb.unlock import ensure_device_unlocked, is_device_locked
+        self._devices_to_relock = []  # 记录需要重新锁屏的设备
+        for device_id, device_type in devices:
+            if device_type == DeviceType.ADB:
+                self._append_log(f"检查设备 {device_id} 锁屏状态...\n")
+                QtWidgets.QApplication.processEvents()
+                # 先检查是否锁屏，记录状态
+                was_locked = is_device_locked(device_id)
+                if was_locked:
+                    self._devices_to_relock.append(device_id)
+                success, message = ensure_device_unlocked(device_id)
+                if success:
+                    self._append_log(f"  ✓ {message}\n")
+                else:
+                    self._append_log(f"  ⚠ {message}\n")
+
         self.multi_device_manager.start_tasks(devices, task, config)
         self._append_timeline(f"批量任务开始: {len(devices)} 个设备")
 
@@ -3239,6 +3435,17 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
         self._append_timeline(f"批量任务完成: {success} 成功, {failed} 失败")
+
+        # 重新锁屏之前已锁屏的设备
+        if hasattr(self, '_devices_to_relock') and self._devices_to_relock:
+            from phone_agent.adb.unlock import lock_screen
+            for device_id in self._devices_to_relock:
+                self._append_log(f"恢复设备 {device_id} 锁屏状态...\n")
+                if lock_screen(device_id):
+                    self._append_log(f"  ✓ 已锁屏\n")
+                else:
+                    self._append_log(f"  ⚠ 锁屏失败\n")
+            self._devices_to_relock = []
         
         # Show multi-device task completion dialog
         self._show_multi_device_completion_dialog(success, failed, total)
@@ -3331,16 +3538,37 @@ class MainWindow(QtWidgets.QMainWindow):
         self.scheduled_task_list.setHorizontalHeaderLabels(
             ["启用", "任务名称", "调度类型", "下次执行", "执行次数", "操作"]
         )
+        # 设置表格样式
+        self.scheduled_task_list.setShowGrid(True)  # 显示网格线
+        self.scheduled_task_list.setStyleSheet("""
+            QTableWidget {
+                gridline-color: rgba(63, 63, 70, 0.8);
+                border: 1px solid rgba(63, 63, 70, 0.5);
+            }
+            QTableWidget::item {
+                padding: 4px 8px;
+                border-bottom: 1px solid rgba(63, 63, 70, 0.5);
+            }
+            QHeaderView::section {
+                background: rgba(39, 39, 42, 0.8);
+                border: 1px solid rgba(63, 63, 70, 0.5);
+                padding: 6px;
+            }
+        """)
         # 设置列宽可交互调整
         header = self.scheduled_task_list.horizontalHeader()
         header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # 启用
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)  # 启用 - 可调整
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)  # 任务名称 - 可调整
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # 调度类型
-        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)  # 下次执行
-        header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)  # 执行次数
-        # 设置任务名称列的默认宽度
-        self.scheduled_task_list.setColumnWidth(1, 200)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)  # 调度类型 - 可调整
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # 下次执行 - 可调整
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Interactive)  # 执行次数 - 可调整
+        # 设置默认列宽
+        self.scheduled_task_list.setColumnWidth(0, 50)
+        self.scheduled_task_list.setColumnWidth(1, 150)
+        self.scheduled_task_list.setColumnWidth(2, 70)
+        self.scheduled_task_list.setColumnWidth(3, 120)
+        self.scheduled_task_list.setColumnWidth(4, 70)
         self.scheduled_task_list.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectRows
         )
@@ -3360,7 +3588,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form = QtWidgets.QFormLayout()
         form.setSpacing(12)
-        form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        form.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
         self.sched_task_name = QtWidgets.QLineEdit()
@@ -3383,13 +3612,41 @@ class MainWindow(QtWidgets.QMainWindow):
         # Schedule options stack
         self.sched_options_stack = QtWidgets.QStackedWidget()
 
+        # 日期时间选择器样式 - 暗黑主题可见
+        datetime_style = """
+            QDateTimeEdit {
+                background: rgba(39, 39, 42, 0.8);
+                border: 1px solid rgba(63, 63, 70, 0.8);
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: #fafafa;
+            }
+            QDateTimeEdit::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                width: 20px;
+                border-left: 1px solid rgba(63, 63, 70, 0.8);
+                background: rgba(63, 63, 70, 0.5);
+            }
+            QDateTimeEdit::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid #a1a1aa;
+            }
+        """
+
         # ONCE options
         once_widget = QtWidgets.QWidget()
+        once_widget.setFixedHeight(32)  # 固定高度，防止撑大
         once_layout = QtWidgets.QHBoxLayout(once_widget)
         once_layout.setContentsMargins(0, 0, 0, 0)
+        once_layout.setAlignment(QtCore.Qt.AlignVCenter)  # 垂直居中
         self.sched_once_datetime = QtWidgets.QDateTimeEdit()
         self.sched_once_datetime.setDateTime(QtCore.QDateTime.currentDateTime().addSecs(3600))
         self.sched_once_datetime.setCalendarPopup(True)
+        self.sched_once_datetime.setStyleSheet(datetime_style)
+        self.sched_once_datetime.setFixedHeight(28)  # 限制高度
         once_layout.addWidget(QtWidgets.QLabel("执行时间:"))
         once_layout.addWidget(self.sched_once_datetime)
         once_layout.addStretch()
@@ -3462,34 +3719,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sched_options_stack.addWidget(weekly_widget)
         self.sched_options_stack.addWidget(monthly_widget)
 
-        # Gemini feedback options
-        gemini_feedback_widget = QtWidgets.QWidget()
-        gemini_feedback_layout = QtWidgets.QHBoxLayout(gemini_feedback_widget)
-        gemini_feedback_layout.setContentsMargins(0, 0, 0, 0)
-        gemini_feedback_layout.setSpacing(12)
+        # 设备选择
+        device_widget = QtWidgets.QWidget()
+        device_layout = QtWidgets.QVBoxLayout(device_widget)
+        device_layout.setContentsMargins(0, 0, 0, 0)
+        device_layout.setSpacing(4)
 
-        self.sched_use_gemini = QtWidgets.QCheckBox("启用 AI 反馈循环")
-        self.sched_use_gemini.setToolTip(
-            "启用后，任务执行结果会发送给 Gemini，由 AI 分析并生成下一步指令"
-        )
+        self.sched_device_list = QtWidgets.QListWidget()
+        self.sched_device_list.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
+        self.sched_device_list.setMinimumHeight(60)
+        self.sched_device_list.setMaximumHeight(100)
 
-        gemini_rounds_label = QtWidgets.QLabel("最大轮数:")
-        self.sched_gemini_max_rounds = NoWheelSpinBox()
-        self.sched_gemini_max_rounds.setRange(1, 50)
-        self.sched_gemini_max_rounds.setValue(5)
-        self.sched_gemini_max_rounds.setToolTip("单次任务最大交互轮数，防止无限循环")
-        self.sched_gemini_max_rounds.setFixedWidth(80)
+        sched_device_refresh_btn = QtWidgets.QPushButton("刷新设备")
+        sched_device_refresh_btn.setObjectName("secondary")
+        sched_device_refresh_btn.setFixedWidth(80)
+        sched_device_refresh_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        sched_device_refresh_btn.clicked.connect(self._refresh_sched_devices)
 
-        gemini_feedback_layout.addWidget(self.sched_use_gemini)
-        gemini_feedback_layout.addWidget(gemini_rounds_label)
-        gemini_feedback_layout.addWidget(self.sched_gemini_max_rounds)
-        gemini_feedback_layout.addStretch()
+        device_layout.addWidget(self.sched_device_list)
+        device_layout.addWidget(sched_device_refresh_btn)
 
         form.addRow("任务名称", self.sched_task_name)
         form.addRow("任务指令", self.sched_task_content)
+        form.addRow("执行设备", device_widget)
         form.addRow("调度类型", self.sched_type_combo)
         form.addRow("调度设置", self.sched_options_stack)
-        form.addRow("AI 反馈", gemini_feedback_widget)
 
         # Buttons
         btn_layout = QtWidgets.QHBoxLayout()
@@ -3640,21 +3894,33 @@ class MainWindow(QtWidgets.QMainWindow):
             count_item = QtWidgets.QTableWidgetItem(str(task.run_count))
             self.scheduled_task_list.setItem(row, 4, count_item)
 
-            # Actions
+            # Actions - 使用紧凑按钮样式
             actions_widget = QtWidgets.QWidget()
             actions_layout = QtWidgets.QHBoxLayout(actions_widget)
-            actions_layout.setContentsMargins(4, 2, 4, 2)
-            actions_layout.setSpacing(6)
+            actions_layout.setContentsMargins(2, 0, 2, 0)
+            actions_layout.setSpacing(4)
+
+            # 按钮紧凑样式
+            btn_style = """
+                QPushButton {
+                    padding: 2px 8px;
+                    font-size: 11px;
+                    min-height: 20px;
+                    max-height: 22px;
+                }
+            """
 
             run_btn = QtWidgets.QPushButton("执行")
-            run_btn.setMinimumWidth(50)
+            run_btn.setFixedWidth(42)
+            run_btn.setStyleSheet(btn_style)
             run_btn.setObjectName("secondary")
             run_btn.setToolTip("立即执行此任务")
             run_btn.setCursor(QtCore.Qt.PointingHandCursor)
             run_btn.clicked.connect(lambda _, tid=task.id: self._run_task_by_id(tid))
 
             edit_btn = QtWidgets.QPushButton("编辑")
-            edit_btn.setMinimumWidth(50)
+            edit_btn.setFixedWidth(42)
+            edit_btn.setStyleSheet(btn_style)
             edit_btn.setObjectName("secondary")
             edit_btn.setToolTip("编辑任务配置")
             edit_btn.setCursor(QtCore.Qt.PointingHandCursor)
@@ -3672,10 +3938,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sched_task_content.clear()
         self.sched_type_combo.setCurrentIndex(2)  # Daily by default
         self.sched_daily_time.setTime(QtCore.QTime(9, 0))
-        # Reset Gemini feedback options
-        self.sched_use_gemini.setChecked(False)
-        self.sched_gemini_max_rounds.setValue(5)
+        self.sched_device_list.clearSelection()  # 清除设备选择
+        self._refresh_sched_devices()  # 刷新设备列表
         self._append_sched_log("新建定时任务，请填写配置后保存。\n")
+
+    def _refresh_sched_devices(self):
+        """刷新定时任务的设备列表"""
+        self.sched_device_list.clear()
+        device_type = self._current_device_type()
+
+        if device_type == DeviceType.IOS:
+            devices = list_ios_devices()
+            for device in devices:
+                name = device.device_name or device.device_id
+                item = QtWidgets.QListWidgetItem(f"{name}")
+                item.setData(QtCore.Qt.UserRole, (device.device_id, device_type))
+                self.sched_device_list.addItem(item)
+        else:
+            set_device_type(device_type)
+            factory = get_device_factory()
+            devices = factory.list_devices()
+            for device in devices:
+                name = device.model or device.device_id
+                item = QtWidgets.QListWidgetItem(f"{name} ({device.device_id[:15]}...)")
+                item.setData(QtCore.Qt.UserRole, (device.device_id, device_type))
+                self.sched_device_list.addItem(item)
+
+        if self.sched_device_list.count() == 0:
+            self.sched_device_list.addItem("没有可用设备")
 
     def _save_scheduled_task(self):
         """Save the current scheduled task."""
@@ -3725,9 +4015,13 @@ class MainWindow(QtWidgets.QMainWindow):
             task.monthly_day = self.sched_monthly_day.value()
             task.monthly_time = self.sched_monthly_time.time().toString("HH:mm")
 
-        # Gemini feedback options
-        task.use_gemini_feedback = self.sched_use_gemini.isChecked()
-        task.gemini_max_rounds = self.sched_gemini_max_rounds.value()
+        # 保存选中的设备列表
+        selected_devices = []
+        for item in self.sched_device_list.selectedItems():
+            data = item.data(QtCore.Qt.UserRole)
+            if data:
+                selected_devices.append(data[0])  # 只保存 device_id
+        task.devices = selected_devices if selected_devices else []
 
         if self._current_sched_task_id:
             self.scheduled_tasks_manager.update_task(task)
@@ -3824,9 +4118,14 @@ class MainWindow(QtWidgets.QMainWindow):
             h, m = map(int, task.monthly_time.split(":"))
             self.sched_monthly_time.setTime(QtCore.QTime(h, m))
 
-        # Load Gemini feedback settings
-        self.sched_use_gemini.setChecked(task.use_gemini_feedback)
-        self.sched_gemini_max_rounds.setValue(task.gemini_max_rounds)
+        # 加载设备选择
+        self._refresh_sched_devices()
+        task_devices = getattr(task, 'devices', []) or []
+        for i in range(self.sched_device_list.count()):
+            item = self.sched_device_list.item(i)
+            data = item.data(QtCore.Qt.UserRole)
+            if data and data[0] in task_devices:
+                item.setSelected(True)
 
     def _on_scheduled_task_selected(self):
         """Handle task list selection."""
@@ -3852,216 +4151,156 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _execute_scheduled_task(self, task_id, task_content):
         """Execute a scheduled task content."""
+        task = self.scheduled_tasks_manager.get_task(task_id)
+        
         # Get active model service config
         active_service = self.model_services_manager.get_active_service()
         if not active_service:
             self._append_sched_log("没有激活的模型服务，无法执行定时任务。\n")
-            # Mark task as finished since it couldn't start
             self.scheduled_tasks_manager.mark_task_finished(task_id)
             return
 
-        wda_url = None  # ADB-only interface doesn't use WDA
+        device_type = self._current_device_type()
+        
+        # 获取任务配置的设备列表
+        task_devices = getattr(task, 'devices', []) if task else []
+        
+        if task_devices and len(task_devices) > 0:
+            # 多设备执行
+            self._append_sched_log(f"执行设备: {len(task_devices)} 个\n")
+            
+            # 准备设备列表和解锁
+            devices = []
+            self._sched_devices_to_relock = []
+            
+            from phone_agent.adb.unlock import ensure_device_unlocked, is_device_locked
+            for device_id in task_devices:
+                devices.append((device_id, device_type))
+                if device_type == DeviceType.ADB:
+                    self._append_sched_log(f"检查设备 {device_id} 锁屏状态...\n")
+                    was_locked = is_device_locked(device_id)
+                    if was_locked:
+                        self._sched_devices_to_relock.append(device_id)
+                    success, message = ensure_device_unlocked(device_id)
+                    self._append_sched_log(f"  {'✓' if success else '⚠'} {message}\n")
 
-        self.task_worker = TaskWorker(
-            device_type=self._current_device_type(),
-            base_url=active_service.base_url,
-            model=active_service.model_name,
-            api_key=active_service.api_key,
-            max_steps=self.max_steps_input.value(),
-            device_id=self.device_id_input.text().strip(),
-            lang=self.lang_combo.currentText(),
-            wda_url=wda_url,
-            task=task_content,
-            quiet=True,
-        )
-        self.task_worker.log.connect(lambda msg: self._append_sched_log(msg))
-        self.task_worker.finished.connect(
-            lambda result: (
-                self._append_sched_log(f"任务完成: {result}\n"),
-                self.scheduled_tasks_manager.mark_task_finished(task_id)  # Mark as finished
+            config = {
+                "base_url": active_service.base_url,
+                "model": active_service.model_name,
+                "api_key": active_service.api_key,
+                "max_steps": self.max_steps_input.value(),
+                "lang": self.lang_combo.currentText(),
+                "wda_url": None,
+            }
+
+            # 保存任务 ID 用于完成回调
+            self._sched_multi_task_id = task_id
+            
+            # 使用多设备管理器执行
+            self.multi_device_manager.all_finished.disconnect()  # 断开之前的连接
+            self.multi_device_manager.all_finished.connect(self._on_sched_multi_task_finished)
+            self.multi_device_manager.device_log.connect(lambda dev, msg: self._append_sched_log(f"[{dev[:10]}] {msg}"))
+            self.multi_device_manager.start_tasks(devices, task_content, config)
+        else:
+            # 单设备执行（使用默认设备）
+            device_id = self.device_id_input.text().strip()
+            if not device_id:
+                self._append_sched_log("没有配置执行设备，请在任务配置中选择设备或设置默认设备。\n")
+                self.scheduled_tasks_manager.mark_task_finished(task_id)
+                return
+
+            self._append_sched_log(f"执行设备: {device_id}\n")
+            
+            # 检查并解锁设备
+            sched_device_was_locked = False
+            if device_type == DeviceType.ADB:
+                from phone_agent.adb.unlock import ensure_device_unlocked, is_device_locked
+                self._append_sched_log(f"检查设备锁屏状态...\n")
+                sched_device_was_locked = is_device_locked(device_id)
+                success, message = ensure_device_unlocked(device_id)
+                self._append_sched_log(f"  {'✓' if success else '⚠'} {message}\n")
+
+            self._sched_device_was_locked = sched_device_was_locked
+            self._sched_device_id = device_id
+
+            self.task_worker = TaskWorker(
+                device_type=device_type,
+                base_url=active_service.base_url,
+                model=active_service.model_name,
+                api_key=active_service.api_key,
+                max_steps=self.max_steps_input.value(),
+                device_id=device_id,
+                lang=self.lang_combo.currentText(),
+                wda_url=None,
+                task=task_content,
+                quiet=True,
             )
-        )
-        self.task_worker.failed.connect(
-            lambda msg: (
-                self._append_sched_log(f"任务失败: {msg}\n"),
-                self.scheduled_tasks_manager.mark_task_finished(task_id)  # Mark as finished even on failure
+            self.task_worker.log.connect(lambda msg: self._append_sched_log(msg))
+            self.task_worker.finished.connect(
+                lambda result: self._on_sched_task_finished(task_id, result)
             )
-        )
-        self.task_worker.start()
+            self.task_worker.failed.connect(
+                lambda msg: self._on_sched_task_failed(task_id, msg)
+            )
+            self.task_worker.start()
+
+    def _on_sched_task_finished(self, task_id, result):
+        """定时任务完成回调"""
+        self._append_sched_log(f"任务完成: {result}\n")
+        self.scheduled_tasks_manager.mark_task_finished(task_id)
+        self._restore_sched_device_lock()
+
+    def _on_sched_task_failed(self, task_id, msg):
+        """定时任务失败回调"""
+        self._append_sched_log(f"任务失败: {msg}\n")
+        self.scheduled_tasks_manager.mark_task_finished(task_id)
+        self._restore_sched_device_lock()
+
+    def _restore_sched_device_lock(self):
+        """恢复定时任务设备的锁屏状态"""
+        if hasattr(self, '_sched_device_was_locked') and self._sched_device_was_locked:
+            device_id = getattr(self, '_sched_device_id', None)
+            if device_id:
+                from phone_agent.adb.unlock import lock_screen
+                self._append_sched_log(f"恢复设备 {device_id} 锁屏状态...\n")
+                if lock_screen(device_id):
+                    self._append_sched_log(f"  ✓ 已锁屏\n")
+                else:
+                    self._append_sched_log(f"  ⚠ 锁屏失败\n")
+            self._sched_device_was_locked = False
+
+    def _on_sched_multi_task_finished(self):
+        """多设备定时任务完成回调"""
+        task_id = getattr(self, '_sched_multi_task_id', None)
+        if task_id:
+            success, failed = self.multi_device_manager.get_results_summary()
+            self._append_sched_log(f"多设备任务完成: {success} 成功, {failed} 失败\n")
+            self.scheduled_tasks_manager.mark_task_finished(task_id)
+            self._sched_multi_task_id = None
+        
+        # 恢复锁屏
+        if hasattr(self, '_sched_devices_to_relock') and self._sched_devices_to_relock:
+            from phone_agent.adb.unlock import lock_screen
+            for device_id in self._sched_devices_to_relock:
+                self._append_sched_log(f"恢复设备 {device_id} 锁屏状态...\n")
+                if lock_screen(device_id):
+                    self._append_sched_log(f"  ✓ 已锁屏\n")
+                else:
+                    self._append_sched_log(f"  ⚠ 锁屏失败\n")
+            self._sched_devices_to_relock = []
+        
+        # 恢复普通任务的 all_finished 连接
+        try:
+            self.multi_device_manager.all_finished.disconnect()
+        except Exception:
+            pass
+        self.multi_device_manager.all_finished.connect(self._on_all_tasks_finished)
 
     def _append_sched_log(self, text):
         """Append text to scheduled tasks log."""
         self.sched_log.moveCursor(QtGui.QTextCursor.End)
         self.sched_log.insertPlainText(text)
         self.sched_log.moveCursor(QtGui.QTextCursor.End)
-
-    def _on_scheduled_task_triggered_with_gemini(self, task_id, task_content, use_gemini, max_rounds):
-        """Handle when a scheduled task with Gemini feedback is triggered."""
-        task = self.scheduled_tasks_manager.get_task(task_id)
-        task_name = task.name if task else task_id
-
-        self._append_sched_log(f"⏰ 定时任务触发 (AI反馈模式): [{task_name}]\n")
-        self._append_log(f"⏰ 定时任务触发 (AI反馈模式): [{task_name}]\n")
-
-        # Initialize feedback state
-        self.gemini_feedback_state[task_id] = {
-            "task_name": task_name,
-            "current_round": 1,
-            "max_rounds": max_rounds,
-            "conversation_history": [],
-            "original_task": task_content,
-        }
-
-        # Execute the first round
-        self._execute_gemini_feedback_task(task_id, task_content)
-        self._refresh_scheduled_tasks()
-
-    def _execute_gemini_feedback_task(self, task_id, task_content):
-        """Execute a task with Gemini feedback loop."""
-        state = self.gemini_feedback_state.get(task_id)
-        if not state:
-            return
-
-        round_num = state["current_round"]
-        max_rounds = state["max_rounds"]
-
-        self._append_sched_log(f"🔄 执行第 {round_num}/{max_rounds} 轮...\n")
-        self._append_sched_log(f"📋 任务指令: {task_content[:100]}{'...' if len(task_content) > 100 else ''}\n")
-
-        # Get active model service config
-        active_service = self.model_services_manager.get_active_service()
-        if not active_service:
-            self._append_sched_log("没有激活的模型服务，无法执行定时任务。\n")
-            self._cleanup_gemini_state(task_id)
-            return
-
-        wda_url = None  # ADB-only interface doesn't use WDA
-
-        # Create a special worker that captures output for Gemini feedback
-        self.gemini_task_worker = TaskWorker(
-            device_type=self._current_device_type(),
-            base_url=active_service.base_url,
-            model=active_service.model_name,
-            api_key=active_service.api_key,
-            max_steps=self.max_steps_input.value(),
-            device_id=self.device_id_input.text().strip(),
-            lang=self.lang_combo.currentText(),
-            wda_url=wda_url,
-            task=task_content,
-            quiet=True,
-        )
-
-        # Collect output for Gemini
-        self._gemini_output_buffer = []
-
-        def capture_log(msg):
-            self._append_sched_log(msg)
-            self._gemini_output_buffer.append(msg)
-
-        self.gemini_task_worker.log.connect(capture_log)
-        self.gemini_task_worker.finished.connect(
-            lambda result: self._on_gemini_task_finished(task_id, result)
-        )
-        self.gemini_task_worker.failed.connect(
-            lambda msg: self._on_gemini_task_failed(task_id, msg)
-        )
-        self.gemini_task_worker.start()
-
-    def _on_gemini_task_finished(self, task_id, result):
-        """Handle task completion and get Gemini feedback."""
-        state = self.gemini_feedback_state.get(task_id)
-        if not state:
-            return
-
-        # Combine all output
-        full_output = "".join(self._gemini_output_buffer)
-        self._append_sched_log(f"✅ 第 {state['current_round']} 轮执行完成\n")
-
-        # Add to conversation history
-        state["conversation_history"].append({
-            "role": "user",
-            "content": f"任务执行结果:\n{full_output}\n\n请分析执行结果，如果任务已完成请回复'任务完成'，否则请给出下一步的任务指令。"
-        })
-
-        # Check if we should continue
-        if state["current_round"] >= state["max_rounds"]:
-            self._append_sched_log(f"⚠️ 已达到最大轮数 {state['max_rounds']}，停止反馈循环\n")
-            self._cleanup_gemini_state(task_id)
-            return
-
-        # Call Gemini API
-        self._append_sched_log("🤖 正在获取 AI 反馈...\n")
-        QtWidgets.QApplication.processEvents()
-
-        response = self.scheduled_tasks_manager.call_gemini_api(state["conversation_history"])
-
-        if not response:
-            self._append_sched_log("❌ Gemini API 调用失败，停止反馈循环\n")
-            self._cleanup_gemini_state(task_id)
-            return
-
-        self._append_sched_log(f"🤖 AI 反馈: {response[:200]}{'...' if len(response) > 200 else ''}\n")
-
-        # Add AI response to history
-        state["conversation_history"].append({
-            "role": "assistant",
-            "content": response
-        })
-
-        # Check if task is complete
-        if "任务完成" in response or "task complete" in response.lower():
-            self._append_sched_log("✨ AI 判断任务已完成，结束反馈循环\n")
-            self._cleanup_gemini_state(task_id)
-            return
-
-        # Continue with next round
-        state["current_round"] += 1
-        self._execute_gemini_feedback_task(task_id, response)
-
-    def _on_gemini_task_failed(self, task_id, error_msg):
-        """Handle task failure in Gemini feedback mode."""
-        state = self.gemini_feedback_state.get(task_id)
-        if not state:
-            return
-
-        self._append_sched_log(f"❌ 任务执行失败: {error_msg}\n")
-
-        # Add failure to conversation history and ask Gemini for recovery
-        state["conversation_history"].append({
-            "role": "user",
-            "content": f"任务执行失败:\n{error_msg}\n\n请分析失败原因，如果需要重试请给出新的任务指令，如果无法继续请回复'任务完成'。"
-        })
-
-        if state["current_round"] >= state["max_rounds"]:
-            self._append_sched_log(f"⚠️ 已达到最大轮数 {state['max_rounds']}，停止反馈循环\n")
-            self._cleanup_gemini_state(task_id)
-            return
-
-        # Call Gemini for recovery guidance
-        self._append_sched_log("🤖 正在获取 AI 故障恢复建议...\n")
-        response = self.scheduled_tasks_manager.call_gemini_api(state["conversation_history"])
-
-        if not response or "任务完成" in response:
-            self._append_sched_log("🛑 停止反馈循环\n")
-            self._cleanup_gemini_state(task_id)
-            return
-
-        state["conversation_history"].append({
-            "role": "assistant",
-            "content": response
-        })
-
-        state["current_round"] += 1
-        self._append_sched_log(f"🔄 尝试恢复: {response[:100]}...\n")
-        self._execute_gemini_feedback_task(task_id, response)
-
-    def _cleanup_gemini_state(self, task_id):
-        """Clean up Gemini feedback state."""
-        if task_id in self.gemini_feedback_state:
-            del self.gemini_feedback_state[task_id]
-        # Mark the scheduled task as finished
-        self.scheduled_tasks_manager.mark_task_finished(task_id)
-        self._append_sched_log("─" * 40 + "\n")
 
     def _build_apk_installer(self):
         page = QtWidgets.QWidget()
@@ -4464,6 +4703,620 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._append_apk_log(f"\n{message}\n")
 
+    def _build_file_manager(self):
+        """构建文件管理页面"""
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setContentsMargins(20, 12, 20, 20)
+        layout.setSpacing(16)
+
+        # Header
+        header_widget = QtWidgets.QWidget()
+        header_layout = QtWidgets.QVBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 8)
+        header_layout.setSpacing(4)
+
+        header = QtWidgets.QLabel("📁 文件管理")
+        header.setStyleSheet("font-size: 24px; font-weight: 600; color: #fafafa;")
+
+        subtitle = QtWidgets.QLabel("通过 ADB 管理设备文件系统")
+        subtitle.setStyleSheet("font-size: 13px; color: #71717a;")
+
+        header_layout.addWidget(header)
+        header_layout.addWidget(subtitle)
+
+        # Toolbar - 设备选择
+        device_toolbar = QtWidgets.QHBoxLayout()
+        device_toolbar.setSpacing(8)
+
+        device_label = QtWidgets.QLabel("设备:")
+        device_label.setStyleSheet("font-size: 13px; color: #a1a1aa;")
+
+        self.file_device_combo = QtWidgets.QComboBox()
+        self.file_device_combo.setMinimumWidth(200)
+        self.file_device_combo.setPlaceholderText("选择设备...")
+        self.file_device_combo.currentIndexChanged.connect(self._file_manager_device_changed)
+
+        refresh_device_btn = QtWidgets.QPushButton("刷新设备")
+        refresh_device_btn.setObjectName("secondary")
+        refresh_device_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        refresh_device_btn.clicked.connect(self._file_manager_refresh_devices)
+
+        device_toolbar.addWidget(device_label)
+        device_toolbar.addWidget(self.file_device_combo)
+        device_toolbar.addWidget(refresh_device_btn)
+        device_toolbar.addStretch()
+
+        # Toolbar - 路径导航
+        toolbar = QtWidgets.QHBoxLayout()
+        toolbar.setSpacing(8)
+
+        self.file_path_input = QtWidgets.QLineEdit()
+        self.file_path_input.setPlaceholderText("输入路径，如 /sdcard/")
+        self.file_path_input.setText("/sdcard/")
+        self.file_path_input.returnPressed.connect(self._file_manager_navigate)
+
+        go_btn = QtWidgets.QPushButton("前往")
+        go_btn.setObjectName("primary")
+        go_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        go_btn.clicked.connect(self._file_manager_navigate)
+
+        refresh_btn = QtWidgets.QPushButton("🔄 刷新")
+        refresh_btn.setObjectName("secondary")
+        refresh_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        refresh_btn.clicked.connect(self._file_manager_refresh)
+
+        parent_btn = QtWidgets.QPushButton("⬆️ 上级目录")
+        parent_btn.setObjectName("secondary")
+        parent_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        parent_btn.clicked.connect(self._file_manager_go_up)
+
+        toolbar.addWidget(self.file_path_input, 1)
+        toolbar.addWidget(go_btn)
+        toolbar.addWidget(refresh_btn)
+        toolbar.addWidget(parent_btn)
+
+        # Content area
+        content_layout = QtWidgets.QHBoxLayout()
+        content_layout.setSpacing(12)
+
+        # Quick access panel
+        quick_card = QtWidgets.QFrame()
+        quick_card.setObjectName("card")
+        quick_card.setFixedWidth(180)
+        quick_layout = QtWidgets.QVBoxLayout(quick_card)
+        quick_layout.setContentsMargins(12, 12, 12, 12)
+        quick_layout.setSpacing(4)
+
+        quick_title = QtWidgets.QLabel("快速访问")
+        quick_title.setObjectName("cardTitle")
+        quick_layout.addWidget(quick_title)
+
+        quick_paths = [
+            ("📱 内部存储", "/sdcard/"),
+            ("📸 相册", "/sdcard/DCIM/"),
+            ("📥 下载", "/sdcard/Download/"),
+            ("🎵 音乐", "/sdcard/Music/"),
+            ("🎬 视频", "/sdcard/Movies/"),
+            ("📄 文档", "/sdcard/Documents/"),
+            ("📦 应用数据", "/data/data/"),
+            ("⚙️ 系统", "/system/"),
+        ]
+
+        for label, path in quick_paths:
+            btn = QtWidgets.QPushButton(label)
+            btn.setObjectName("secondary")
+            btn.setCursor(QtCore.Qt.PointingHandCursor)
+            btn.setToolTip(path)
+            btn.clicked.connect(lambda checked, p=path: self._file_manager_go_to(p))
+            quick_layout.addWidget(btn)
+
+        quick_layout.addStretch()
+
+        # File list panel
+        file_card = QtWidgets.QFrame()
+        file_card.setObjectName("card")
+        file_layout = QtWidgets.QVBoxLayout(file_card)
+        file_layout.setContentsMargins(12, 12, 12, 12)
+        file_layout.setSpacing(8)
+
+        file_title = QtWidgets.QLabel("文件列表")
+        file_title.setObjectName("cardTitle")
+
+        self.file_list = QtWidgets.QTreeWidget()
+        self.file_list.setHeaderLabels(["名称", "大小", "权限", "修改时间"])
+        self.file_list.setColumnWidth(0, 300)
+        self.file_list.setColumnWidth(1, 100)
+        self.file_list.setColumnWidth(2, 100)
+        self.file_list.setColumnWidth(3, 150)
+        self.file_list.setRootIsDecorated(False)
+        self.file_list.setAlternatingRowColors(True)
+        self.file_list.itemDoubleClicked.connect(self._file_manager_item_double_clicked)
+        self.file_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.file_list.customContextMenuRequested.connect(self._file_manager_context_menu)
+
+        file_layout.addWidget(file_title)
+        file_layout.addWidget(self.file_list, 1)
+
+        # Action buttons
+        action_layout = QtWidgets.QHBoxLayout()
+        action_layout.setSpacing(8)
+
+        upload_btn = QtWidgets.QPushButton("📤 上传文件")
+        upload_btn.setObjectName("primary")
+        upload_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        upload_btn.clicked.connect(self._file_manager_upload)
+
+        download_btn = QtWidgets.QPushButton("📥 下载")
+        download_btn.setObjectName("secondary")
+        download_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        download_btn.clicked.connect(self._file_manager_download)
+
+        new_folder_btn = QtWidgets.QPushButton("📁 新建文件夹")
+        new_folder_btn.setObjectName("secondary")
+        new_folder_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        new_folder_btn.clicked.connect(self._file_manager_new_folder)
+
+        delete_btn = QtWidgets.QPushButton("🗑️ 删除")
+        delete_btn.setObjectName("danger")
+        delete_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        delete_btn.clicked.connect(self._file_manager_delete)
+
+        action_layout.addWidget(upload_btn)
+        action_layout.addWidget(download_btn)
+        action_layout.addWidget(new_folder_btn)
+        action_layout.addWidget(delete_btn)
+        action_layout.addStretch()
+
+        file_layout.addLayout(action_layout)
+
+        # Status bar
+        self.file_status = QtWidgets.QLabel("就绪")
+        self.file_status.setStyleSheet(
+            "font-size: 11px; color: #71717a; padding: 4px 8px;"
+        )
+
+        file_layout.addWidget(self.file_status)
+
+        content_layout.addWidget(quick_card)
+        content_layout.addWidget(file_card, 1)
+
+        layout.addWidget(header_widget)
+        layout.addLayout(device_toolbar)
+        layout.addLayout(toolbar)
+        layout.addLayout(content_layout, 1)
+
+        # 初始化时刷新设备列表
+        QtCore.QTimer.singleShot(500, self._file_manager_refresh_devices)
+
+        return page
+
+    def _file_manager_refresh_devices(self):
+        """刷新文件管理器的设备列表"""
+        import subprocess
+        
+        self.file_device_combo.clear()
+        
+        try:
+            result = subprocess.run(
+                ["adb", "devices"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            
+            lines = result.stdout.strip().split("\n")[1:]  # 跳过第一行 "List of devices attached"
+            for line in lines:
+                if "\tdevice" in line:
+                    device_id = line.split("\t")[0]
+                    self.file_device_combo.addItem(device_id, device_id)
+            
+            if self.file_device_combo.count() == 0:
+                self.file_status.setText("未检测到设备，请连接设备后点击刷新")
+            else:
+                self.file_status.setText(f"检测到 {self.file_device_combo.count()} 个设备")
+                
+        except FileNotFoundError:
+            self.file_status.setText("ADB 未安装，请先安装 Android SDK Platform Tools")
+        except Exception as e:
+            self.file_status.setText(f"获取设备列表失败: {str(e)}")
+
+    def _file_manager_device_changed(self, index):
+        """设备选择变化时刷新文件列表"""
+        if index >= 0:
+            self._file_manager_list_dir(self.file_path_input.text().strip())
+
+    def _get_file_manager_device_id(self):
+        """获取当前选择的设备ID"""
+        if self.file_device_combo.count() > 0:
+            return self.file_device_combo.currentData()
+        return None
+
+    def _file_manager_navigate(self):
+        """导航到指定路径"""
+        path = self.file_path_input.text().strip()
+        if path:
+            self._file_manager_list_dir(path)
+
+    def _file_manager_refresh(self):
+        """刷新当前目录"""
+        path = self.file_path_input.text().strip()
+        if path:
+            self._file_manager_list_dir(path)
+
+    def _file_manager_go_up(self):
+        """返回上级目录"""
+        path = self.file_path_input.text().strip()
+        if path and path != "/":
+            parent = "/".join(path.rstrip("/").split("/")[:-1])
+            if not parent:
+                parent = "/"
+            self._file_manager_go_to(parent)
+
+    def _file_manager_go_to(self, path):
+        """跳转到指定路径"""
+        self.file_path_input.setText(path)
+        self._file_manager_list_dir(path)
+
+    def _file_manager_list_dir(self, path):
+        """列出目录内容"""
+        import subprocess
+        
+        self.file_list.clear()
+        
+        device_id = self._get_file_manager_device_id()
+        if not device_id:
+            self.file_status.setText("请先选择设备")
+            return
+            
+        self.file_status.setText(f"正在加载: {path}")
+        QtWidgets.QApplication.processEvents()
+
+        adb_prefix = ["adb", "-s", device_id]
+
+        try:
+            # 使用 ls -la 获取详细信息
+            result = subprocess.run(
+                adb_prefix + ["shell", f"ls -la '{path}'"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode != 0:
+                self.file_status.setText(f"错误: {result.stderr.strip()}")
+                return
+
+            lines = result.stdout.strip().split("\n")
+            file_count = 0
+            dir_count = 0
+
+            for line in lines:
+                if not line.strip() or line.startswith("total"):
+                    continue
+
+                parts = line.split()
+                if len(parts) < 8:
+                    continue
+
+                perms = parts[0]
+                size = parts[4] if len(parts) > 4 else "-"
+                date = f"{parts[5]} {parts[6]}" if len(parts) > 6 else "-"
+                name = " ".join(parts[7:]) if len(parts) > 7 else parts[-1]
+
+                # 跳过 . 和 ..
+                if name in [".", ".."]:
+                    continue
+
+                item = QtWidgets.QTreeWidgetItem()
+                
+                # 根据类型添加图标
+                if perms.startswith("d"):
+                    item.setText(0, f"📁 {name}")
+                    item.setData(0, QtCore.Qt.UserRole, ("dir", name))
+                    dir_count += 1
+                elif perms.startswith("l"):
+                    item.setText(0, f"🔗 {name}")
+                    item.setData(0, QtCore.Qt.UserRole, ("link", name))
+                else:
+                    # 根据扩展名显示不同图标
+                    ext = name.split(".")[-1].lower() if "." in name else ""
+                    icon = self._get_file_icon(ext)
+                    item.setText(0, f"{icon} {name}")
+                    item.setData(0, QtCore.Qt.UserRole, ("file", name))
+                    file_count += 1
+
+                item.setText(1, self._format_size(size))
+                item.setText(2, perms)
+                item.setText(3, date)
+
+                self.file_list.addTopLevelItem(item)
+
+            self.file_status.setText(f"共 {dir_count} 个文件夹, {file_count} 个文件")
+
+        except subprocess.TimeoutExpired:
+            self.file_status.setText("操作超时")
+        except Exception as e:
+            self.file_status.setText(f"错误: {str(e)}")
+
+    def _get_file_icon(self, ext):
+        """根据扩展名返回文件图标"""
+        icons = {
+            "jpg": "🖼️", "jpeg": "🖼️", "png": "🖼️", "gif": "🖼️", "bmp": "🖼️", "webp": "🖼️",
+            "mp4": "🎬", "mkv": "🎬", "avi": "🎬", "mov": "🎬", "wmv": "🎬",
+            "mp3": "🎵", "wav": "🎵", "flac": "🎵", "aac": "🎵", "ogg": "🎵",
+            "apk": "📦", "zip": "📦", "rar": "📦", "7z": "📦", "tar": "📦", "gz": "📦",
+            "txt": "📄", "log": "📄", "md": "📄", "json": "📄", "xml": "📄",
+            "pdf": "📕", "doc": "📘", "docx": "📘", "xls": "📗", "xlsx": "📗",
+            "py": "🐍", "js": "📜", "html": "🌐", "css": "🎨",
+        }
+        return icons.get(ext, "📄")
+
+    def _format_size(self, size_str):
+        """格式化文件大小"""
+        try:
+            size = int(size_str)
+            if size < 1024:
+                return f"{size} B"
+            elif size < 1024 * 1024:
+                return f"{size / 1024:.1f} KB"
+            elif size < 1024 * 1024 * 1024:
+                return f"{size / (1024 * 1024):.1f} MB"
+            else:
+                return f"{size / (1024 * 1024 * 1024):.2f} GB"
+        except:
+            return size_str
+
+    def _file_manager_item_double_clicked(self, item, column):
+        """双击项目"""
+        data = item.data(0, QtCore.Qt.UserRole)
+        if data:
+            item_type, name = data
+            if item_type == "dir":
+                current_path = self.file_path_input.text().strip().rstrip("/")
+                new_path = f"{current_path}/{name}"
+                self._file_manager_go_to(new_path)
+
+    def _file_manager_context_menu(self, position):
+        """右键菜单"""
+        item = self.file_list.itemAt(position)
+        if not item:
+            return
+
+        menu = QtWidgets.QMenu()
+        
+        download_action = menu.addAction("📥 下载")
+        rename_action = menu.addAction("✏️ 重命名")
+        menu.addSeparator()
+        delete_action = menu.addAction("🗑️ 删除")
+
+        action = menu.exec_(self.file_list.mapToGlobal(position))
+
+        if action == download_action:
+            self._file_manager_download()
+        elif action == rename_action:
+            self._file_manager_rename()
+        elif action == delete_action:
+            self._file_manager_delete()
+
+    def _file_manager_upload(self):
+        """上传文件到设备"""
+        import subprocess
+        
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "选择要上传的文件"
+        )
+        if not file_path:
+            return
+
+        device_path = self.file_path_input.text().strip()
+        device_id = self._get_file_manager_device_id()
+        if not device_id:
+            self.file_status.setText("请先选择设备")
+            return
+        adb_prefix = ["adb", "-s", device_id]
+
+        self.file_status.setText(f"正在上传: {file_path}")
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            result = subprocess.run(
+                adb_prefix + ["push", file_path, device_path],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode == 0:
+                self.file_status.setText("上传成功")
+                self._file_manager_refresh()
+            else:
+                self.file_status.setText(f"上传失败: {result.stderr.strip()}")
+
+        except Exception as e:
+            self.file_status.setText(f"上传错误: {str(e)}")
+
+    def _file_manager_download(self):
+        """从设备下载文件"""
+        import subprocess
+        
+        item = self.file_list.currentItem()
+        if not item:
+            self.file_status.setText("请先选择要下载的文件")
+            return
+
+        data = item.data(0, QtCore.Qt.UserRole)
+        if not data:
+            return
+
+        item_type, name = data
+        if item_type == "dir":
+            self.file_status.setText("暂不支持下载文件夹")
+            return
+
+        save_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "保存文件", name
+        )
+        if not save_path:
+            return
+
+        device_path = self.file_path_input.text().strip().rstrip("/") + "/" + name
+        device_id = self._get_file_manager_device_id()
+        if not device_id:
+            self.file_status.setText("请先选择设备")
+            return
+        adb_prefix = ["adb", "-s", device_id]
+
+        self.file_status.setText(f"正在下载: {name}")
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            result = subprocess.run(
+                adb_prefix + ["pull", device_path, save_path],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode == 0:
+                self.file_status.setText(f"下载成功: {save_path}")
+            else:
+                self.file_status.setText(f"下载失败: {result.stderr.strip()}")
+
+        except Exception as e:
+            self.file_status.setText(f"下载错误: {str(e)}")
+
+    def _file_manager_new_folder(self):
+        """新建文件夹"""
+        import subprocess
+        
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "新建文件夹", "请输入文件夹名称:"
+        )
+        if not ok or not name:
+            return
+
+        device_path = self.file_path_input.text().strip().rstrip("/") + "/" + name
+        device_id = self._get_file_manager_device_id()
+        if not device_id:
+            self.file_status.setText("请先选择设备")
+            return
+        adb_prefix = ["adb", "-s", device_id]
+
+        try:
+            result = subprocess.run(
+                adb_prefix + ["shell", f"mkdir -p '{device_path}'"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                self.file_status.setText(f"文件夹创建成功: {name}")
+                self._file_manager_refresh()
+            else:
+                self.file_status.setText(f"创建失败: {result.stderr.strip()}")
+
+        except Exception as e:
+            self.file_status.setText(f"创建错误: {str(e)}")
+
+    def _file_manager_delete(self):
+        """删除文件或文件夹"""
+        import subprocess
+        
+        item = self.file_list.currentItem()
+        if not item:
+            self.file_status.setText("请先选择要删除的项目")
+            return
+
+        data = item.data(0, QtCore.Qt.UserRole)
+        if not data:
+            return
+
+        item_type, name = data
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除 '{name}' 吗？\n此操作不可恢复！",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        device_path = self.file_path_input.text().strip().rstrip("/") + "/" + name
+        device_id = self._get_file_manager_device_id()
+        if not device_id:
+            self.file_status.setText("请先选择设备")
+            return
+        adb_prefix = ["adb", "-s", device_id]
+
+        # 使用 -rf 删除文件夹
+        rm_cmd = "rm -rf" if item_type == "dir" else "rm"
+
+        try:
+            result = subprocess.run(
+                adb_prefix + ["shell", f"{rm_cmd} '{device_path}'"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                self.file_status.setText(f"删除成功: {name}")
+                self._file_manager_refresh()
+            else:
+                self.file_status.setText(f"删除失败: {result.stderr.strip()}")
+
+        except Exception as e:
+            self.file_status.setText(f"删除错误: {str(e)}")
+
+    def _file_manager_rename(self):
+        """重命名文件或文件夹"""
+        import subprocess
+        
+        item = self.file_list.currentItem()
+        if not item:
+            return
+
+        data = item.data(0, QtCore.Qt.UserRole)
+        if not data:
+            return
+
+        item_type, old_name = data
+
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self, "重命名", "请输入新名称:", text=old_name
+        )
+        if not ok or not new_name or new_name == old_name:
+            return
+
+        base_path = self.file_path_input.text().strip().rstrip("/")
+        old_path = f"{base_path}/{old_name}"
+        new_path = f"{base_path}/{new_name}"
+        device_id = self._get_file_manager_device_id()
+        if not device_id:
+            self.file_status.setText("请先选择设备")
+            return
+        adb_prefix = ["adb", "-s", device_id]
+
+        try:
+            result = subprocess.run(
+                adb_prefix + ["shell", f"mv '{old_path}' '{new_path}'"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                self.file_status.setText(f"重命名成功: {old_name} → {new_name}")
+                self._file_manager_refresh()
+            else:
+                self.file_status.setText(f"重命名失败: {result.stderr.strip()}")
+
+        except Exception as e:
+            self.file_status.setText(f"重命名错误: {str(e)}")
+
     def _build_scripts_page(self):
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
@@ -4855,122 +5708,6 @@ class MainWindow(QtWidgets.QMainWindow):
         virt_layout.addWidget(virt_log_label)
         virt_layout.addWidget(self.virt_log)
 
-        # Gemini API Configuration Card
-        gemini_card = QtWidgets.QFrame()
-        gemini_card.setObjectName("card")
-        gemini_layout = QtWidgets.QVBoxLayout(gemini_card)
-        gemini_layout.setSpacing(12)
-
-        gemini_header_layout = QtWidgets.QHBoxLayout()
-
-        gemini_title = QtWidgets.QLabel("Gemini API 配置")
-        gemini_title.setObjectName("cardTitle")
-
-        gemini_badge = QtWidgets.QLabel("AI 反馈")
-        gemini_badge.setStyleSheet(
-            "font-size: 10px; color: #8b5cf6; background: rgba(139, 92, 246, 0.15); "
-            "padding: 3px 8px; border-radius: 4px; font-weight: 600;"
-        )
-
-        gemini_header_layout.addWidget(gemini_title)
-        gemini_header_layout.addWidget(gemini_badge)
-        gemini_header_layout.addStretch()
-
-        gemini_desc = QtWidgets.QLabel(
-            "配置 Gemini API 用于定时任务的智能反馈循环。\n"
-            "任务执行结果将发送给 Gemini，由 AI 分析并生成下一步指令，实现全自动交互。"
-        )
-        gemini_desc.setStyleSheet("color: #71717a; font-size: 12px; line-height: 1.5;")
-        gemini_desc.setWordWrap(True)
-
-        # Gemini enabled switch
-        gemini_enable_layout = QtWidgets.QHBoxLayout()
-        gemini_enable_label = QtWidgets.QLabel("启用 Gemini 反馈")
-        self.gemini_enabled_cb = QtWidgets.QCheckBox()
-        self.gemini_enabled_cb.setChecked(self.scheduled_tasks_manager.gemini_config.enabled)
-        self.gemini_enabled_cb.clicked.connect(self._on_gemini_enabled_changed)
-        gemini_enable_layout.addWidget(gemini_enable_label)
-        gemini_enable_layout.addStretch()
-        gemini_enable_layout.addWidget(self.gemini_enabled_cb)
-
-        # Gemini form
-        gemini_form = QtWidgets.QFormLayout()
-        gemini_form.setSpacing(10)
-        gemini_form.setLabelAlignment(QtCore.Qt.AlignLeft)
-        gemini_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
-
-        self.gemini_base_url = QtWidgets.QLineEdit()
-        self.gemini_base_url.setPlaceholderText("http://127.0.0.1:8045/v1")
-        self.gemini_base_url.setText(self.scheduled_tasks_manager.gemini_config.base_url)
-
-        self.gemini_api_key = QtWidgets.QLineEdit()
-        self.gemini_api_key.setPlaceholderText("sk-xxxxxxxx")
-        self.gemini_api_key.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.gemini_api_key.setText(self.scheduled_tasks_manager.gemini_config.api_key)
-
-        self.gemini_model_name = QtWidgets.QLineEdit()
-        self.gemini_model_name.setPlaceholderText("gemini-2.0-flash")
-        self.gemini_model_name.setText(self.scheduled_tasks_manager.gemini_config.model_name)
-
-        self.gemini_max_rounds = NoWheelSpinBox()
-        self.gemini_max_rounds.setRange(1, 50)
-        self.gemini_max_rounds.setValue(self.scheduled_tasks_manager.gemini_config.max_rounds)
-        self.gemini_max_rounds.setToolTip("单次任务最大交互轮数，防止无限循环")
-
-        self.gemini_system_prompt = QtWidgets.QTextEdit()
-        self.gemini_system_prompt.setPlaceholderText("系统提示词...")
-        self.gemini_system_prompt.setText(self.scheduled_tasks_manager.gemini_config.system_prompt)
-        self.gemini_system_prompt.setMaximumHeight(80)
-
-        # Add temperature and max_tokens fields
-        self.gemini_temperature = NoWheelDoubleSpinBox()
-        self.gemini_temperature.setRange(0.0, 2.0)
-        self.gemini_temperature.setSingleStep(0.1)
-        self.gemini_temperature.setValue(getattr(self.scheduled_tasks_manager.gemini_config, 'temperature', 0.7))
-        self.gemini_temperature.setToolTip("控制生成文本的随机性，0.0最确定，2.0最随机")
-
-        self.gemini_max_tokens = NoWheelSpinBox()
-        self.gemini_max_tokens.setRange(1, 8000)
-        self.gemini_max_tokens.setValue(getattr(self.scheduled_tasks_manager.gemini_config, 'max_tokens', 4000))
-        self.gemini_max_tokens.setToolTip("生成文本的最大令牌数")
-
-        gemini_form.addRow("API 地址", self.gemini_base_url)
-        gemini_form.addRow("API Key", self.gemini_api_key)
-        gemini_form.addRow("模型名称", self.gemini_model_name)
-        gemini_form.addRow("温度参数", self.gemini_temperature)
-        gemini_form.addRow("最大令牌数", self.gemini_max_tokens)
-        gemini_form.addRow("最大轮数", self.gemini_max_rounds)
-        gemini_form.addRow("系统提示词", self.gemini_system_prompt)
-
-        # Gemini buttons
-        gemini_btn_layout = QtWidgets.QHBoxLayout()
-        gemini_btn_layout.setSpacing(10)
-
-        self.gemini_save_btn = QtWidgets.QPushButton("保存配置")
-        self.gemini_save_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        self.gemini_save_btn.clicked.connect(self._save_gemini_config)
-
-        self.gemini_test_btn = QtWidgets.QPushButton("测试连接")
-        self.gemini_test_btn.setObjectName("secondary")
-        self.gemini_test_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        self.gemini_test_btn.clicked.connect(self._test_gemini_connection)
-
-        gemini_btn_layout.addWidget(self.gemini_save_btn)
-        gemini_btn_layout.addWidget(self.gemini_test_btn)
-        gemini_btn_layout.addStretch()
-
-        # Gemini test result
-        self.gemini_test_result = QtWidgets.QLabel("")
-        self.gemini_test_result.setStyleSheet("font-size: 12px; color: #71717a;")
-        self.gemini_test_result.setWordWrap(True)
-
-        gemini_layout.addLayout(gemini_header_layout)
-        gemini_layout.addWidget(gemini_desc)
-        gemini_layout.addLayout(gemini_enable_layout)
-        gemini_layout.addLayout(gemini_form)
-        gemini_layout.addLayout(gemini_btn_layout)
-        gemini_layout.addWidget(self.gemini_test_result)
-
         # About Section
         about_card = QtWidgets.QFrame()
         about_card.setObjectName("card")
@@ -4982,7 +5719,7 @@ class MainWindow(QtWidgets.QMainWindow):
         about_text = QtWidgets.QLabel(
             "鱼塘管理器\n"
             "AI驱动的手机自动化工具\n\n"
-            "支持安卓(ADB)、鸿蒙(HDC)和iOS(WDA)"
+            "仅支持安卓(ADB)"
         )
         about_text.setStyleSheet("color: #71717a; line-height: 1.6;")
 
@@ -4992,7 +5729,6 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(header_widget)
         layout.addWidget(settings_card)
         layout.addWidget(virt_card)
-        layout.addWidget(gemini_card)
         layout.addWidget(about_card)
         layout.addStretch()
 
@@ -5002,64 +5738,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _apply_default_device(self, value):
         self.device_type_combo.setCurrentText(value)
-
-    def _on_gemini_enabled_changed(self, checked):
-        """Handle Gemini enabled checkbox change."""
-        # Just update the UI state, actual save happens when user clicks save button
-        pass
-
-    def _save_gemini_config(self):
-        """Save Gemini configuration."""
-        from gui_app.scheduler import GeminiConfig
-
-        config = GeminiConfig(
-            enabled=self.gemini_enabled_cb.isChecked(),
-            base_url=self.gemini_base_url.text().strip() or "http://127.0.0.1:8045/v1",
-            api_key=self.gemini_api_key.text().strip(),
-            model_name=self.gemini_model_name.text().strip() or "gemini-3-pro-high",
-            system_prompt=self.gemini_system_prompt.toPlainText().strip(),
-            max_rounds=self.gemini_max_rounds.value(),
-            temperature=float(self.gemini_temperature.value()) if hasattr(self, 'gemini_temperature') else 0.7,
-            max_tokens=int(self.gemini_max_tokens.value()) if hasattr(self, 'gemini_max_tokens') else 4000
-        )
-
-        self.scheduled_tasks_manager.update_gemini_config(config)
-
-        self.gemini_test_result.setText("配置已保存")
-        self.gemini_test_result.setStyleSheet(
-            "font-size: 12px; color: #10b981; background: rgba(16, 185, 129, 0.15); "
-            "padding: 8px 12px; border-radius: 6px;"
-        )
-
-    def _test_gemini_connection(self):
-        """Test Gemini API connection."""
-        # First save the current config
-        self._save_gemini_config()
-
-        self.gemini_test_result.setText("正在测试连接...")
-        self.gemini_test_result.setStyleSheet(
-            "font-size: 12px; color: #a1a1aa; background: rgba(39, 39, 42, 0.6); "
-            "padding: 8px 12px; border-radius: 6px;"
-        )
-        QtWidgets.QApplication.processEvents()
-
-        # Test the connection
-        response = self.scheduled_tasks_manager.call_gemini_api([
-            {"role": "user", "content": "Hello, please respond with 'Connection successful'."}
-        ])
-
-        if response:
-            self.gemini_test_result.setText(f"连接成功: {response[:100]}...")
-            self.gemini_test_result.setStyleSheet(
-                "font-size: 12px; color: #10b981; background: rgba(16, 185, 129, 0.15); "
-                "padding: 8px 12px; border-radius: 6px;"
-            )
-        else:
-            self.gemini_test_result.setText("连接失败: 请检查 API 地址和密钥是否正确")
-            self.gemini_test_result.setStyleSheet(
-                "font-size: 12px; color: #ef4444; background: rgba(239, 68, 68, 0.15); "
-                "padding: 8px 12px; border-radius: 6px;"
-            )
 
     def _detect_virtualization(self):
         """检测当前虚拟化环境状态"""
@@ -5479,6 +6157,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._update_device_status(f"发现 {len(devices)} 个设备", "success")
 
             self._refresh_dashboard()
+            # 同步更新 PIN 配置的设备下拉框
+            self._refresh_pin_device_combo()
         except Exception as e:
             self._update_device_status(f"刷新失败: {str(e)}", "error")
         finally:

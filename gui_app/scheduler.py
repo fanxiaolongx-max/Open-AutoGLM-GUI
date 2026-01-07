@@ -33,29 +33,6 @@ class WeekDay(Enum):
 
 
 @dataclass
-class GeminiConfig:
-    """Configuration for Gemini API."""
-    enabled: bool = False
-    base_url: str = "http://127.0.0.1:8045/v1"
-    api_key: str = "sk-985786ae787d43e6b8d42688f39ed83a"
-    model_name: str = "gemini-3-pro-high"
-    system_prompt: str = "你是一个智能手机自动化助手。根据用户提供的任务执行结果，分析并生成下一步的任务指令。如果任务已完成，请回复'任务完成'。\n\n重要：你必须严格按照以下格式返回动作指令，不要添加任何解释或说明：\n\n动作格式（必须完全匹配）：\n- 点击：do(action=\"Tap\", element=[x, y])\n- 输入：do(action=\"Type\", text=\"具体内容\")\n- 等待：do(action=\"Wait\", duration=\"3秒\")\n- 滑动：do(action=\"Swipe\", start=[x1, y1], end=[x2, y2])\n- 返回：do(action=\"Back\")\n- 主页：do(action=\"Home\")\n- 完成：finish(message=\"任务完成\")\n\n示例：\n用户：点击微信图标\n你：do(action=\"Tap\", element=[844, 915])\n\n用户：输入密码123\n你：do(action=\"Type\", text=\"123\")\n\n用户：等待3秒\n你：do(action=\"Wait\", duration=\"3秒\")\n\n不要包含任何其他文字、解释或HTML标签！"
-    max_rounds: int = 10  # 最大交互轮数，防止无限循环
-    temperature: float = 0.7
-    max_tokens: int = 4000
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "GeminiConfig":
-        # 过滤掉不存在的字段
-        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
-        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
-        return cls(**filtered_data)
-
-
-@dataclass
 class ScheduledTask:
     """Represents a scheduled task."""
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
@@ -87,9 +64,8 @@ class ScheduledTask:
     run_count: int = 0
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
-    # Gemini feedback loop settings
-    use_gemini_feedback: bool = False  # 是否启用 Gemini 反馈循环
-    gemini_max_rounds: int = 5  # 单次任务最大交互轮数
+    # 执行设备列表
+    devices: list = field(default_factory=list)  # 设备 ID 列表，支持多选
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -182,21 +158,14 @@ class ScheduledTasksManager(QtCore.QObject):
     """Manager for scheduled tasks with persistent storage."""
 
     task_triggered = QtCore.Signal(str, str)  # task_id, task_content
-    task_triggered_with_gemini = QtCore.Signal(str, str, bool, int)  # task_id, task_content, use_gemini, max_rounds
     tasks_changed = QtCore.Signal()
-    gemini_config_changed = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.tasks: dict[str, ScheduledTask] = {}
         self.running_tasks: set[str] = set()  # Track running task IDs
         self.config_file = Path.home() / ".autoglm" / "scheduled_tasks.json"
-        self.gemini_config_file = Path.home() / ".autoglm" / "gemini_config.json"
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Gemini configuration
-        self.gemini_config = GeminiConfig()
-        self._load_gemini_config()
 
         # Timer for checking scheduled tasks
         self.check_timer = QtCore.QTimer(self)
@@ -213,73 +182,6 @@ class ScheduledTasksManager(QtCore.QObject):
     def stop(self):
         """Stop the scheduler."""
         self.check_timer.stop()
-
-    def _load_gemini_config(self):
-        """Load Gemini configuration from file."""
-        if self.gemini_config_file.exists():
-            try:
-                data = json.loads(self.gemini_config_file.read_text(encoding="utf-8"))
-                self.gemini_config = GeminiConfig.from_dict(data)
-            except Exception:
-                self.gemini_config = GeminiConfig()
-
-    def _save_gemini_config(self):
-        """Save Gemini configuration to file."""
-        self.gemini_config_file.write_text(
-            json.dumps(self.gemini_config.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
-
-    def get_gemini_config(self) -> GeminiConfig:
-        """Get current Gemini configuration."""
-        return self.gemini_config
-
-    def update_gemini_config(self, config: GeminiConfig):
-        """Update Gemini configuration."""
-        self.gemini_config = config
-        self._save_gemini_config()
-        self.gemini_config_changed.emit()
-
-    def call_gemini_api(self, messages: list[dict]) -> str | None:
-        """Call Gemini API and return the response content.
-
-        Args:
-            messages: List of message dicts with 'role' and 'content' keys
-
-        Returns:
-            Response content string, or None if failed
-        """
-        if not self.gemini_config.enabled or not self.gemini_config.api_key:
-            return None
-
-        try:
-            from openai import OpenAI
-
-            client = OpenAI(
-                base_url=self.gemini_config.base_url,
-                api_key=self.gemini_config.api_key
-            )
-
-            # Add system prompt if configured
-            full_messages = []
-            if self.gemini_config.system_prompt:
-                full_messages.append({
-                    "role": "system",
-                    "content": self.gemini_config.system_prompt
-                })
-            full_messages.extend(messages)
-
-            response = client.chat.completions.create(
-                model=self.gemini_config.model_name,
-                messages=full_messages,
-                temperature=getattr(self.gemini_config, 'temperature', 0.7),
-                max_tokens=getattr(self.gemini_config, 'max_tokens', 4000)
-            )
-
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Gemini API error: {e}")
-            return None
 
     def _load_tasks(self):
         """Load tasks from config file."""
@@ -322,13 +224,7 @@ class ScheduledTasksManager(QtCore.QObject):
 
                 self._save_tasks()
 
-                # Emit appropriate signal based on Gemini feedback setting
-                if task.use_gemini_feedback and self.gemini_config.enabled:
-                    self.task_triggered_with_gemini.emit(
-                        task.id, task.task_content, True, task.gemini_max_rounds
-                    )
-                else:
-                    self.task_triggered.emit(task.id, task.task_content)
+                self.task_triggered.emit(task.id, task.task_content)
 
     def add_task(self, task: ScheduledTask) -> str:
         """Add a new scheduled task."""
@@ -400,10 +296,4 @@ class ScheduledTasksManager(QtCore.QObject):
             task.update_next_run()
             self._save_tasks()
 
-            # Emit appropriate signal based on Gemini feedback setting
-            if task.use_gemini_feedback and self.gemini_config.enabled:
-                self.task_triggered_with_gemini.emit(
-                    task.id, task.task_content, True, task.gemini_max_rounds
-                )
-            else:
-                self.task_triggered.emit(task.id, task.task_content)
+            self.task_triggered.emit(task.id, task.task_content)

@@ -24,6 +24,14 @@ from phone_agent.adb.input import (
     type_text,
 )
 from phone_agent.adb.screenshot import get_screenshot
+from phone_agent.adb.unlock import (
+    ensure_device_unlocked,
+    is_device_locked,
+    lock_screen,
+    set_pin_request_callback,
+    unlock_device,
+    wake_screen,
+)
 
 __all__ = [
     # Screenshot
@@ -48,4 +56,11 @@ __all__ = [
     "ConnectionType",
     "quick_connect",
     "list_devices",
+    # Unlock
+    "ensure_device_unlocked",
+    "is_device_locked",
+    "lock_screen",
+    "set_pin_request_callback",
+    "unlock_device",
+    "wake_screen",
 ]
