@@ -65,6 +65,12 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
         if not os.path.exists(temp_path):
             return _create_fallback_screenshot(is_sensitive=False)
 
+        # 检查文件大小，空文件或过小的文件表示截图失败
+        file_size = os.path.getsize(temp_path)
+        if file_size < 1000:  # 小于1KB的文件通常是无效的
+            os.remove(temp_path)
+            return _create_fallback_screenshot(is_sensitive=True)
+
         # Read and encode image
         img = Image.open(temp_path)
         width, height = img.size
@@ -81,7 +87,16 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
         )
 
     except Exception as e:
-        print(f"Screenshot error: {e}")
+        # 静默处理常见的截图失败，避免刷屏
+        error_str = str(e)
+        if "cannot identify" not in error_str and "truncated" not in error_str:
+            print(f"Screenshot error: {e}")
+        # 清理临时文件
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
         return _create_fallback_screenshot(is_sensitive=False)
 
 

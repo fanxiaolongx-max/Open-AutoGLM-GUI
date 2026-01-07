@@ -95,6 +95,35 @@ def ensure_adb_keyboard_installed(device_id):
         return False, False
 
 
+class HoverExpandCard(QtWidgets.QFrame):
+    """鼠标悬停时自动展开的卡片控件"""
+    
+    def __init__(self, collapsed_stretch=2, expanded_stretch=4, parent=None):
+        super().__init__(parent)
+        self.collapsed_stretch = collapsed_stretch
+        self.expanded_stretch = expanded_stretch
+        self.setObjectName("card")
+        self._animation = None
+        
+    def enterEvent(self, event):
+        """鼠标进入时展开"""
+        super().enterEvent(event)
+        self._animate_stretch(self.expanded_stretch)
+        
+    def leaveEvent(self, event):
+        """鼠标离开时收缩"""
+        super().leaveEvent(event)
+        self._animate_stretch(self.collapsed_stretch)
+        
+    def _animate_stretch(self, target_stretch):
+        """动画改变 stretch 因子"""
+        parent_layout = self.parentWidget().layout() if self.parentWidget() else None
+        if parent_layout and isinstance(parent_layout, QtWidgets.QBoxLayout):
+            index = parent_layout.indexOf(self)
+            if index >= 0:
+                parent_layout.setStretch(index, target_stretch)
+
+
 class StreamEmitter:
     def __init__(self, signal):
         self._signal = signal
@@ -1221,7 +1250,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ═══════════════════════════════════════════════════════════════════ */
 
             * {{
-                font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', 'SF Pro Display', 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+                font-family: 'Helvetica Neue', 'PingFang SC';
                 font-size: {base_font}px;
                 outline: none;
             }}
@@ -1404,6 +1433,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 padding: 8px 12px;
                 color: #fafafa;
                 min-height: 18px;
+                min-width: 200px;
                 selection-background-color: rgba(99, 102, 241, 0.5);
             }}
 
@@ -1523,7 +1553,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-radius: 10px;
                 padding: 10px;
                 color: #e4e4e7;
-                font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', sans-serif;
+                font-family: 'Menlo', 'Monaco';
                 font-size: {base_font}px;
                 line-height: 1.5;
                 selection-background-color: rgba(99, 102, 241, 0.4);
@@ -1992,7 +2022,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Basic settings (always visible)
         basic_form = QtWidgets.QFormLayout()
         basic_form.setSpacing(12)
-        basic_form.setLabelAlignment(QtCore.Qt.AlignRight)
+        basic_form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        basic_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
         self.device_type_combo = NoWheelComboBox()
         self.device_type_combo.addItems(["adb"])
@@ -2024,7 +2055,8 @@ class MainWindow(QtWidgets.QMainWindow):
         
         advanced_form = QtWidgets.QFormLayout()
         advanced_form.setSpacing(12)
-        advanced_form.setLabelAlignment(QtCore.Qt.AlignRight)
+        advanced_form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        advanced_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
         self.device_id_input = QtWidgets.QLineEdit()
         self.device_id_input.setPlaceholderText("自动检测或指定设备ID")
@@ -2295,7 +2327,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Form
         form = QtWidgets.QFormLayout()
         form.setSpacing(12)
-        form.setLabelAlignment(QtCore.Qt.AlignRight)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
         self.service_name_input = QtWidgets.QLineEdit()
         self.service_name_input.setPlaceholderText("服务显示名称")
@@ -2678,9 +2711,8 @@ class MainWindow(QtWidgets.QMainWindow):
         content_layout = QtWidgets.QHBoxLayout()
         content_layout.setSpacing(12)
 
-        # Left Panel - Task Input & Device Selection
-        left_card = QtWidgets.QFrame()
-        left_card.setObjectName("card")
+        # Left Panel - Task Input & Device Selection (悬停展开)
+        left_card = HoverExpandCard(collapsed_stretch=2, expanded_stretch=4)
         left_layout = QtWidgets.QVBoxLayout(left_card)
         left_layout.setContentsMargins(16, 12, 16, 12)
         left_layout.setSpacing(10)
@@ -2776,9 +2808,8 @@ class MainWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(refresh_devices_btn)
         left_layout.addLayout(actions)
 
-        # Middle Panel - Multi-device Status
-        middle_card = QtWidgets.QFrame()
-        middle_card.setObjectName("card")
+        # Middle Panel - Multi-device Status (悬停展开)
+        middle_card = HoverExpandCard(collapsed_stretch=3, expanded_stretch=5)
         middle_layout = QtWidgets.QVBoxLayout(middle_card)
         middle_layout.setContentsMargins(16, 12, 16, 12)
         middle_layout.setSpacing(10)
@@ -2823,6 +2854,7 @@ class MainWindow(QtWidgets.QMainWindow):
         preview_header.setObjectName("cardTitle")
 
         self.preview_status = QtWidgets.QLabel("初始化中...")
+        self.preview_status.setFixedWidth(140)  # 固定宽度防止布局变化
         self.preview_status.setStyleSheet(
             "font-size: 10px; color: #71717a; background: rgba(39, 39, 42, 0.6); "
             "padding: 3px 8px; border-radius: 4px;"
@@ -2844,11 +2876,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.preview_prev_btn.clicked.connect(self._preview_prev_device)
         self.preview_prev_btn.setEnabled(False)
         
-        # Device selector
+        # Device selector - 固定宽度防止布局变化
         self.preview_device_combo = QtWidgets.QComboBox()
         self.preview_device_combo.setObjectName("deviceSelector")
         self.preview_device_combo.setMinimumHeight(30)
-        self.preview_device_combo.setMinimumWidth(120)
+        self.preview_device_combo.setFixedWidth(150)  # 固定宽度
+        self.preview_device_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.preview_device_combo.setToolTip("选择要预览的设备")
         self.preview_device_combo.setStyleSheet("""
             QComboBox {
@@ -2885,7 +2918,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.preview_next_btn.setEnabled(False)
         
         # Multi-device toggle
-        self.preview_multi_btn = QtWidgets.QPushButton("多设备轮播")
+        self.preview_multi_btn = QtWidgets.QPushButton("设备轮播")
         self.preview_multi_btn.setObjectName("secondary")
         self.preview_multi_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self.preview_multi_btn.setMinimumWidth(80)
@@ -2898,9 +2931,14 @@ class MainWindow(QtWidgets.QMainWindow):
         preview_nav_layout.addWidget(self.preview_next_btn)
         preview_nav_layout.addWidget(self.preview_multi_btn)
 
-        # Device Preview Frame
+        # Device Preview Frame - 使用固定宽度容器保持稳定
+        preview_container = QtWidgets.QWidget()
+        preview_container_layout = QtWidgets.QVBoxLayout(preview_container)
+        preview_container_layout.setContentsMargins(0, 0, 0, 0)
+        preview_container_layout.setAlignment(QtCore.Qt.AlignCenter)
+        
         self.preview_label = QtWidgets.QLabel()
-        self.preview_label.setMinimumSize(180, 280)
+        self.preview_label.setFixedSize(220, 390)  # 固定大小，9:16 手机屏幕比例
         self.preview_label.setAlignment(QtCore.Qt.AlignCenter)
         self.preview_label.setObjectName("preview")
         self.preview_label.setStyleSheet(
@@ -2913,6 +2951,8 @@ class MainWindow(QtWidgets.QMainWindow):
             font-size: 12px;
         """)
         self.preview_label.setText("📱\n\n预览区域\n\n选择设备后开始预览")
+        
+        preview_container_layout.addWidget(self.preview_label)
 
         # Preview Controls
         preview_controls = QtWidgets.QHBoxLayout()
@@ -2936,7 +2976,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         right_layout.addLayout(preview_header_layout)
         right_layout.addLayout(preview_nav_layout)
-        right_layout.addWidget(self.preview_label, 2)
+        right_layout.addWidget(preview_container, 2)
         right_layout.addLayout(preview_controls)
 
         # Timeline Section
@@ -3320,7 +3360,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form = QtWidgets.QFormLayout()
         form.setSpacing(12)
-        form.setLabelAlignment(QtCore.Qt.AlignRight)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
         self.sched_task_name = QtWidgets.QLineEdit()
         self.sched_task_name.setPlaceholderText("任务名称")
@@ -4728,7 +4769,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form = QtWidgets.QFormLayout()
         form.setSpacing(12)
-        form.setLabelAlignment(QtCore.Qt.AlignRight)
+        form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
         self.default_device_type = NoWheelComboBox()
         self.default_device_type.addItems(["adb", "hdc", "ios"])
@@ -4854,7 +4896,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Gemini form
         gemini_form = QtWidgets.QFormLayout()
         gemini_form.setSpacing(10)
-        gemini_form.setLabelAlignment(QtCore.Qt.AlignRight)
+        gemini_form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        gemini_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
         self.gemini_base_url = QtWidgets.QLineEdit()
         self.gemini_base_url.setPlaceholderText("http://127.0.0.1:8045/v1")
@@ -5407,6 +5450,19 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 set_device_type(device_type)
                 factory = get_device_factory()
+                
+                # 检查工具是否已安装
+                tool_name = "adb" if device_type == DeviceType.ADB else "hdc"
+                if not self._is_tool_installed(tool_name):
+                    install_hint = self._get_tool_install_hint(tool_name)
+                    self.device_list.addItem(f"⚠️ {tool_name} 未安装")
+                    self.device_list.addItem(install_hint)
+                    self._update_device_status(f"{tool_name} 未安装，请先安装", "warning")
+                    self._refresh_dashboard()
+                    self.refresh_devices_btn.setEnabled(True)
+                    self.refresh_devices_btn.setText("🔍 自动检测")
+                    return
+                
                 devices = factory.list_devices()
                 if not devices:
                     self.device_list.addItem("没有设备连接。")
@@ -5427,7 +5483,29 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_device_status(f"刷新失败: {str(e)}", "error")
         finally:
             self.refresh_devices_btn.setEnabled(True)
-            self.refresh_devices_btn.setText("刷新")
+            self.refresh_devices_btn.setText("🔍 自动检测")
+
+    def _is_tool_installed(self, tool_name: str) -> bool:
+        """检查工具是否已安装"""
+        import shutil
+        return shutil.which(tool_name) is not None
+    
+    def _get_tool_install_hint(self, tool_name: str) -> str:
+        """获取工具安装提示"""
+        import platform
+        system = platform.system()
+        
+        if tool_name == "adb":
+            if system == "Darwin":  # macOS
+                return "💡 安装方法: brew install android-platform-tools"
+            elif system == "Windows":
+                return "💡 安装方法: 下载 Android SDK Platform Tools"
+            else:  # Linux
+                return "💡 安装方法: sudo apt install adb 或 sudo pacman -S android-tools"
+        elif tool_name == "hdc":
+            return "💡 安装方法: 请安装 HarmonyOS DevEco Studio"
+        else:
+            return f"💡 请安装 {tool_name}"
 
     def _on_device_selected(self, item):
         """Handle device selection in device list."""
@@ -6064,7 +6142,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._start_multi_preview()
         else:
             # Stop multi-device preview
-            self.preview_multi_btn.setText("多设备轮播")
+            self.preview_multi_btn.setText("设备轮播")
             self.preview_device_combo.setEnabled(True)
             if len(self.preview_devices) > 1:
                 self.preview_prev_btn.setEnabled(True)
@@ -6380,7 +6458,12 @@ def run():
         attr = QtCore.Qt.ApplicationAttribute
         if hasattr(attr, "AA_InputMethodEnabled"):
             QtCore.QCoreApplication.setAttribute(attr.AA_InputMethodEnabled, True)
-    app = QtWidgets.QApplication(sys.argv)
+    
+    # 使用已存在的 QApplication 实例，如果不存在则创建新的
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication(sys.argv)
+    
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

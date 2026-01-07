@@ -342,18 +342,32 @@ def parse_action(response: str) -> dict[str, Any]:
     Raises:
         ValueError: If the response cannot be parsed.
     """
+    import re
     print(f"Parsing action: {response}")
     try:
         response = response.strip()
         
-        # Remove </answer> tags and other HTML-like tags from Gemini responses
-        if response.endswith("</answer>"):
-            response = response[:-9]  # Remove </answer> tag
-        if response.endswith("</answer>"):
-            response = response[:-9]  # Remove any remaining </answer> tag
+        # 1. 首先尝试从 <answer> 标签中提取动作
+        answer_match = re.search(r'<answer>(.*?)</answer>', response, re.DOTALL)
+        if answer_match:
+            response = answer_match.group(1).strip()
         
-        # Clean up any other common Gemini response artifacts
+        # 2. 尝试匹配 do(...) 或 finish(...) 模式
+        # 使用正则表达式匹配完整的函数调用
+        do_match = re.search(r'(do\s*\([^)]+\))', response)
+        if do_match:
+            response = do_match.group(1).strip()
+        else:
+            finish_match = re.search(r'(finish\s*\([^)]+\))', response)
+            if finish_match:
+                response = finish_match.group(1).strip()
+        
+        # 3. 清理 markdown 格式（反引号等）
+        response = response.strip('`').strip()
+        
+        # 4. 移除常见的响应杂质
         response = response.replace("</answer>", "").strip()
+        response = response.replace("<answer>", "").strip()
         
         if response.startswith('do(action="Type"') or response.startswith(
             'do(action="Type_Name"'

@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import platform
 from datetime import datetime
 from pathlib import Path
 
@@ -50,19 +51,26 @@ def setup_logging():
 
 def setup_qt_platform():
     """设置Qt平台相关的环境变量，避免Wayland警告"""
-    # 如果在Wayland环境下遇到问题，可以强制使用X11
-    # 检测是否在Wayland环境
+    # macOS 特定设置
+    if platform.system() == 'Darwin':
+        # 启用高 DPI 支持
+        os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '1'
+        os.environ['QT_SCALE_FACTOR'] = '1.0'
+        os.environ['QT_QUICK_CONTROLS_STYLE'] = 'Basic'
+        os.environ['QT_FONT_DPI'] = '72'
+        # 使用原生菜单栏
+        os.environ['QT_MAC_WANTS_LAYER'] = '1'
+        return
+
+    # Linux/其他系统设置
     wayland_display = os.environ.get("WAYLAND_DISPLAY")
     xdg_session = os.environ.get("XDG_SESSION_TYPE", "")
 
     # 如果没有明确设置QT_QPA_PLATFORM，根据环境自动选择
     if not os.environ.get("QT_QPA_PLATFORM"):
         if wayland_display and xdg_session == "wayland":
-            # 尝试使用wayland，如果失败会自动回退
-            # 设置回退选项
             os.environ.setdefault("QT_QPA_PLATFORM", "wayland;xcb")
         else:
-            # 非Wayland环境，使用xcb
             os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
     # 禁用Wayland的一些警告输出
@@ -122,11 +130,23 @@ def main():
     logger.info(f"日志文件: {log_file}")
     logger.info(f"Python版本: {sys.version}")
     logger.info(f"工作目录: {os.getcwd()}")
+    logger.info(f"操作系统: {platform.system()} {platform.release()}")
     logger.info("=" * 60)
 
     # 设置Qt平台（必须在导入Qt之前）
     setup_qt_platform()
-
+    
+    # 创建应用实例
+    from PySide6 import QtWidgets
+    app = QtWidgets.QApplication(sys.argv)
+    
+    # 加载字体
+    try:
+        from load_fonts import load_fonts
+        load_fonts()
+    except Exception as e:
+        logger.warning(f"加载字体时出错: {e}")
+        
     # 设置输入法
     setup_input_method()
 

@@ -168,8 +168,14 @@ class ADBConnection:
 
             return devices
 
+        except FileNotFoundError:
+            # adb 未安装或不在 PATH 中
+            pass  # 静默处理，GUI 层会检测并提示用户
+            return []
         except Exception as e:
-            print(f"Error listing devices: {e}")
+            # 其他错误才打印
+            if "No such file or directory" not in str(e):
+                print(f"Error listing devices: {e}")
             return []
 
     def get_device_info(self, device_id: str | None = None) -> DeviceInfo | None:
