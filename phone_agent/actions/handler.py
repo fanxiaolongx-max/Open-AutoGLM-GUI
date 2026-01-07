@@ -345,6 +345,16 @@ def parse_action(response: str) -> dict[str, Any]:
     print(f"Parsing action: {response}")
     try:
         response = response.strip()
+        
+        # Remove </answer> tags and other HTML-like tags from Gemini responses
+        if response.endswith("</answer>"):
+            response = response[:-9]  # Remove </answer> tag
+        if response.endswith("</answer>"):
+            response = response[:-9]  # Remove any remaining </answer> tag
+        
+        # Clean up any other common Gemini response artifacts
+        response = response.replace("</answer>", "").strip()
+        
         if response.startswith('do(action="Type"') or response.startswith(
             'do(action="Type_Name"'
         ):
