@@ -281,25 +281,32 @@ class TaskWorker(QtCore.QThread):
 
                 self.timeline.emit("Task started")
                 step_index = 0
-                result = agent.step(self.task)
-                step_index += 1
-                self.timeline.emit(self._format_step(step_index, result))
-                if self.isInterruptionRequested():
-                    self.finished.emit("Stopped by user.")
-                    return
-
-                while not result.finished and step_index < self.max_steps:
-                    result = agent.step()
+                try:
+                    result = agent.step(self.task)
                     step_index += 1
                     self.timeline.emit(self._format_step(step_index, result))
                     if self.isInterruptionRequested():
+                        agent.cleanup()  # Clean up keyboard on interruption
                         self.finished.emit("Stopped by user.")
                         return
 
-                if result.finished:
-                    self.finished.emit(result.message or "Task completed")
-                else:
-                    self.finished.emit("Max steps reached")
+                    while not result.finished and step_index < self.max_steps:
+                        result = agent.step()
+                        step_index += 1
+                        self.timeline.emit(self._format_step(step_index, result))
+                        if self.isInterruptionRequested():
+                            agent.cleanup()  # Clean up keyboard on interruption
+                            self.finished.emit("Stopped by user.")
+                            return
+
+                    if result.finished:
+                        self.finished.emit(result.message or "Task completed")
+                    else:
+                        agent.cleanup()  # Clean up keyboard on max steps
+                        self.finished.emit("Max steps reached")
+                except Exception as exc:
+                    agent.cleanup()  # Clean up keyboard on error
+                    raise exc
             except Exception as exc:
                 self.failed.emit(str(exc))
 
@@ -826,30 +833,15 @@ class MultiDeviceTaskWorker(QtCore.QThread):
             max_steps = self.config.get("max_steps", 50)
 
             # First step with task
-            result = agent.step(self.task)
-            step_count += 1
+            try:
+                result = agent.step(self.task)
+                step_count += 1
 
-            if self._stop_requested:
-                self.log.emit(self.device_id, "任务已停止\n")
-                self.finished.emit(self.device_id, False, "用户停止")
-                return
-
-            action_desc = self._get_action_desc(result)
-            self.step.emit(self.device_id, step_count, action_desc)
-            self.log.emit(self.device_id, f"步骤 {step_count}: {action_desc}\n")
-
-            if result.thinking:
-                self.log.emit(self.device_id, f"  思考: {result.thinking[:100]}...\n")
-
-            # Continue until finished or max steps
-            while not result.finished and step_count < max_steps:
                 if self._stop_requested:
+                    agent.cleanup()  # Clean up keyboard on stop
                     self.log.emit(self.device_id, "任务已停止\n")
                     self.finished.emit(self.device_id, False, "用户停止")
                     return
-
-                result = agent.step()
-                step_count += 1
 
                 action_desc = self._get_action_desc(result)
                 self.step.emit(self.device_id, step_count, action_desc)
@@ -858,10 +850,32 @@ class MultiDeviceTaskWorker(QtCore.QThread):
                 if result.thinking:
                     self.log.emit(self.device_id, f"  思考: {result.thinking[:100]}...\n")
 
-            if result.finished:
-                self.finished.emit(self.device_id, True, result.message or f"完成，共 {step_count} 步")
-            else:
-                self.finished.emit(self.device_id, True, f"达到最大步数 {max_steps}")
+                # Continue until finished or max steps
+                while not result.finished and step_count < max_steps:
+                    if self._stop_requested:
+                        agent.cleanup()  # Clean up keyboard on stop
+                        self.log.emit(self.device_id, "任务已停止\n")
+                        self.finished.emit(self.device_id, False, "用户停止")
+                        return
+
+                    result = agent.step()
+                    step_count += 1
+
+                    action_desc = self._get_action_desc(result)
+                    self.step.emit(self.device_id, step_count, action_desc)
+                    self.log.emit(self.device_id, f"步骤 {step_count}: {action_desc}\n")
+
+                    if result.thinking:
+                        self.log.emit(self.device_id, f"  思考: {result.thinking[:100]}...\n")
+
+                if result.finished:
+                    self.finished.emit(self.device_id, True, result.message or f"完成，共 {step_count} 步")
+                else:
+                    agent.cleanup()  # Clean up keyboard on max steps
+                    self.finished.emit(self.device_id, True, f"达到最大步数 {max_steps}")
+            except Exception as exc:
+                agent.cleanup()  # Clean up keyboard on error
+                raise exc
 
         except Exception as exc:
             self.log.emit(self.device_id, f"错误: {str(exc)}\n")
@@ -1244,6 +1258,16 @@ class MainWindow(QtWidgets.QMainWindow):
         card_title_font = int(14 * self.font_scale)
         metric_font = int(24 * self.font_scale)
         small_font = int(11 * self.font_scale)
+
+        # 检查是否为亮色主题
+        is_light = getattr(self, 'current_theme', 'dark') == 'light'
+
+        if is_light:
+            self._apply_light_style(base_font, title_font, card_title_font, metric_font, small_font)
+        else:
+            self._apply_dark_style(base_font, title_font, card_title_font, metric_font, small_font)
+
+    def _apply_dark_style(self, base_font, title_font, card_title_font, metric_font, small_font):
 
         self.setStyleSheet(
             f"""
@@ -1714,6 +1738,475 @@ class MainWindow(QtWidgets.QMainWindow):
             """
         )
 
+    def _apply_light_style(self, base_font, title_font, card_title_font, metric_font, small_font):
+        self.setStyleSheet(
+            f"""
+            /* ═══════════════════════════════════════════════════════════════════
+               Open AutoGLM - Light Theme
+               Clean and modern light mode
+            ═══════════════════════════════════════════════════════════════════ */
+
+            * {{
+                font-family: 'Helvetica Neue', 'PingFang SC';
+                font-size: {base_font}px;
+                outline: none;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Base Container - Light Background
+            ───────────────────────────────────────────────────────────────── */
+            QWidget {{
+                background-color: #f4f4f5;
+                color: #18181b;
+            }}
+
+            QMainWindow {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #f4f4f5, stop:0.5 #fafafa, stop:1 #f4f4f5);
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Navigation Sidebar
+            ───────────────────────────────────────────────────────────────── */
+            QListWidget {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255, 255, 255, 0.95), stop:1 rgba(244, 244, 245, 0.98));
+                border: 1px solid rgba(228, 228, 231, 0.8);
+                border-radius: 12px;
+                padding: 6px 4px;
+                margin: 6px;
+            }}
+
+            QListWidget::item {{
+                color: #52525b;
+                padding: 10px 14px;
+                margin: 2px 4px;
+                border-radius: 8px;
+                border: 1px solid transparent;
+            }}
+
+            QListWidget::item:hover {{
+                background: rgba(228, 228, 231, 0.6);
+                color: #18181b;
+                border: 1px solid rgba(212, 212, 216, 0.5);
+            }}
+
+            QListWidget::item:selected {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(99, 102, 241, 0.9), stop:1 rgba(139, 92, 246, 0.9));
+                color: #ffffff;
+                font-weight: 600;
+                border: 1px solid rgba(167, 139, 250, 0.5);
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Cards & Panels
+            ───────────────────────────────────────────────────────────────── */
+            QFrame {{
+                background: transparent;
+            }}
+
+            QFrame#card {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255, 255, 255, 0.95), stop:1 rgba(250, 250, 250, 0.98));
+                border: 1px solid rgba(228, 228, 231, 0.6);
+                border-radius: 12px;
+                padding: 16px;
+            }}
+
+            QFrame#card:hover {{
+                border: 1px solid rgba(99, 102, 241, 0.4);
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Typography
+            ───────────────────────────────────────────────────────────────── */
+            QLabel {{
+                color: #3f3f46;
+                background: transparent;
+            }}
+
+            QLabel#title {{
+                font-size: {title_font}px;
+                font-weight: 700;
+                color: #18181b;
+                padding: 6px 0 12px 0;
+                letter-spacing: -0.5px;
+            }}
+
+            QLabel#cardTitle {{
+                font-size: {card_title_font}px;
+                font-weight: 600;
+                color: #27272a;
+                padding-bottom: 6px;
+                letter-spacing: -0.2px;
+            }}
+
+            QLabel#metricValue {{
+                font-size: {metric_font}px;
+                font-weight: 700;
+                color: #7c3aed;
+                letter-spacing: -1px;
+            }}
+
+            QLabel#metricLabel {{
+                font-size: {small_font}px;
+                font-weight: 500;
+                color: #71717a;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Buttons
+            ───────────────────────────────────────────────────────────────── */
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6366f1, stop:1 #8b5cf6);
+                border: none;
+                border-radius: 8px;
+                padding: 8px 16px;
+                color: #ffffff;
+                font-weight: 600;
+                font-size: {base_font}px;
+                min-height: 18px;
+            }}
+
+            QPushButton:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #818cf8, stop:1 #a78bfa);
+            }}
+
+            QPushButton:pressed {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #4f46e5, stop:1 #7c3aed);
+            }}
+
+            QPushButton:disabled {{
+                background: rgba(228, 228, 231, 0.8);
+                color: #a1a1aa;
+                border: 1px solid rgba(212, 212, 216, 0.5);
+            }}
+
+            QPushButton#secondary {{
+                background: rgba(255, 255, 255, 0.8);
+                border: 1px solid rgba(212, 212, 216, 0.8);
+                color: #52525b;
+            }}
+
+            QPushButton#secondary:hover {{
+                background: rgba(244, 244, 245, 0.9);
+                border: 1px solid rgba(161, 161, 170, 0.6);
+                color: #18181b;
+            }}
+
+            QPushButton#success {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #10b981, stop:1 #059669);
+            }}
+
+            QPushButton#success:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #34d399, stop:1 #10b981);
+            }}
+
+            QPushButton#danger {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #ef4444, stop:1 #dc2626);
+            }}
+
+            QPushButton#danger:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #f87171, stop:1 #ef4444);
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Input Fields
+            ───────────────────────────────────────────────────────────────── */
+            QLineEdit, QSpinBox, QComboBox {{
+                background: rgba(255, 255, 255, 0.9);
+                border: 1px solid rgba(212, 212, 216, 0.8);
+                border-radius: 8px;
+                padding: 8px 12px;
+                color: #18181b;
+                min-height: 18px;
+                min-width: 200px;
+                selection-background-color: rgba(99, 102, 241, 0.3);
+            }}
+
+            QLineEdit:hover, QSpinBox:hover, QComboBox:hover {{
+                border: 1px solid rgba(161, 161, 170, 0.8);
+                background: rgba(255, 255, 255, 1);
+            }}
+
+            QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
+                border: 1px solid rgba(99, 102, 241, 0.7);
+                background: rgba(255, 255, 255, 1);
+            }}
+
+            QLineEdit::placeholder {{
+                color: #a1a1aa;
+            }}
+
+            QComboBox::drop-down {{
+                border: none;
+                width: 30px;
+            }}
+
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid #71717a;
+                margin-right: 10px;
+            }}
+
+            QComboBox QAbstractItemView {{
+                background: rgba(255, 255, 255, 0.98);
+                border: 1px solid rgba(212, 212, 216, 0.8);
+                border-radius: 8px;
+                padding: 4px;
+                selection-background-color: rgba(99, 102, 241, 0.3);
+            }}
+
+            QSpinBox::up-button, QSpinBox::down-button {{
+                width: 0px;
+                height: 0px;
+                border: none;
+                background: none;
+            }}
+
+            QSpinBox::up-arrow, QSpinBox::down-arrow {{
+                width: 0px;
+                height: 0px;
+                border: none;
+                background: none;
+            }}
+
+            QTimeEdit, QDateTimeEdit {{
+                background: rgba(255, 255, 255, 0.9);
+                border: 1px solid rgba(212, 212, 216, 0.8);
+                border-radius: 8px;
+                padding: 8px 12px;
+                color: #18181b;
+                min-height: 18px;
+                selection-background-color: rgba(99, 102, 241, 0.3);
+            }}
+
+            QTimeEdit:hover, QDateTimeEdit:hover {{
+                border: 1px solid rgba(161, 161, 170, 0.8);
+                background: rgba(255, 255, 255, 1);
+            }}
+
+            QTimeEdit:focus, QDateTimeEdit:focus {{
+                border: 1px solid rgba(99, 102, 241, 0.7);
+                background: rgba(255, 255, 255, 1);
+            }}
+
+            QTimeEdit::up-button, QTimeEdit::down-button,
+            QDateTimeEdit::up-button, QDateTimeEdit::down-button {{
+                background: transparent;
+                border: none;
+                width: 20px;
+                subcontrol-origin: border;
+            }}
+
+            QTimeEdit::up-button, QDateTimeEdit::up-button {{
+                subcontrol-position: top right;
+            }}
+
+            QTimeEdit::down-button, QDateTimeEdit::down-button {{
+                subcontrol-position: bottom right;
+            }}
+
+            QTimeEdit::up-arrow, QDateTimeEdit::up-arrow {{
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-bottom: 5px solid #71717a;
+                width: 0;
+                height: 0;
+            }}
+
+            QTimeEdit::down-arrow, QDateTimeEdit::down-arrow {{
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid #71717a;
+                width: 0;
+                height: 0;
+            }}
+
+            QTimeEdit::up-arrow:hover, QDateTimeEdit::up-arrow:hover,
+            QTimeEdit::down-arrow:hover, QDateTimeEdit::down-arrow:hover {{
+                border-bottom-color: #7c3aed;
+                border-top-color: #7c3aed;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Text Areas
+            ───────────────────────────────────────────────────────────────── */
+            QPlainTextEdit, QTextEdit {{
+                background: rgba(255, 255, 255, 0.95);
+                border: 1px solid rgba(212, 212, 216, 0.6);
+                border-radius: 10px;
+                padding: 10px;
+                color: #27272a;
+                font-family: 'Menlo', 'Monaco';
+                font-size: {base_font}px;
+                line-height: 1.5;
+                selection-background-color: rgba(99, 102, 241, 0.3);
+            }}
+
+            QPlainTextEdit:focus, QTextEdit:focus {{
+                border: 1px solid rgba(99, 102, 241, 0.5);
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Splitter
+            ───────────────────────────────────────────────────────────────── */
+            QSplitter::handle {{
+                background: rgba(212, 212, 216, 0.5);
+                width: 2px;
+                margin: 0 6px;
+                border-radius: 1px;
+            }}
+
+            QSplitter::handle:hover {{
+                background: rgba(99, 102, 241, 0.6);
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Timeline List
+            ───────────────────────────────────────────────────────────────── */
+            QListWidget#timeline_list {{
+                background: rgba(255, 255, 255, 0.8);
+                border: 1px solid rgba(212, 212, 216, 0.5);
+                border-radius: 10px;
+                padding: 6px;
+            }}
+
+            QListWidget#timeline_list::item {{
+                padding: 8px 12px;
+                margin: 2px 0;
+                border-radius: 6px;
+                border: none;
+                color: #52525b;
+                font-size: {small_font}px;
+            }}
+
+            QListWidget#timeline_list::item:hover {{
+                background: rgba(228, 228, 231, 0.5);
+                color: #18181b;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Scrollbars
+            ───────────────────────────────────────────────────────────────── */
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 6px;
+                margin: 4px 2px;
+                border-radius: 3px;
+            }}
+
+            QScrollBar::handle:vertical {{
+                background: rgba(161, 161, 170, 0.5);
+                border-radius: 3px;
+                min-height: 30px;
+            }}
+
+            QScrollBar::handle:vertical:hover {{
+                background: rgba(99, 102, 241, 0.6);
+            }}
+
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0;
+            }}
+
+            QScrollBar:horizontal {{
+                background: transparent;
+                height: 6px;
+                margin: 2px 4px;
+                border-radius: 3px;
+            }}
+
+            QScrollBar::handle:horizontal {{
+                background: rgba(161, 161, 170, 0.5);
+                border-radius: 3px;
+                min-width: 30px;
+            }}
+
+            QScrollBar::handle:horizontal:hover {{
+                background: rgba(99, 102, 241, 0.6);
+            }}
+
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Message Boxes & Tooltips
+            ───────────────────────────────────────────────────────────────── */
+            QMessageBox {{
+                background: rgba(255, 255, 255, 0.98);
+            }}
+
+            QMessageBox QLabel {{
+                color: #27272a;
+            }}
+
+            QToolTip {{
+                background: rgba(255, 255, 255, 0.95);
+                border: 1px solid rgba(212, 212, 216, 0.8);
+                border-radius: 6px;
+                padding: 6px 10px;
+                color: #27272a;
+                font-size: {small_font}px;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Form Labels
+            ───────────────────────────────────────────────────────────────── */
+            QFormLayout QLabel {{
+                font-weight: 500;
+                color: #52525b;
+                padding-right: 10px;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Status Indicators
+            ───────────────────────────────────────────────────────────────── */
+            QLabel#status_ok {{
+                color: #059669;
+                font-weight: 600;
+            }}
+
+            QLabel#status_error {{
+                color: #dc2626;
+                font-weight: 600;
+            }}
+
+            QLabel#status_warning {{
+                color: #d97706;
+                font-weight: 600;
+            }}
+
+            QLabel#status_info {{
+                color: #4f46e5;
+                font-weight: 600;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Preview Area
+            ───────────────────────────────────────────────────────────────── */
+            QLabel#preview {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #e4e4e7, stop:1 #d4d4d8);
+                border: 2px solid rgba(161, 161, 170, 0.5);
+                border-radius: 16px;
+            }}
+            """
+        )
+
     def _switch_page(self, index):
         self.stack.setCurrentIndex(index)
         if index == self.task_runner_index:
@@ -1724,6 +2217,9 @@ class MainWindow(QtWidgets.QMainWindow):
         elif index == self.apk_installer_index:
             # Auto refresh devices when switching to APK installer page
             QtCore.QTimer.singleShot(500, self._refresh_apk_devices)
+        elif index == 4:  # Scheduled tasks page (定时任务)
+            # Auto refresh devices when switching to scheduled tasks page
+            QtCore.QTimer.singleShot(500, self._refresh_sched_devices)
         elif index == 1:  # Device hub page
             # Auto detect devices when switching to device hub
             QtCore.QTimer.singleShot(500, self._auto_detect_and_clean)
@@ -3534,9 +4030,9 @@ class MainWindow(QtWidgets.QMainWindow):
         list_header.addWidget(add_task_btn)
 
         self.scheduled_task_list = QtWidgets.QTableWidget()
-        self.scheduled_task_list.setColumnCount(6)
+        self.scheduled_task_list.setColumnCount(7)
         self.scheduled_task_list.setHorizontalHeaderLabels(
-            ["启用", "任务名称", "调度类型", "下次执行", "执行次数", "操作"]
+            ["启用", "任务名称", "执行设备", "调度类型", "下次执行", "执行次数", "操作"]
         )
         # 设置表格样式
         self.scheduled_task_list.setShowGrid(True)  # 显示网格线
@@ -3560,15 +4056,17 @@ class MainWindow(QtWidgets.QMainWindow):
         header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)  # 启用 - 可调整
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)  # 任务名称 - 可调整
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)  # 调度类型 - 可调整
-        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # 下次执行 - 可调整
-        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Interactive)  # 执行次数 - 可调整
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)  # 执行设备 - 可调整
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # 调度类型 - 可调整
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Interactive)  # 下次执行 - 可调整
+        header.setSectionResizeMode(5, QtWidgets.QHeaderView.Interactive)  # 执行次数 - 可调整
         # 设置默认列宽
         self.scheduled_task_list.setColumnWidth(0, 50)
-        self.scheduled_task_list.setColumnWidth(1, 150)
-        self.scheduled_task_list.setColumnWidth(2, 70)
-        self.scheduled_task_list.setColumnWidth(3, 120)
-        self.scheduled_task_list.setColumnWidth(4, 70)
+        self.scheduled_task_list.setColumnWidth(1, 120)
+        self.scheduled_task_list.setColumnWidth(2, 100)
+        self.scheduled_task_list.setColumnWidth(3, 70)
+        self.scheduled_task_list.setColumnWidth(4, 120)
+        self.scheduled_task_list.setColumnWidth(5, 70)
         self.scheduled_task_list.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectRows
         )
@@ -3727,8 +4225,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.sched_device_list = QtWidgets.QListWidget()
         self.sched_device_list.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
-        self.sched_device_list.setMinimumHeight(60)
-        self.sched_device_list.setMaximumHeight(100)
+        self.sched_device_list.setMinimumHeight(100)
+        self.sched_device_list.setMaximumHeight(150)
 
         sched_device_refresh_btn = QtWidgets.QPushButton("刷新设备")
         sched_device_refresh_btn.setObjectName("secondary")
@@ -3845,6 +4343,19 @@ class MainWindow(QtWidgets.QMainWindow):
             name_item.setData(QtCore.Qt.UserRole, task.id)
             self.scheduled_task_list.setItem(row, 1, name_item)
 
+            # Devices - 执行设备
+            task_devices = getattr(task, 'devices', []) or []
+            if task_devices:
+                if len(task_devices) == 1:
+                    device_text = task_devices[0][:12] + "..." if len(task_devices[0]) > 12 else task_devices[0]
+                else:
+                    device_text = f"{len(task_devices)} 个设备"
+            else:
+                device_text = "未指定"
+            device_item = QtWidgets.QTableWidgetItem(device_text)
+            device_item.setToolTip("\n".join(task_devices) if task_devices else "未指定执行设备")
+            self.scheduled_task_list.setItem(row, 2, device_item)
+
             # Schedule type
             type_names = {
                 "once": "单次",
@@ -3856,7 +4367,7 @@ class MainWindow(QtWidgets.QMainWindow):
             type_item = QtWidgets.QTableWidgetItem(
                 type_names.get(task.schedule_type, task.schedule_type)
             )
-            self.scheduled_task_list.setItem(row, 2, type_item)
+            self.scheduled_task_list.setItem(row, 3, type_item)
 
             # Next run with countdown
             if task.next_run and task.enabled:
@@ -3888,11 +4399,11 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 next_str = "-"
             next_item = QtWidgets.QTableWidgetItem(next_str)
-            self.scheduled_task_list.setItem(row, 3, next_item)
+            self.scheduled_task_list.setItem(row, 4, next_item)
 
             # Run count
             count_item = QtWidgets.QTableWidgetItem(str(task.run_count))
-            self.scheduled_task_list.setItem(row, 4, count_item)
+            self.scheduled_task_list.setItem(row, 5, count_item)
 
             # Actions - 使用紧凑按钮样式
             actions_widget = QtWidgets.QWidget()
@@ -3929,7 +4440,7 @@ class MainWindow(QtWidgets.QMainWindow):
             actions_layout.addWidget(run_btn)
             actions_layout.addWidget(edit_btn)
             actions_layout.addStretch()
-            self.scheduled_task_list.setCellWidget(row, 5, actions_widget)
+            self.scheduled_task_list.setCellWidget(row, 6, actions_widget)
 
     def _add_scheduled_task(self):
         """Add a new scheduled task."""
@@ -5625,11 +6136,11 @@ class MainWindow(QtWidgets.QMainWindow):
         form.setLabelAlignment(QtCore.Qt.AlignLeft)
         form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
-        self.default_device_type = NoWheelComboBox()
-        self.default_device_type.addItems(["adb", "hdc", "ios"])
-        self.default_device_type.currentTextChanged.connect(self._apply_default_device)
+        self.theme_combo = NoWheelComboBox()
+        self.theme_combo.addItems(["暗色", "亮色"])
+        self.theme_combo.currentTextChanged.connect(self._apply_theme)
 
-        form.addRow("默认设备类型", self.default_device_type)
+        form.addRow("程序主题", self.theme_combo)
 
         settings_layout.addWidget(settings_title)
         settings_layout.addLayout(form)
@@ -5736,8 +6247,11 @@ class MainWindow(QtWidgets.QMainWindow):
         page_layout.addWidget(scroll_area)
         return page
 
-    def _apply_default_device(self, value):
-        self.device_type_combo.setCurrentText(value)
+    def _apply_theme(self, value):
+        """应用主题设置"""
+        self.current_theme = "light" if value == "亮色" else "dark"
+        self.settings.setValue("theme", self.current_theme)
+        self._apply_style()
 
     def _detect_virtualization(self):
         """检测当前虚拟化环境状态"""
@@ -5982,9 +6496,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.device_type_combo.setCurrentText(
             self.settings.value("device_type", "adb")
         )
-        self.default_device_type.setCurrentText(
-            self.settings.value("device_type", "adb")
-        )
+        # Load theme setting
+        self.current_theme = self.settings.value("theme", "dark")
+        self.theme_combo.setCurrentText("亮色" if self.current_theme == "light" else "暗色")
         self.device_id_input.setText(self.settings.value("device_id", ""))
 
         # Load active service config to legacy inputs for compatibility

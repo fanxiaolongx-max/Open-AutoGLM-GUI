@@ -41,6 +41,37 @@ class ActionHandler:
         self.device_id = device_id
         self.confirmation_callback = confirmation_callback or self._default_confirmation
         self.takeover_callback = takeover_callback or self._default_takeover
+        self._original_ime: str | None = None
+        self._keyboard_set: bool = False
+
+    def setup_keyboard(self) -> None:
+        """
+        Set up ADB keyboard at task start to avoid repeated switching.
+        Call this before executing any task steps.
+        """
+        device_factory = get_device_factory()
+        try:
+            self._original_ime = device_factory.detect_and_set_adb_keyboard(self.device_id)
+            self._keyboard_set = True
+            time.sleep(TIMING_CONFIG.action.keyboard_switch_delay)
+        except Exception:
+            self._keyboard_set = False
+
+    def restore_keyboard(self) -> None:
+        """
+        Restore original keyboard after task completion.
+        Call this after all task steps are done.
+        """
+        if self._keyboard_set and self._original_ime:
+            device_factory = get_device_factory()
+            try:
+                device_factory.restore_keyboard(self._original_ime, self.device_id)
+                time.sleep(TIMING_CONFIG.action.keyboard_restore_delay)
+            except Exception:
+                pass
+            finally:
+                self._keyboard_set = False
+                self._original_ime = None
 
     def execute(
         self, action: dict[str, Any], screen_width: int, screen_height: int
@@ -154,9 +185,9 @@ class ActionHandler:
 
         device_factory = get_device_factory()
 
-        # Switch to ADB keyboard
-        original_ime = device_factory.detect_and_set_adb_keyboard(self.device_id)
-        time.sleep(TIMING_CONFIG.action.keyboard_switch_delay)
+        # Ensure ADB keyboard is set up (in case setup_keyboard wasn't called)
+        if not self._keyboard_set:
+            self.setup_keyboard()
 
         # Clear existing text and type new text
         device_factory.clear_text(self.device_id)
@@ -165,10 +196,6 @@ class ActionHandler:
         # Handle multiline text by splitting on newlines
         device_factory.type_text(text, self.device_id)
         time.sleep(TIMING_CONFIG.action.text_input_delay)
-
-        # Restore original keyboard
-        device_factory.restore_keyboard(original_ime, self.device_id)
-        time.sleep(TIMING_CONFIG.action.keyboard_restore_delay)
 
         return ActionResult(True, False)
 

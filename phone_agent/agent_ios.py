@@ -146,6 +146,11 @@ class IOSPhoneAgent:
 
         return self._execute_step(task, is_first)
 
+    def cleanup(self) -> None:
+        """Clean up resources. Call this when task is cancelled or interrupted."""
+        # iOS doesn't need keyboard cleanup, but method exists for interface consistency
+        pass
+
     def reset(self) -> None:
         """Reset the agent state for a new task."""
         self._context = []

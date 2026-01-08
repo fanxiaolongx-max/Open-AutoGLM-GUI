@@ -94,20 +94,27 @@ class PhoneAgent:
         self._context = []
         self._step_count = 0
 
-        # First step with user prompt
-        result = self._execute_step(task, is_first=True)
+        # Set up ADB keyboard once at task start
+        self.action_handler.setup_keyboard()
 
-        if result.finished:
-            return result.message or "Task completed"
-
-        # Continue until finished or max steps reached
-        while self._step_count < self.agent_config.max_steps:
-            result = self._execute_step(is_first=False)
+        try:
+            # First step with user prompt
+            result = self._execute_step(task, is_first=True)
 
             if result.finished:
                 return result.message or "Task completed"
 
-        return "Max steps reached"
+            # Continue until finished or max steps reached
+            while self._step_count < self.agent_config.max_steps:
+                result = self._execute_step(is_first=False)
+
+                if result.finished:
+                    return result.message or "Task completed"
+
+            return "Max steps reached"
+        finally:
+            # Restore original keyboard when task ends
+            self.action_handler.restore_keyboard()
 
     def step(self, task: str | None = None) -> StepResult:
         """
@@ -126,7 +133,21 @@ class PhoneAgent:
         if is_first and not task:
             raise ValueError("Task is required for the first step")
 
-        return self._execute_step(task, is_first)
+        # Set up keyboard on first step
+        if is_first:
+            self.action_handler.setup_keyboard()
+
+        result = self._execute_step(task, is_first)
+
+        # Restore keyboard when task finishes
+        if result.finished:
+            self.action_handler.restore_keyboard()
+
+        return result
+
+    def cleanup(self) -> None:
+        """Clean up resources. Call this when task is cancelled or interrupted."""
+        self.action_handler.restore_keyboard()
 
     def reset(self) -> None:
         """Reset the agent state for a new task."""
