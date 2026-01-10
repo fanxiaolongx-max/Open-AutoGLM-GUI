@@ -95,6 +95,166 @@ def ensure_adb_keyboard_installed(device_id):
         return False, False
 
 
+class CustomTitleBar(QtWidgets.QWidget):
+    """自定义标题栏，支持无边框窗口拖动"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent_window = parent
+        self._drag_pos = None
+        self._is_maximized = False
+
+        self.setFixedHeight(38)
+        self.setMouseTracking(True)
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(12, 0, 8, 0)
+        layout.setSpacing(8)
+
+        # 窗口控制按钮（macOS 风格，左侧）
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.setSpacing(8)
+
+        self.close_btn = QtWidgets.QPushButton()
+        self.close_btn.setFixedSize(14, 14)
+        self.close_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.close_btn.clicked.connect(self._close_window)
+        self.close_btn.setToolTip("关闭")
+
+        self.minimize_btn = QtWidgets.QPushButton()
+        self.minimize_btn.setFixedSize(14, 14)
+        self.minimize_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.minimize_btn.clicked.connect(self._minimize_window)
+        self.minimize_btn.setToolTip("最小化")
+
+        self.maximize_btn = QtWidgets.QPushButton()
+        self.maximize_btn.setFixedSize(14, 14)
+        self.maximize_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.maximize_btn.clicked.connect(self._toggle_maximize)
+        self.maximize_btn.setToolTip("最大化")
+
+        btn_layout.addWidget(self.close_btn)
+        btn_layout.addWidget(self.minimize_btn)
+        btn_layout.addWidget(self.maximize_btn)
+
+        # 标题
+        self.title_label = QtWidgets.QLabel("鱼塘管理器")
+        self.title_label.setAlignment(QtCore.Qt.AlignCenter)
+
+        layout.addLayout(btn_layout)
+        layout.addWidget(self.title_label, 1)
+        layout.addSpacing(60)  # 平衡左侧按钮的空间
+
+        self._apply_style()
+
+    def _apply_style(self):
+        """应用样式"""
+        is_light = False
+        if self.parent_window and hasattr(self.parent_window, 'current_theme'):
+            is_light = self.parent_window.current_theme == 'light'
+
+        if is_light:
+            bg_color = "rgba(244, 244, 245, 0.95)"
+            title_color = "#18181b"
+            border_color = "rgba(212, 212, 216, 0.5)"
+        else:
+            bg_color = "rgba(24, 24, 27, 0.95)"
+            title_color = "#e4e4e7"
+            border_color = "rgba(63, 63, 70, 0.5)"
+
+        self.setStyleSheet(f"""
+            CustomTitleBar {{
+                background: {bg_color};
+                border-bottom: 1px solid {border_color};
+            }}
+            QLabel {{
+                color: {title_color};
+                font-size: 13px;
+                font-weight: 500;
+                background: transparent;
+            }}
+            QPushButton {{
+                border-radius: 7px;
+                border: none;
+            }}
+        """)
+
+        # macOS 风格的窗口按钮颜色
+        self.close_btn.setStyleSheet("""
+            QPushButton {
+                background: #ff5f57;
+                border-radius: 7px;
+            }
+            QPushButton:hover {
+                background: #ff3b30;
+            }
+        """)
+        self.minimize_btn.setStyleSheet("""
+            QPushButton {
+                background: #ffbd2e;
+                border-radius: 7px;
+            }
+            QPushButton:hover {
+                background: #ff9500;
+            }
+        """)
+        self.maximize_btn.setStyleSheet("""
+            QPushButton {
+                background: #28c840;
+                border-radius: 7px;
+            }
+            QPushButton:hover {
+                background: #34c759;
+            }
+        """)
+
+    def update_theme(self):
+        """更新主题"""
+        self._apply_style()
+
+    def _close_window(self):
+        if self.parent_window:
+            self.parent_window.close()
+
+    def _minimize_window(self):
+        if self.parent_window:
+            self.parent_window.showMinimized()
+
+    def _toggle_maximize(self):
+        if self.parent_window:
+            if self._is_maximized:
+                self.parent_window.showNormal()
+                self._is_maximized = False
+            else:
+                self.parent_window.showMaximized()
+                self._is_maximized = True
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.parent_window.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == QtCore.Qt.LeftButton and self._drag_pos is not None:
+            # 如果最大化状态，先恢复正常
+            if self._is_maximized:
+                self.parent_window.showNormal()
+                self._is_maximized = False
+                # 调整拖动位置到窗口中心
+                self._drag_pos = QtCore.QPoint(self.parent_window.width() // 2, 20)
+            self.parent_window.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._toggle_maximize()
+            event.accept()
+
+
 class HoverExpandCard(QtWidgets.QFrame):
     """鼠标悬停时自动展开的卡片控件"""
     
@@ -1018,9 +1178,11 @@ class DropZoneWidget(QtWidgets.QLabel):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setAlignment(QtCore.Qt.AlignCenter)
+        self._is_light_theme = False
         self._update_style(False)
 
     def _update_style(self, hover):
+        is_light = getattr(self, '_is_light_theme', False)
         if hover:
             self.setStyleSheet(
                 """
@@ -1037,19 +1199,34 @@ class DropZoneWidget(QtWidgets.QLabel):
                 """
             )
         else:
-            self.setStyleSheet(
-                """
-                QLabel {
-                    background: rgba(24, 24, 27, 0.6);
-                    border: 2px dashed rgba(63, 63, 70, 0.6);
-                    border-radius: 16px;
-                    color: #71717a;
-                    font-size: 16px;
-                    font-weight: 500;
-                    padding: 40px;
-                }
-                """
-            )
+            if is_light:
+                self.setStyleSheet(
+                    """
+                    QLabel {
+                        background: rgba(244, 244, 245, 0.8);
+                        border: 2px dashed rgba(161, 161, 170, 0.6);
+                        border-radius: 16px;
+                        color: #52525b;
+                        font-size: 16px;
+                        font-weight: 500;
+                        padding: 40px;
+                    }
+                    """
+                )
+            else:
+                self.setStyleSheet(
+                    """
+                    QLabel {
+                        background: rgba(24, 24, 27, 0.6);
+                        border: 2px dashed rgba(63, 63, 70, 0.6);
+                        border-radius: 16px;
+                        color: #71717a;
+                        font-size: 16px;
+                        font-weight: 500;
+                        padding: 40px;
+                    }
+                    """
+                )
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -1083,6 +1260,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("鱼塘管理器")
+
+        # 设置无边框窗口
+        self.setWindowFlags(
+            QtCore.Qt.FramelessWindowHint |
+            QtCore.Qt.WindowSystemMenuHint |
+            QtCore.Qt.WindowMinMaxButtonsHint
+        )
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
 
         # 根据屏幕分辨率调整窗口大小
         screen = QtWidgets.QApplication.primaryScreen()
@@ -1148,6 +1333,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sched_countdown_timer.setInterval(60000)  # Update every minute
         self.sched_countdown_timer.timeout.connect(self._refresh_scheduled_tasks)
 
+        # Task counters for dashboard (manual vs scheduled)
+        self.manual_tasks_count = 0
+        self.scheduled_tasks_count = 0
+
+        # Dashboard auto-refresh timer
+        self.dashboard_refresh_timer = QtCore.QTimer(self)
+        self.dashboard_refresh_timer.setInterval(5000)  # Refresh every 5 seconds
+        self.dashboard_refresh_timer.timeout.connect(self._refresh_dashboard)
+
+        # System diagnosis result cache
+        self.system_diagnosis_result = None
+
         self.nav = QtWidgets.QListWidget()
         self.nav.setFixedWidth(180)
         self.nav.addItems(
@@ -1159,8 +1356,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "定时任务",
                 "应用安装",
                 "文件管理",
-                "脚本管理",
-                "应用目录",
+                "规则管理",
                 "系统诊断",
                 "运行日志",
                 "系统设置",
@@ -1178,8 +1374,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "定时任务": self._build_scheduled_tasks(),
             "应用安装": self._build_apk_installer(),
             "文件管理": self._build_file_manager(),
-            "脚本管理": self._build_scripts_page(),
-            "应用目录": self._build_apps_page(),
+            "规则管理": self._build_rules_page(),
             "系统诊断": self._build_diagnostics_page(),
             "运行日志": self._build_logs_page(),
             "系统设置": self._build_settings_page(),
@@ -1188,67 +1383,221 @@ class MainWindow(QtWidgets.QMainWindow):
         for name in self.pages:
             self.stack.addWidget(self.pages[name])
 
+        # 创建主容器，包含自定义标题栏和内容区域
         root = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout(root)
-        layout.addWidget(self.nav)
-        layout.addWidget(self.stack, 1)
+        main_layout = QtWidgets.QVBoxLayout(root)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # 自定义标题栏
+        self.title_bar = CustomTitleBar(self)
+        main_layout.addWidget(self.title_bar)
+
+        # 内容区域（导航 + 页面栈）
+        content_widget = QtWidgets.QWidget()
+        content_layout = QtWidgets.QHBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.addWidget(self.nav)
+        content_layout.addWidget(self.stack, 1)
+        main_layout.addWidget(content_widget, 1)
+
         self.setCentralWidget(root)
 
         self._load_settings()
         self._apply_style()
         self._refresh_devices()
-        self._refresh_apps()
-        self._refresh_scripts()
         self._refresh_dashboard()
         self._refresh_scheduled_tasks()
         self._start_preview()
         self.scheduled_tasks_manager.start()  # 启动定时任务调度器
         self.sched_countdown_timer.start()  # 启动倒计时更新定时器
-        
+
+        # 启动控制台自动刷新定时器
+        self.dashboard_refresh_timer.start()
+
+        # 运行快速系统诊断
+        QtCore.QTimer.singleShot(500, self._run_quick_diagnosis)
+
         # 设置 PIN 请求回调（当解锁需要 PIN 但未配置时触发）
         from phone_agent.adb.unlock import set_pin_request_callback
         set_pin_request_callback(self._request_pin_dialog)
 
+        # 窗口缩放相关
+        self._resize_edge = None
+        self._resize_start_pos = None
+        self._resize_start_geometry = None
+        self._edge_margin = 5  # 边缘检测区域宽度（减小以避免与导航栏重叠）
+        self.setMouseTracking(True)
+        self.centralWidget().setMouseTracking(True)
+
+    def _get_resize_edge(self, pos):
+        """检测鼠标是否在窗口边缘，返回边缘方向"""
+        # 最大化时不允许缩放
+        if self.isMaximized():
+            return None
+
+        rect = self.rect()
+        margin = self._edge_margin
+
+        left = pos.x() < margin
+        right = pos.x() > rect.width() - margin
+        top = pos.y() < margin
+        bottom = pos.y() > rect.height() - margin
+
+        if left and top:
+            return "top-left"
+        elif right and top:
+            return "top-right"
+        elif left and bottom:
+            return "bottom-left"
+        elif right and bottom:
+            return "bottom-right"
+        elif left:
+            return "left"
+        elif right:
+            return "right"
+        elif top:
+            return "top"
+        elif bottom:
+            return "bottom"
+        return None
+
+    def _update_cursor(self, edge):
+        """根据边缘方向更新鼠标光标"""
+        cursors = {
+            "left": QtCore.Qt.SizeHorCursor,
+            "right": QtCore.Qt.SizeHorCursor,
+            "top": QtCore.Qt.SizeVerCursor,
+            "bottom": QtCore.Qt.SizeVerCursor,
+            "top-left": QtCore.Qt.SizeFDiagCursor,
+            "bottom-right": QtCore.Qt.SizeFDiagCursor,
+            "top-right": QtCore.Qt.SizeBDiagCursor,
+            "bottom-left": QtCore.Qt.SizeBDiagCursor,
+        }
+        if edge and edge in cursors:
+            self.setCursor(cursors[edge])
+        else:
+            self.unsetCursor()
+
+    def mousePressEvent(self, event):
+        """鼠标按下事件 - 开始缩放"""
+        if event.button() == QtCore.Qt.LeftButton:
+            edge = self._get_resize_edge(event.position().toPoint())
+            if edge:
+                self._resize_edge = edge
+                self._resize_start_pos = event.globalPosition().toPoint()
+                self._resize_start_geometry = self.geometry()
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """鼠标移动事件 - 执行缩放或更新光标"""
+        if self._resize_edge and self._resize_start_pos:
+            # 正在缩放
+            delta = event.globalPosition().toPoint() - self._resize_start_pos
+            geo = QtCore.QRect(self._resize_start_geometry)
+            min_w, min_h = 900, 600
+
+            if "left" in self._resize_edge:
+                new_left = geo.left() + delta.x()
+                new_width = geo.width() - delta.x()
+                if new_width >= min_w:
+                    geo.setLeft(new_left)
+            if "right" in self._resize_edge:
+                new_width = geo.width() + delta.x()
+                if new_width >= min_w:
+                    geo.setWidth(new_width)
+            if "top" in self._resize_edge:
+                new_top = geo.top() + delta.y()
+                new_height = geo.height() - delta.y()
+                if new_height >= min_h:
+                    geo.setTop(new_top)
+            if "bottom" in self._resize_edge:
+                new_height = geo.height() + delta.y()
+                if new_height >= min_h:
+                    geo.setHeight(new_height)
+
+            self.setGeometry(geo)
+            event.accept()
+        else:
+            # 更新光标
+            edge = self._get_resize_edge(event.position().toPoint())
+            self._update_cursor(edge)
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """鼠标释放事件 - 结束缩放"""
+        if self._resize_edge:
+            self._resize_edge = None
+            self._resize_start_pos = None
+            self._resize_start_geometry = None
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):
+        """鼠标离开窗口时重置光标"""
+        self.unsetCursor()
+        super().leaveEvent(event)
+
     def closeEvent(self, event):
         """Handle window close event."""
         try:
+            print("[App] Closing application, cleaning up...")
+
             # Stop all managers and timers
             self.scheduled_tasks_manager.stop()
             self.preview_timer.stop()
             self.sched_countdown_timer.stop()
-            
-            # Stop all worker threads
+            self.dashboard_refresh_timer.stop()
+
+            # Stop all worker threads - use requestInterruption first, then wait
             if hasattr(self, 'task_worker') and self.task_worker:
-                self.task_worker.terminate()
-                self.task_worker.wait(1000)  # Wait up to 1 second
-            
+                if self.task_worker.isRunning():
+                    self.task_worker.requestInterruption()
+                    if not self.task_worker.wait(2000):  # Wait up to 2 seconds
+                        self.task_worker.terminate()
+                        self.task_worker.wait(500)
+
             if hasattr(self, 'script_worker') and self.script_worker:
-                self.script_worker.terminate()
-                self.script_worker.wait(1000)
-            
+                if self.script_worker.isRunning():
+                    self.script_worker.terminate()
+                    self.script_worker.wait(1000)
+
             if hasattr(self, 'diagnostic_worker') and self.diagnostic_worker:
-                self.diagnostic_worker.terminate()
-                self.diagnostic_worker.wait(1000)
-            
+                if self.diagnostic_worker.isRunning():
+                    self.diagnostic_worker.terminate()
+                    self.diagnostic_worker.wait(1000)
+
             if hasattr(self, 'preview_worker') and self.preview_worker:
-                self.preview_worker.terminate()
-                self.preview_worker.wait(1000)
-            
+                if self.preview_worker.isRunning():
+                    self.preview_worker.requestInterruption()
+                    if not self.preview_worker.wait(1000):
+                        self.preview_worker.terminate()
+                        self.preview_worker.wait(500)
+
             if hasattr(self, 'apk_install_worker') and self.apk_install_worker:
-                self.apk_install_worker.terminate()
-                self.apk_install_worker.wait(1000)
-            
+                if self.apk_install_worker.isRunning():
+                    self.apk_install_worker.terminate()
+                    self.apk_install_worker.wait(1000)
+
             if hasattr(self, 'gemini_task_worker') and self.gemini_task_worker:
-                self.gemini_task_worker.terminate()
-                self.gemini_task_worker.wait(1000)
-            
+                if self.gemini_task_worker.isRunning():
+                    self.gemini_task_worker.requestInterruption()
+                    if not self.gemini_task_worker.wait(2000):
+                        self.gemini_task_worker.terminate()
+                        self.gemini_task_worker.wait(500)
+
             # Clean up multi-device manager
             if hasattr(self, 'multi_device_manager'):
                 self.multi_device_manager.stop_all()
-            
+
+            print("[App] Cleanup complete")
+
         except Exception as e:
-            print(f"Error during cleanup: {e}")
-        
+            print(f"[App] Error during cleanup: {e}")
+
         super().closeEvent(event)
 
     def _apply_style(self):
@@ -1735,6 +2084,142 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: 2px solid rgba(63, 63, 70, 0.5);
                 border-radius: 16px;
             }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Tree Widget - File Manager Style
+            ───────────────────────────────────────────────────────────────── */
+            QTreeWidget {{
+                background: rgba(18, 18, 20, 0.95);
+                border: 1px solid rgba(63, 63, 70, 0.4);
+                border-radius: 8px;
+                padding: 4px;
+                color: #e4e4e7;
+                selection-background-color: rgba(99, 102, 241, 0.5);
+            }}
+
+            QTreeWidget::item {{
+                padding: 6px 8px;
+                border-radius: 4px;
+                color: #e4e4e7;
+            }}
+
+            QTreeWidget::item:hover {{
+                background: rgba(63, 63, 70, 0.4);
+            }}
+
+            QTreeWidget::item:selected {{
+                background: rgba(99, 102, 241, 0.6);
+                color: #ffffff;
+            }}
+
+            QTreeWidget::item:alternate {{
+                background: rgba(24, 24, 27, 0.5);
+            }}
+
+            QHeaderView::section {{
+                background: rgba(24, 24, 27, 0.9);
+                color: #a1a1aa;
+                padding: 8px 12px;
+                border: none;
+                border-bottom: 1px solid rgba(63, 63, 70, 0.5);
+                font-weight: 600;
+            }}
+
+            QHeaderView::section:hover {{
+                background: rgba(39, 39, 42, 0.9);
+                color: #e4e4e7;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Context Menu - Dark Theme
+            ───────────────────────────────────────────────────────────────── */
+            QMenu {{
+                background: rgba(24, 24, 27, 0.98);
+                border: 1px solid rgba(63, 63, 70, 0.5);
+                border-radius: 8px;
+                padding: 6px;
+                color: #e4e4e7;
+            }}
+
+            QMenu::item {{
+                padding: 8px 24px 8px 12px;
+                border-radius: 4px;
+                color: #e4e4e7;
+            }}
+
+            QMenu::item:selected {{
+                background: rgba(99, 102, 241, 0.6);
+                color: #ffffff;
+            }}
+
+            QMenu::item:disabled {{
+                color: #52525b;
+            }}
+
+            QMenu::separator {{
+                height: 1px;
+                background: rgba(63, 63, 70, 0.5);
+                margin: 4px 8px;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Dialog Boxes - Dark Theme
+            ───────────────────────────────────────────────────────────────── */
+            QDialog {{
+                background: rgba(24, 24, 27, 0.98);
+                color: #e4e4e7;
+            }}
+
+            QInputDialog {{
+                background: rgba(24, 24, 27, 0.98);
+                color: #e4e4e7;
+            }}
+
+            QFileDialog {{
+                background: rgba(24, 24, 27, 0.98);
+                color: #e4e4e7;
+            }}
+
+            QFileDialog QTreeView {{
+                background: rgba(18, 18, 20, 0.95);
+                color: #e4e4e7;
+                border: 1px solid rgba(63, 63, 70, 0.4);
+                border-radius: 6px;
+            }}
+
+            QFileDialog QListView {{
+                background: rgba(18, 18, 20, 0.95);
+                color: #e4e4e7;
+                border: 1px solid rgba(63, 63, 70, 0.4);
+                border-radius: 6px;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Checkbox - Dark Theme
+            ───────────────────────────────────────────────────────────────── */
+            QCheckBox {{
+                color: #e4e4e7;
+                spacing: 8px;
+            }}
+
+            QCheckBox::indicator {{
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid rgba(63, 63, 70, 0.6);
+                background: rgba(24, 24, 27, 0.8);
+            }}
+
+            QCheckBox::indicator:hover {{
+                border: 1px solid rgba(99, 102, 241, 0.6);
+                background: rgba(39, 39, 42, 0.8);
+            }}
+
+            QCheckBox::indicator:checked {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6366f1, stop:1 #8b5cf6);
+                border: 1px solid rgba(99, 102, 241, 0.8);
+            }}
             """
         )
 
@@ -2204,6 +2689,142 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: 2px solid rgba(161, 161, 170, 0.5);
                 border-radius: 16px;
             }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Tree Widget - File Manager Style (Light Theme)
+            ───────────────────────────────────────────────────────────────── */
+            QTreeWidget {{
+                background: rgba(255, 255, 255, 0.95);
+                border: 1px solid rgba(212, 212, 216, 0.6);
+                border-radius: 8px;
+                padding: 4px;
+                color: #27272a;
+                selection-background-color: rgba(99, 102, 241, 0.3);
+            }}
+
+            QTreeWidget::item {{
+                padding: 6px 8px;
+                border-radius: 4px;
+                color: #27272a;
+            }}
+
+            QTreeWidget::item:hover {{
+                background: rgba(228, 228, 231, 0.6);
+            }}
+
+            QTreeWidget::item:selected {{
+                background: rgba(99, 102, 241, 0.5);
+                color: #ffffff;
+            }}
+
+            QTreeWidget::item:alternate {{
+                background: rgba(244, 244, 245, 0.5);
+            }}
+
+            QHeaderView::section {{
+                background: rgba(250, 250, 250, 0.95);
+                color: #52525b;
+                padding: 8px 12px;
+                border: none;
+                border-bottom: 1px solid rgba(212, 212, 216, 0.6);
+                font-weight: 600;
+            }}
+
+            QHeaderView::section:hover {{
+                background: rgba(244, 244, 245, 0.95);
+                color: #18181b;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Context Menu - Light Theme
+            ───────────────────────────────────────────────────────────────── */
+            QMenu {{
+                background: rgba(255, 255, 255, 0.98);
+                border: 1px solid rgba(212, 212, 216, 0.8);
+                border-radius: 8px;
+                padding: 6px;
+                color: #27272a;
+            }}
+
+            QMenu::item {{
+                padding: 8px 24px 8px 12px;
+                border-radius: 4px;
+                color: #27272a;
+            }}
+
+            QMenu::item:selected {{
+                background: rgba(99, 102, 241, 0.5);
+                color: #ffffff;
+            }}
+
+            QMenu::item:disabled {{
+                color: #a1a1aa;
+            }}
+
+            QMenu::separator {{
+                height: 1px;
+                background: rgba(212, 212, 216, 0.6);
+                margin: 4px 8px;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Dialog Boxes - Light Theme
+            ───────────────────────────────────────────────────────────────── */
+            QDialog {{
+                background: rgba(255, 255, 255, 0.98);
+                color: #27272a;
+            }}
+
+            QInputDialog {{
+                background: rgba(255, 255, 255, 0.98);
+                color: #27272a;
+            }}
+
+            QFileDialog {{
+                background: rgba(255, 255, 255, 0.98);
+                color: #27272a;
+            }}
+
+            QFileDialog QTreeView {{
+                background: rgba(255, 255, 255, 0.95);
+                color: #27272a;
+                border: 1px solid rgba(212, 212, 216, 0.6);
+                border-radius: 6px;
+            }}
+
+            QFileDialog QListView {{
+                background: rgba(255, 255, 255, 0.95);
+                color: #27272a;
+                border: 1px solid rgba(212, 212, 216, 0.6);
+                border-radius: 6px;
+            }}
+
+            /* ─────────────────────────────────────────────────────────────────
+               Checkbox - Light Theme
+            ───────────────────────────────────────────────────────────────── */
+            QCheckBox {{
+                color: #27272a;
+                spacing: 8px;
+            }}
+
+            QCheckBox::indicator {{
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid rgba(212, 212, 216, 0.8);
+                background: rgba(255, 255, 255, 0.9);
+            }}
+
+            QCheckBox::indicator:hover {{
+                border: 1px solid rgba(99, 102, 241, 0.6);
+                background: rgba(244, 244, 245, 0.9);
+            }}
+
+            QCheckBox::indicator:checked {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6366f1, stop:1 #8b5cf6);
+                border: 1px solid rgba(99, 102, 241, 0.8);
+            }}
             """
         )
 
@@ -2261,17 +2882,17 @@ class MainWindow(QtWidgets.QMainWindow):
         grid = QtWidgets.QGridLayout()
         grid.setSpacing(16)
 
-        self.metric_device = self._create_metric_card(
-            "当前设备", "-", "已连接的设备", "device"
+        self.metric_device = self._create_enhanced_metric_card(
+            "当前设备", "0 台", "已连接设备", "device"
         )
         self.metric_model = self._create_metric_card(
             "AI模型", "-", "使用中的语言模型", "model"
         )
-        self.metric_tasks = self._create_metric_card(
-            "已完成任务", "0", "成功执行次数", "tasks"
+        self.metric_tasks = self._create_enhanced_metric_card(
+            "已完成任务", "0", "任务执行统计", "tasks"
         )
-        self.metric_status = self._create_metric_card(
-            "系统状态", "就绪", "所有系统运行正常", "status"
+        self.metric_status = self._create_enhanced_metric_card(
+            "系统状态", "检测中", "系统诊断结果", "status"
         )
 
         grid.addWidget(self.metric_device, 0, 0)
@@ -2297,11 +2918,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # Define quick actions with correct page indices
         quick_actions = [
             ("新建任务", 3, "primary"),      # 任务执行 (index 3)
-            ("设备中心", 1, "secondary"),    # 设备中心 (index 1)
-            ("模型服务", 2, "secondary"),    # 模型服务 (index 2)
-            ("定时任务", 4, "secondary"),    # 定时任务 (index 4)
-            ("系统诊断", 9, "secondary"),    # 系统诊断 (index 9)
-            ("系统设置", 11, "secondary"),   # 系统设置 (index 11)
+            ("设备中心", 1, "primary"),    # 设备中心 (index 1)
+            ("模型服务", 2, "primary"),    # 模型服务 (index 2)
+            ("定时任务", 4, "primary"),    # 定时任务 (index 4)
+            ("系统诊断", 9, "primary"),    # 系统诊断 (index 9)
+            ("系统设置", 11, "primary"),   # 系统设置 (index 11)
         ]
 
         buttons = []
@@ -2465,6 +3086,111 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return card
 
+    def _create_enhanced_metric_card(
+        self, label: str, value: str, description: str = "", card_type: str = ""
+    ) -> QtWidgets.QFrame:
+        """Create an enhanced metric card with support for detailed info display."""
+        card = QtWidgets.QFrame()
+        card.setCursor(QtCore.Qt.PointingHandCursor)
+        card.setMinimumHeight(140)
+        card.setMinimumWidth(200)
+
+        # 卡片整体样式
+        icon_colors = {
+            "device": ("#10b981", "rgba(16, 185, 129, 0.1)"),
+            "model": ("#6366f1", "rgba(99, 102, 241, 0.1)"),
+            "tasks": ("#f59e0b", "rgba(245, 158, 11, 0.1)"),
+            "status": ("#22c55e", "rgba(34, 197, 94, 0.1)"),
+        }
+        accent_color, bg_tint = icon_colors.get(card_type, ("#6366f1", "rgba(99, 102, 241, 0.1)"))
+
+        card.setStyleSheet(
+            f"""
+            QFrame {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(24, 24, 27, 0.95), stop:1 rgba(17, 17, 19, 0.95));
+                border: 1px solid rgba(63, 63, 70, 0.4);
+                border-radius: 16px;
+            }}
+            QFrame:hover {{
+                border: 1px solid {accent_color};
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(30, 30, 34, 0.98), stop:1 rgba(20, 20, 23, 0.98));
+            }}
+            """
+        )
+
+        vbox = QtWidgets.QVBoxLayout(card)
+        vbox.setContentsMargins(20, 14, 20, 14)
+        vbox.setSpacing(6)
+
+        # Header row with title and colored icon badge
+        header_row = QtWidgets.QHBoxLayout()
+        header_row.setSpacing(8)
+
+        title = QtWidgets.QLabel(label)
+        title.setStyleSheet(
+            "font-size: 14px; font-weight: 600; color: #d4d4d8; "
+            "letter-spacing: 0.3px; background: transparent; border: none;"
+        )
+
+        # Colored badge indicator
+        badge = QtWidgets.QLabel("●")
+        badge.setObjectName("statusBadge")
+        badge.setStyleSheet(
+            f"""
+            font-size: 12px;
+            color: {accent_color};
+            background: {bg_tint};
+            border-radius: 12px;
+            padding: 4px 8px;
+            border: none;
+            """
+        )
+
+        header_row.addWidget(title)
+        header_row.addStretch()
+        header_row.addWidget(badge)
+
+        # Value
+        val = QtWidgets.QLabel(value)
+        val.setObjectName("metricValue")
+        val.setStyleSheet(
+            """
+            font-size: 24px;
+            font-weight: 700;
+            color: #fafafa;
+            letter-spacing: -0.5px;
+            background: transparent;
+            border: none;
+            padding-left: 2px;
+            """
+        )
+
+        # Description / subtitle
+        desc = QtWidgets.QLabel(description)
+        desc.setObjectName("metricLabel")
+        desc.setStyleSheet(
+            "font-size: 11px; color: #71717a; background: transparent; border: none;"
+        )
+        desc.setWordWrap(True)
+
+        # Detail info area (for showing device list, task breakdown, etc.)
+        detail = QtWidgets.QLabel("")
+        detail.setObjectName("metricDetail")
+        detail.setStyleSheet(
+            "font-size: 11px; color: #a1a1aa; background: transparent; border: none; padding-top: 4px;"
+        )
+        detail.setWordWrap(True)
+
+        vbox.addLayout(header_row)
+        vbox.addWidget(val)
+        vbox.addWidget(desc)
+        vbox.addWidget(detail)
+        vbox.addStretch()
+
+        return card
+
     def _build_device_hub(self):
         page = QtWidgets.QWidget()
         page_layout = QtWidgets.QVBoxLayout(page)
@@ -2499,7 +3225,7 @@ class MainWindow(QtWidgets.QMainWindow):
             margin-bottom: 4px;
         """)
 
-        subtitle = QtWidgets.QLabel("连接和管理您的安卓、鸿蒙或iOS设备")
+        subtitle = QtWidgets.QLabel("连接和管理您的安卓设备")
         subtitle.setStyleSheet("""
             font-size: 16px;
             color: #a1a1aa;
@@ -2528,8 +3254,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.device_type_combo = NoWheelComboBox()
         self.device_type_combo.addItems(["adb"])
         self.device_type_combo.currentTextChanged.connect(self._refresh_devices)
-        self.device_type_combo.currentTextChanged.connect(self._refresh_apps)
         self.device_type_combo.currentTextChanged.connect(self._refresh_dashboard)
+        self.device_type_combo.currentTextChanged.connect(self._run_quick_diagnosis)
 
         self.connect_input = QtWidgets.QLineEdit()
         self.connect_input.setPlaceholderText("例如: 192.168.1.100:5555")
@@ -3599,6 +4325,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.preview_multi_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self.preview_multi_btn.setMinimumWidth(80)
         self.preview_multi_btn.setCheckable(True)
+        self.preview_multi_btn.setChecked(False)  # Explicitly ensure not checked by default
         self.preview_multi_btn.setToolTip("启用后自动轮流预览所有已连接设备")
         self.preview_multi_btn.clicked.connect(self._toggle_multi_preview)
         
@@ -4759,6 +5486,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """定时任务完成回调"""
         self._append_sched_log(f"任务完成: {result}\n")
         self.scheduled_tasks_manager.mark_task_finished(task_id)
+        self._increment_tasks_counter(is_scheduled=True)
         self._restore_sched_device_lock()
 
     def _on_sched_task_failed(self, task_id, msg):
@@ -4787,6 +5515,9 @@ class MainWindow(QtWidgets.QMainWindow):
             success, failed = self.multi_device_manager.get_results_summary()
             self._append_sched_log(f"多设备任务完成: {success} 成功, {failed} 失败\n")
             self.scheduled_tasks_manager.mark_task_finished(task_id)
+            # Increment counter for each successful device
+            for _ in range(success):
+                self._increment_tasks_counter(is_scheduled=True)
             self._sched_multi_task_id = None
         
         # 恢复锁屏
@@ -5828,7 +6559,11 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
             self.file_status.setText(f"重命名错误: {str(e)}")
 
-    def _build_scripts_page(self):
+    def _build_rules_page(self):
+        """构建规则管理页面，展示系统中的固化规则"""
+        from gui_app.rules_manager import get_rules_manager
+        self._rules_manager = get_rules_manager()
+
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
         layout.setContentsMargins(20, 12, 20, 20)
@@ -5840,105 +6575,1091 @@ class MainWindow(QtWidgets.QMainWindow):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(4)
 
-        header = QtWidgets.QLabel("脚本管理")
+        header = QtWidgets.QLabel("规则管理")
         header.setObjectName("title")
 
-        subtitle = QtWidgets.QLabel("运行自定义Python自动化脚本")
+        subtitle = QtWidgets.QLabel("管理应用映射、时间延迟和动作类型规则")
         subtitle.setStyleSheet("color: #71717a; font-size: 14px;")
 
         header_layout.addWidget(header)
         header_layout.addWidget(subtitle)
 
-        # Scripts List Card
-        scripts_card = QtWidgets.QFrame()
-        scripts_card.setObjectName("card")
-        scripts_layout = QtWidgets.QVBoxLayout(scripts_card)
+        # Tab widget for different rule categories
+        self.rules_tab = QtWidgets.QTabWidget()
 
-        scripts_title = QtWidgets.QLabel("可用脚本")
-        scripts_title.setObjectName("cardTitle")
+        # Tab 1: 应用映射规则
+        apps_tab = self._build_rules_apps_tab()
+        self.rules_tab.addTab(apps_tab, "应用映射")
 
-        self.script_list = QtWidgets.QListWidget()
-        self.script_list.setMinimumHeight(150)
+        # Tab 2: 时间延迟规则
+        timing_tab = self._build_rules_timing_tab()
+        self.rules_tab.addTab(timing_tab, "时间延迟")
 
-        scripts_layout.addWidget(scripts_title)
-        scripts_layout.addWidget(self.script_list)
-
-        # Run Button
-        self.run_script_btn = QtWidgets.QPushButton("运行所选脚本")
-        self.run_script_btn.setObjectName("success")
-        self.run_script_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        self.run_script_btn.clicked.connect(self._run_script)
-
-        # Output Log Card
-        log_card = QtWidgets.QFrame()
-        log_card.setObjectName("card")
-        log_layout = QtWidgets.QVBoxLayout(log_card)
-
-        log_title = QtWidgets.QLabel("脚本输出")
-        log_title.setObjectName("cardTitle")
-
-        self.script_log = QtWidgets.QPlainTextEdit()
-        self.script_log.setReadOnly(True)
-        self.script_log.setPlaceholderText("脚本输出将显示在这里...")
-
-        log_layout.addWidget(log_title)
-        log_layout.addWidget(self.script_log)
+        # Tab 3: 动作类型规则
+        actions_tab = self._build_rules_actions_tab()
+        self.rules_tab.addTab(actions_tab, "动作类型")
 
         layout.addWidget(header_widget)
-        layout.addWidget(scripts_card)
-        layout.addWidget(self.run_script_btn)
-        layout.addWidget(log_card, 1)
+        layout.addWidget(self.rules_tab, 1)
         return page
 
-    def _build_apps_page(self):
-        page = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(page)
-        layout.setContentsMargins(20, 12, 20, 20)
-        layout.setSpacing(16)
+    def _build_rules_apps_tab(self):
+        """构建应用映射规则标签页 - 支持增删改查"""
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(0, 12, 0, 0)
 
-        # Header
-        header_widget = QtWidgets.QWidget()
-        header_layout = QtWidgets.QVBoxLayout(header_widget)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(4)
+        # Toolbar
+        toolbar = QtWidgets.QHBoxLayout()
 
-        header = QtWidgets.QLabel("应用目录")
-        header.setObjectName("title")
+        self.rules_apps_search = QtWidgets.QLineEdit()
+        self.rules_apps_search.setPlaceholderText("搜索应用名或包名...")
+        self.rules_apps_search.textChanged.connect(self._filter_rules_apps)
+        toolbar.addWidget(self.rules_apps_search, 1)
 
-        subtitle = QtWidgets.QLabel("浏览支持自动化的应用程序")
-        subtitle.setStyleSheet("color: #71717a; font-size: 14px;")
+        self.rules_apps_count = QtWidgets.QLabel()
+        self.rules_apps_count.setStyleSheet("color: #71717a; font-size: 12px;")
+        toolbar.addWidget(self.rules_apps_count)
 
-        header_layout.addWidget(header)
-        header_layout.addWidget(subtitle)
+        # Action buttons
+        add_btn = QtWidgets.QPushButton("添加")
+        add_btn.setObjectName("success")
+        add_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        add_btn.clicked.connect(self._add_app_rule)
+        toolbar.addWidget(add_btn)
 
-        # Search Card
-        search_card = QtWidgets.QFrame()
-        search_card.setObjectName("card")
-        search_layout = QtWidgets.QVBoxLayout(search_card)
+        edit_btn = QtWidgets.QPushButton("编辑")
+        edit_btn.setObjectName("secondary")
+        edit_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        edit_btn.clicked.connect(self._edit_app_rule)
+        toolbar.addWidget(edit_btn)
 
-        self.apps_search = QtWidgets.QLineEdit()
-        self.apps_search.setPlaceholderText("按名称搜索应用...")
-        self.apps_search.textChanged.connect(self._filter_apps)
+        delete_btn = QtWidgets.QPushButton("删除")
+        delete_btn.setObjectName("danger")
+        delete_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        delete_btn.clicked.connect(self._delete_app_rule)
+        toolbar.addWidget(delete_btn)
 
-        search_layout.addWidget(self.apps_search)
+        # Table
+        self.rules_apps_table = QtWidgets.QTableWidget()
+        self.rules_apps_table.setColumnCount(3)
+        self.rules_apps_table.setHorizontalHeaderLabels(["应用名称", "包名", "来源"])
+        self.rules_apps_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        self.rules_apps_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self.rules_apps_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        self.rules_apps_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.rules_apps_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.rules_apps_table.setAlternatingRowColors(True)
+        self.rules_apps_table.doubleClicked.connect(self._edit_app_rule)
 
-        # Apps List Card
-        apps_card = QtWidgets.QFrame()
-        apps_card.setObjectName("card")
-        apps_layout = QtWidgets.QVBoxLayout(apps_card)
+        layout.addLayout(toolbar)
+        layout.addWidget(self.rules_apps_table)
 
-        apps_title = QtWidgets.QLabel("支持的应用")
-        apps_title.setObjectName("cardTitle")
+        self._load_rules_apps()
+        return tab
 
-        self.apps_list = QtWidgets.QListWidget()
+    def _build_rules_timing_tab(self):
+        """构建时间延迟规则标签页 - 支持编辑"""
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(0, 12, 0, 0)
 
-        apps_layout.addWidget(apps_title)
-        apps_layout.addWidget(self.apps_list)
+        # Description and buttons
+        header_layout = QtWidgets.QHBoxLayout()
+        desc = QtWidgets.QLabel("各种操作后的等待时间配置（双击编辑，单位：秒）")
+        desc.setStyleSheet("color: #71717a; font-size: 12px;")
+        header_layout.addWidget(desc, 1)
 
-        layout.addWidget(header_widget)
-        layout.addWidget(search_card)
-        layout.addWidget(apps_card, 1)
-        return page
+        save_btn = QtWidgets.QPushButton("保存修改")
+        save_btn.setObjectName("success")
+        save_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        save_btn.clicked.connect(self._save_timing_rules)
+        header_layout.addWidget(save_btn)
+
+        reset_btn = QtWidgets.QPushButton("恢复默认")
+        reset_btn.setObjectName("secondary")
+        reset_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        reset_btn.clicked.connect(self._reset_timing_rules)
+        header_layout.addWidget(reset_btn)
+
+        # Table
+        self.rules_timing_table = QtWidgets.QTableWidget()
+        self.rules_timing_table.setColumnCount(4)
+        self.rules_timing_table.setHorizontalHeaderLabels(["类别", "配置项", "配置键", "当前值(秒)"])
+        self.rules_timing_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        self.rules_timing_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self.rules_timing_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        self.rules_timing_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+        self.rules_timing_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.rules_timing_table.setAlternatingRowColors(True)
+
+        layout.addLayout(header_layout)
+        layout.addWidget(self.rules_timing_table)
+
+        self._load_rules_timing()
+        return tab
+
+    def _build_rules_actions_tab(self):
+        """构建动作类型规则标签页 - 支持查看和编辑规则内容"""
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(0, 12, 0, 0)
+
+        # Description
+        desc = QtWidgets.QLabel("管理动作类型及其规则内容（选中动作查看/编辑规则）")
+        desc.setStyleSheet("color: #71717a; font-size: 12px; margin-bottom: 8px;")
+
+        # 动作列表工具栏
+        action_toolbar = QtWidgets.QHBoxLayout()
+        add_action_btn = QtWidgets.QPushButton("+ 添加动作")
+        add_action_btn.clicked.connect(self._add_action_rule)
+        edit_action_btn = QtWidgets.QPushButton("编辑动作")
+        edit_action_btn.clicked.connect(self._edit_action_rule)
+        delete_action_btn = QtWidgets.QPushButton("删除动作")
+        delete_action_btn.clicked.connect(self._delete_action_rule)
+        reset_actions_btn = QtWidgets.QPushButton("重置为默认")
+        reset_actions_btn.clicked.connect(self._reset_action_rules)
+        action_toolbar.addWidget(add_action_btn)
+        action_toolbar.addWidget(edit_action_btn)
+        action_toolbar.addWidget(delete_action_btn)
+        action_toolbar.addStretch()
+        action_toolbar.addWidget(reset_actions_btn)
+
+        # Splitter for list and details
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+
+        # Left: Action list with search
+        left_widget = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 搜索框
+        self.action_search_input = QtWidgets.QLineEdit()
+        self.action_search_input.setPlaceholderText("搜索动作...")
+        self.action_search_input.textChanged.connect(self._filter_actions)
+        left_layout.addWidget(self.action_search_input)
+
+        self.rules_actions_list = QtWidgets.QListWidget()
+        self.rules_actions_list.currentRowChanged.connect(self._show_action_details)
+        left_layout.addWidget(self.rules_actions_list)
+
+        # Right: Action details with rules
+        right_widget = QtWidgets.QFrame()
+        right_widget.setObjectName("card")
+        right_layout = QtWidgets.QVBoxLayout(right_widget)
+
+        # 动作基本信息
+        self.action_detail_name = QtWidgets.QLabel("选择一个动作查看详情")
+        self.action_detail_name.setStyleSheet("font-size: 16px; font-weight: bold;")
+
+        self.action_detail_desc = QtWidgets.QLabel("")
+        self.action_detail_desc.setStyleSheet("color: #71717a;")
+        self.action_detail_desc.setWordWrap(True)
+
+        # 参数表格标题和工具栏
+        params_header = QtWidgets.QHBoxLayout()
+        params_label = QtWidgets.QLabel("参数:")
+        params_label.setStyleSheet("font-weight: bold; margin-top: 12px;")
+        add_param_btn = QtWidgets.QPushButton("+ 添加")
+        add_param_btn.setMaximumWidth(60)
+        add_param_btn.clicked.connect(self._add_parameter)
+        edit_param_btn = QtWidgets.QPushButton("编辑")
+        edit_param_btn.setMaximumWidth(50)
+        edit_param_btn.clicked.connect(self._edit_parameter)
+        del_param_btn = QtWidgets.QPushButton("删除")
+        del_param_btn.setMaximumWidth(50)
+        del_param_btn.clicked.connect(self._delete_parameter)
+        params_header.addWidget(params_label)
+        params_header.addStretch()
+        params_header.addWidget(add_param_btn)
+        params_header.addWidget(edit_param_btn)
+        params_header.addWidget(del_param_btn)
+
+        self.action_detail_params = QtWidgets.QTableWidget()
+        self.action_detail_params.setColumnCount(4)
+        self.action_detail_params.setHorizontalHeaderLabels(["参数名", "类型", "必填", "说明"])
+        self.action_detail_params.horizontalHeader().setStretchLastSection(True)
+        self.action_detail_params.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.action_detail_params.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.action_detail_params.setMaximumHeight(120)
+        self.action_detail_params.doubleClicked.connect(self._edit_parameter)
+
+        # 示例和ADB命令（折叠显示）
+        example_adb_layout = QtWidgets.QHBoxLayout()
+
+        example_group = QtWidgets.QGroupBox("调用示例")
+        example_group_layout = QtWidgets.QVBoxLayout(example_group)
+        self.action_detail_example = QtWidgets.QTextEdit()
+        self.action_detail_example.setReadOnly(True)
+        self.action_detail_example.setMaximumHeight(50)
+        self.action_detail_example.setStyleSheet("font-family: 'Menlo', 'Monaco', 'Courier New'; background: rgba(0,0,0,0.1);")
+        example_group_layout.addWidget(self.action_detail_example)
+
+        adb_group = QtWidgets.QGroupBox("ADB命令")
+        adb_group_layout = QtWidgets.QVBoxLayout(adb_group)
+        self.action_detail_adb = QtWidgets.QTextEdit()
+        self.action_detail_adb.setReadOnly(True)
+        self.action_detail_adb.setMaximumHeight(50)
+        self.action_detail_adb.setStyleSheet("font-family: 'Menlo', 'Monaco', 'Courier New'; background: rgba(0,0,0,0.1);")
+        adb_group_layout.addWidget(self.action_detail_adb)
+
+        example_adb_layout.addWidget(example_group)
+        example_adb_layout.addWidget(adb_group)
+
+        # 规则内容区域（新增）
+        rules_label = QtWidgets.QLabel("规则内容:")
+        rules_label.setStyleSheet("font-weight: bold; margin-top: 12px; font-size: 14px;")
+
+        # 规则内容工具栏
+        rules_toolbar = QtWidgets.QHBoxLayout()
+        add_rule_btn = QtWidgets.QPushButton("+ 添加规则")
+        add_rule_btn.clicked.connect(self._add_rule_item)
+        edit_rule_btn = QtWidgets.QPushButton("编辑规则")
+        edit_rule_btn.clicked.connect(self._edit_rule_item)
+        delete_rule_btn = QtWidgets.QPushButton("删除规则")
+        delete_rule_btn.clicked.connect(self._delete_rule_item)
+        toggle_rule_btn = QtWidgets.QPushButton("启用/禁用")
+        toggle_rule_btn.clicked.connect(self._toggle_rule_item)
+        rules_toolbar.addWidget(add_rule_btn)
+        rules_toolbar.addWidget(edit_rule_btn)
+        rules_toolbar.addWidget(delete_rule_btn)
+        rules_toolbar.addWidget(toggle_rule_btn)
+        rules_toolbar.addStretch()
+
+        # 规则内容表格
+        self.action_rules_table = QtWidgets.QTableWidget()
+        self.action_rules_table.setColumnCount(5)
+        self.action_rules_table.setHorizontalHeaderLabels(["ID", "条件", "执行动作", "优先级", "状态"])
+        self.action_rules_table.horizontalHeader().setStretchLastSection(True)
+        self.action_rules_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.action_rules_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.action_rules_table.setColumnWidth(0, 100)
+        self.action_rules_table.setColumnWidth(1, 180)
+        self.action_rules_table.setColumnWidth(2, 200)
+        self.action_rules_table.setColumnWidth(3, 60)
+        self.action_rules_table.setColumnWidth(4, 60)
+        self.action_rules_table.doubleClicked.connect(self._edit_rule_item)
+
+        # 导入导出工具栏
+        import_export_layout = QtWidgets.QHBoxLayout()
+        export_btn = QtWidgets.QPushButton("导出规则")
+        export_btn.clicked.connect(self._export_rules)
+        import_btn = QtWidgets.QPushButton("导入规则")
+        import_btn.clicked.connect(self._import_rules)
+        import_export_layout.addStretch()
+        import_export_layout.addWidget(export_btn)
+        import_export_layout.addWidget(import_btn)
+
+        right_layout.addWidget(self.action_detail_name)
+        right_layout.addWidget(self.action_detail_desc)
+        right_layout.addLayout(params_header)
+        right_layout.addWidget(self.action_detail_params)
+        right_layout.addLayout(example_adb_layout)
+        right_layout.addWidget(rules_label)
+        right_layout.addLayout(rules_toolbar)
+        right_layout.addWidget(self.action_rules_table)
+        right_layout.addLayout(import_export_layout)
+
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+        splitter.setSizes([200, 500])
+
+        layout.addWidget(desc)
+        layout.addLayout(action_toolbar)
+        layout.addWidget(splitter)
+
+        self._load_rules_actions()
+        return tab
+
+    def _load_rules_apps(self):
+        """加载应用映射规则数据"""
+        all_apps = self._rules_manager.get_all_apps()
+        custom_apps = self._rules_manager.get_custom_apps()
+
+        self.rules_apps_table.setRowCount(len(all_apps))
+        for row, (app_name, package_name) in enumerate(sorted(all_apps.items())):
+            self.rules_apps_table.setItem(row, 0, QtWidgets.QTableWidgetItem(app_name))
+            self.rules_apps_table.setItem(row, 1, QtWidgets.QTableWidgetItem(package_name))
+
+            source = "自定义" if app_name in custom_apps else "内置"
+            source_item = QtWidgets.QTableWidgetItem(source)
+            if source == "自定义":
+                source_item.setForeground(QtGui.QColor("#22c55e"))
+            else:
+                source_item.setForeground(QtGui.QColor("#71717a"))
+            self.rules_apps_table.setItem(row, 2, source_item)
+
+        custom_count = len(custom_apps)
+        total_count = len(all_apps)
+        self.rules_apps_count.setText(f"共 {total_count} 条 (自定义 {custom_count} 条)")
+
+    def _load_rules_timing(self):
+        """加载时间延迟规则数据"""
+        from phone_agent.config.timing import TIMING_CONFIG
+
+        # 配置项映射：(类别, 显示名, 配置键, 类别键)
+        timing_data = [
+            ("动作延迟", "键盘切换延迟", "keyboard_switch_delay", "action", TIMING_CONFIG.action.keyboard_switch_delay),
+            ("动作延迟", "文本清除延迟", "text_clear_delay", "action", TIMING_CONFIG.action.text_clear_delay),
+            ("动作延迟", "文本输入延迟", "text_input_delay", "action", TIMING_CONFIG.action.text_input_delay),
+            ("动作延迟", "键盘恢复延迟", "keyboard_restore_delay", "action", TIMING_CONFIG.action.keyboard_restore_delay),
+            ("设备操作", "点击后延迟", "default_tap_delay", "device", TIMING_CONFIG.device.default_tap_delay),
+            ("设备操作", "双击后延迟", "default_double_tap_delay", "device", TIMING_CONFIG.device.default_double_tap_delay),
+            ("设备操作", "双击间隔", "double_tap_interval", "device", TIMING_CONFIG.device.double_tap_interval),
+            ("设备操作", "长按后延迟", "default_long_press_delay", "device", TIMING_CONFIG.device.default_long_press_delay),
+            ("设备操作", "滑动后延迟", "default_swipe_delay", "device", TIMING_CONFIG.device.default_swipe_delay),
+            ("设备操作", "返回键后延迟", "default_back_delay", "device", TIMING_CONFIG.device.default_back_delay),
+            ("设备操作", "Home键后延迟", "default_home_delay", "device", TIMING_CONFIG.device.default_home_delay),
+            ("设备操作", "启动应用后延迟", "default_launch_delay", "device", TIMING_CONFIG.device.default_launch_delay),
+            ("连接配置", "ADB重启延迟", "adb_restart_delay", "connection", TIMING_CONFIG.connection.adb_restart_delay),
+            ("连接配置", "服务重启延迟", "server_restart_delay", "connection", TIMING_CONFIG.connection.server_restart_delay),
+        ]
+
+        self.rules_timing_table.setRowCount(len(timing_data))
+        for row, (category, name, key, cat_key, value) in enumerate(timing_data):
+            # 类别
+            cat_item = QtWidgets.QTableWidgetItem(category)
+            cat_item.setFlags(cat_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.rules_timing_table.setItem(row, 0, cat_item)
+
+            # 显示名
+            name_item = QtWidgets.QTableWidgetItem(name)
+            name_item.setFlags(name_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.rules_timing_table.setItem(row, 1, name_item)
+
+            # 配置键（隐藏用于保存）
+            key_item = QtWidgets.QTableWidgetItem(f"{cat_key}.{key}")
+            key_item.setFlags(key_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.rules_timing_table.setItem(row, 2, key_item)
+
+            # 当前值（可编辑）
+            value_item = QtWidgets.QTableWidgetItem(str(value))
+            self.rules_timing_table.setItem(row, 3, value_item)
+
+        # 隐藏配置键列
+        self.rules_timing_table.setColumnHidden(2, True)
+
+    def _load_rules_actions(self):
+        """加载动作类型规则数据"""
+        action_rules = self._rules_manager.get_action_rules()
+
+        self.rules_actions_list.clear()
+        for rule in action_rules:
+            is_custom = rule.get("is_custom", False)
+            prefix = "[自定义] " if is_custom else ""
+            desc_text = rule['description'][:18] + "..." if len(rule['description']) > 18 else rule['description']
+            item = QtWidgets.QListWidgetItem(f"{prefix}{rule['name']} - {desc_text}")
+            item.setData(QtCore.Qt.UserRole, rule)
+            if is_custom:
+                item.setForeground(QtGui.QColor("#22c55e"))
+            self.rules_actions_list.addItem(item)
+
+        if self.rules_actions_list.count() > 0:
+            self.rules_actions_list.setCurrentRow(0)
+
+    def _show_action_details(self, row):
+        """显示动作详情及其规则内容"""
+        if row < 0:
+            return
+
+        item = self.rules_actions_list.item(row)
+        rule = item.data(QtCore.Qt.UserRole)
+
+        # 保存当前选中的动作名称
+        self._current_action_name = rule["name"]
+
+        # 基本信息
+        is_custom = rule.get("is_custom", False)
+        name_text = f"{rule['name']} {'[自定义]' if is_custom else '[内置]'}"
+        self.action_detail_name.setText(name_text)
+        self.action_detail_desc.setText(rule["description"])
+        self.action_detail_example.setPlainText(rule.get("example", ""))
+        self.action_detail_adb.setPlainText(rule.get("adb_command", "") or "无")
+
+        # 参数表格
+        params = rule.get("parameters", [])
+        self.action_detail_params.setRowCount(len(params))
+        for i, param in enumerate(params):
+            self.action_detail_params.setItem(i, 0, QtWidgets.QTableWidgetItem(param.get("name", "")))
+            self.action_detail_params.setItem(i, 1, QtWidgets.QTableWidgetItem(param.get("type", "")))
+            self.action_detail_params.setItem(i, 2, QtWidgets.QTableWidgetItem("是" if param.get("required") else "否"))
+            self.action_detail_params.setItem(i, 3, QtWidgets.QTableWidgetItem(param.get("description", "")))
+
+        # 规则内容表格
+        rules = rule.get("rules", [])
+        self.action_rules_table.setRowCount(len(rules))
+        for i, rule_item in enumerate(rules):
+            # ID
+            id_item = QtWidgets.QTableWidgetItem(rule_item.get("id", ""))
+            self.action_rules_table.setItem(i, 0, id_item)
+            # 条件
+            cond_item = QtWidgets.QTableWidgetItem(rule_item.get("condition", ""))
+            self.action_rules_table.setItem(i, 1, cond_item)
+            # 执行动作
+            action_item = QtWidgets.QTableWidgetItem(rule_item.get("action", ""))
+            self.action_rules_table.setItem(i, 2, action_item)
+            # 优先级
+            priority_item = QtWidgets.QTableWidgetItem(str(rule_item.get("priority", 0)))
+            self.action_rules_table.setItem(i, 3, priority_item)
+            # 状态
+            enabled = rule_item.get("enabled", True)
+            status_item = QtWidgets.QTableWidgetItem("启用" if enabled else "禁用")
+            if enabled:
+                status_item.setForeground(QtGui.QColor("#22c55e"))
+            else:
+                status_item.setForeground(QtGui.QColor("#ef4444"))
+            self.action_rules_table.setItem(i, 4, status_item)
+
+    def _filter_rules_apps(self, text):
+        """过滤应用映射表格"""
+        for row in range(self.rules_apps_table.rowCount()):
+            app_name = self.rules_apps_table.item(row, 0).text().lower()
+            package_name = self.rules_apps_table.item(row, 1).text().lower()
+            match = text.lower() in app_name or text.lower() in package_name
+            self.rules_apps_table.setRowHidden(row, not match)
+
+    def _add_app_rule(self):
+        """添加应用映射规则"""
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("添加应用映射")
+        dialog.setMinimumWidth(400)
+
+        layout = QtWidgets.QFormLayout(dialog)
+
+        name_input = QtWidgets.QLineEdit()
+        name_input.setPlaceholderText("如：抖音、微信")
+        package_input = QtWidgets.QLineEdit()
+        package_input.setPlaceholderText("如：com.ss.android.ugc.aweme")
+
+        layout.addRow("应用名称:", name_input)
+        layout.addRow("包名:", package_input)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            name = name_input.text().strip()
+            package = package_input.text().strip()
+            if name and package:
+                self._rules_manager.add_app(name, package)
+                self._load_rules_apps()
+
+    def _edit_app_rule(self):
+        """编辑应用映射规则"""
+        selected = self.rules_apps_table.selectedItems()
+        if not selected:
+            return
+
+        row = selected[0].row()
+        old_name = self.rules_apps_table.item(row, 0).text()
+        old_package = self.rules_apps_table.item(row, 1).text()
+        source = self.rules_apps_table.item(row, 2).text()
+
+        if source == "内置":
+            QtWidgets.QMessageBox.information(self, "提示", "内置规则不可编辑，但您可以添加同名自定义规则覆盖它。")
+            return
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("编辑应用映射")
+        dialog.setMinimumWidth(400)
+
+        layout = QtWidgets.QFormLayout(dialog)
+
+        name_input = QtWidgets.QLineEdit(old_name)
+        package_input = QtWidgets.QLineEdit(old_package)
+
+        layout.addRow("应用名称:", name_input)
+        layout.addRow("包名:", package_input)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            new_name = name_input.text().strip()
+            new_package = package_input.text().strip()
+            if new_name and new_package:
+                self._rules_manager.update_app(old_name, new_name, new_package)
+                self._load_rules_apps()
+
+    def _delete_app_rule(self):
+        """删除应用映射规则"""
+        selected = self.rules_apps_table.selectedItems()
+        if not selected:
+            return
+
+        row = selected[0].row()
+        app_name = self.rules_apps_table.item(row, 0).text()
+        source = self.rules_apps_table.item(row, 2).text()
+
+        if source == "内置":
+            QtWidgets.QMessageBox.information(self, "提示", "内置规则不可删除。")
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除应用映射 '{app_name}' 吗？",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._rules_manager.delete_app(app_name)
+            self._load_rules_apps()
+
+    def _save_timing_rules(self):
+        """保存时间延迟规则"""
+        for row in range(self.rules_timing_table.rowCount()):
+            key_item = self.rules_timing_table.item(row, 2)
+            value_item = self.rules_timing_table.item(row, 3)
+
+            if key_item and value_item:
+                full_key = key_item.text()
+                try:
+                    value = float(value_item.text())
+                    category, key = full_key.split(".", 1)
+                    self._rules_manager.update_timing(category, key, value)
+                except ValueError:
+                    pass
+
+        QtWidgets.QMessageBox.information(self, "成功", "时间延迟规则已保存。")
+
+    def _reset_timing_rules(self):
+        """重置时间延迟规则为默认值"""
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认重置",
+            "确定要将所有时间延迟恢复为默认值吗？",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            # 重新初始化配置
+            from phone_agent.config.timing import TimingConfig, TIMING_CONFIG
+            import phone_agent.config.timing as timing_module
+            timing_module.TIMING_CONFIG = TimingConfig()
+            self._load_rules_timing()
+            QtWidgets.QMessageBox.information(self, "成功", "已恢复默认值。")
+
+    def _refresh_rules(self):
+        """刷新所有规则数据"""
+        self._load_rules_apps()
+        self._load_rules_timing()
+        self._load_rules_actions()
+
+    # ========== 动作规则增删改查 ==========
+
+    def _add_action_rule(self):
+        """添加新的动作规则"""
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("添加动作规则")
+        dialog.setMinimumWidth(500)
+
+        layout = QtWidgets.QFormLayout(dialog)
+
+        name_input = QtWidgets.QLineEdit()
+        name_input.setPlaceholderText("如: Custom_Action")
+        desc_input = QtWidgets.QLineEdit()
+        desc_input.setPlaceholderText("动作的功能说明")
+        example_input = QtWidgets.QLineEdit()
+        example_input.setPlaceholderText('如: do(action="Custom_Action", param="value")')
+        adb_input = QtWidgets.QLineEdit()
+        adb_input.setPlaceholderText("对应的ADB命令（可选）")
+
+        layout.addRow("动作名称:", name_input)
+        layout.addRow("动作说明:", desc_input)
+        layout.addRow("调用示例:", example_input)
+        layout.addRow("ADB命令:", adb_input)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            name = name_input.text().strip()
+            if not name:
+                QtWidgets.QMessageBox.warning(self, "错误", "动作名称不能为空。")
+                return
+
+            action_data = {
+                "name": name,
+                "description": desc_input.text().strip(),
+                "parameters": [],
+                "example": example_input.text().strip(),
+                "adb_command": adb_input.text().strip(),
+                "rules": [],
+                "is_custom": True
+            }
+
+            if self._rules_manager.add_action_rule(action_data):
+                self._load_rules_actions()
+                QtWidgets.QMessageBox.information(self, "成功", f"动作 '{name}' 已添加。")
+            else:
+                QtWidgets.QMessageBox.warning(self, "错误", f"动作 '{name}' 已存在。")
+
+    def _edit_action_rule(self):
+        """编辑动作规则"""
+        current_item = self.rules_actions_list.currentItem()
+        if not current_item:
+            return
+
+        rule = current_item.data(QtCore.Qt.UserRole)
+        is_custom = rule.get("is_custom", False)
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"编辑动作: {rule['name']}")
+        dialog.setMinimumWidth(500)
+
+        layout = QtWidgets.QFormLayout(dialog)
+
+        name_input = QtWidgets.QLineEdit(rule["name"])
+        name_input.setEnabled(is_custom)  # 内置动作不允许改名
+        desc_input = QtWidgets.QLineEdit(rule.get("description", ""))
+        example_input = QtWidgets.QLineEdit(rule.get("example", ""))
+        adb_input = QtWidgets.QLineEdit(rule.get("adb_command", ""))
+
+        layout.addRow("动作名称:", name_input)
+        layout.addRow("动作说明:", desc_input)
+        layout.addRow("调用示例:", example_input)
+        layout.addRow("ADB命令:", adb_input)
+
+        if not is_custom:
+            note = QtWidgets.QLabel("注: 内置动作只能修改说明、示例和ADB命令")
+            note.setStyleSheet("color: #f59e0b; font-size: 12px;")
+            layout.addRow(note)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            updates = {
+                "description": desc_input.text().strip(),
+                "example": example_input.text().strip(),
+                "adb_command": adb_input.text().strip(),
+            }
+            if is_custom:
+                updates["name"] = name_input.text().strip()
+
+            self._rules_manager.update_action_rule(rule["name"], updates)
+            self._load_rules_actions()
+
+    def _delete_action_rule(self):
+        """删除动作规则"""
+        current_item = self.rules_actions_list.currentItem()
+        if not current_item:
+            return
+
+        rule = current_item.data(QtCore.Qt.UserRole)
+        is_custom = rule.get("is_custom", False)
+
+        if not is_custom:
+            QtWidgets.QMessageBox.information(self, "提示", "内置动作不可删除。")
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除动作 '{rule['name']}' 吗？\n此操作将同时删除该动作的所有规则内容。",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            if self._rules_manager.delete_action_rule(rule["name"]):
+                self._load_rules_actions()
+                QtWidgets.QMessageBox.information(self, "成功", f"动作 '{rule['name']}' 已删除。")
+
+    def _reset_action_rules(self):
+        """重置动作规则为默认值"""
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认重置",
+            "确定要将所有动作规则恢复为默认值吗？\n这将删除所有自定义动作和规则修改。",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._rules_manager.reset_action_rules()
+            self._load_rules_actions()
+            QtWidgets.QMessageBox.information(self, "成功", "已恢复默认动作规则。")
+
+    # ========== 规则内容增删改查 ==========
+
+    def _get_current_action_name(self):
+        """获取当前选中的动作名称"""
+        return getattr(self, '_current_action_name', None)
+
+    def _add_rule_item(self):
+        """添加规则项"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            QtWidgets.QMessageBox.warning(self, "提示", "请先选择一个动作。")
+            return
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"添加规则 - {action_name}")
+        dialog.setMinimumWidth(450)
+
+        layout = QtWidgets.QFormLayout(dialog)
+
+        condition_input = QtWidgets.QLineEdit()
+        condition_input.setPlaceholderText("触发此规则的条件")
+        action_input = QtWidgets.QLineEdit()
+        action_input.setPlaceholderText("满足条件时执行的动作")
+        priority_input = QtWidgets.QSpinBox()
+        priority_input.setRange(0, 100)
+        priority_input.setValue(5)
+        enabled_check = QtWidgets.QCheckBox("启用此规则")
+        enabled_check.setChecked(True)
+
+        layout.addRow("条件:", condition_input)
+        layout.addRow("执行动作:", action_input)
+        layout.addRow("优先级:", priority_input)
+        layout.addRow("", enabled_check)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            rule_item = {
+                "condition": condition_input.text().strip(),
+                "action": action_input.text().strip(),
+                "priority": priority_input.value(),
+                "enabled": enabled_check.isChecked()
+            }
+
+            if self._rules_manager.add_rule_item(action_name, rule_item):
+                self._load_rules_actions()
+                # 重新选中当前动作
+                for i in range(self.rules_actions_list.count()):
+                    item = self.rules_actions_list.item(i)
+                    if item.data(QtCore.Qt.UserRole)["name"] == action_name:
+                        self.rules_actions_list.setCurrentRow(i)
+                        break
+
+    def _edit_rule_item(self):
+        """编辑规则项"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            return
+
+        selected = self.action_rules_table.selectedItems()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "提示", "请先选择要编辑的规则。")
+            return
+
+        row = selected[0].row()
+        rule_id = self.action_rules_table.item(row, 0).text()
+        condition = self.action_rules_table.item(row, 1).text()
+        action = self.action_rules_table.item(row, 2).text()
+        priority = int(self.action_rules_table.item(row, 3).text())
+        enabled = self.action_rules_table.item(row, 4).text() == "启用"
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"编辑规则 - {rule_id}")
+        dialog.setMinimumWidth(450)
+
+        layout = QtWidgets.QFormLayout(dialog)
+
+        condition_input = QtWidgets.QLineEdit(condition)
+        action_input = QtWidgets.QLineEdit(action)
+        priority_input = QtWidgets.QSpinBox()
+        priority_input.setRange(0, 100)
+        priority_input.setValue(priority)
+        enabled_check = QtWidgets.QCheckBox("启用此规则")
+        enabled_check.setChecked(enabled)
+
+        layout.addRow("条件:", condition_input)
+        layout.addRow("执行动作:", action_input)
+        layout.addRow("优先级:", priority_input)
+        layout.addRow("", enabled_check)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            updates = {
+                "condition": condition_input.text().strip(),
+                "action": action_input.text().strip(),
+                "priority": priority_input.value(),
+                "enabled": enabled_check.isChecked()
+            }
+
+            if self._rules_manager.update_rule_item(action_name, rule_id, updates):
+                self._load_rules_actions()
+                for i in range(self.rules_actions_list.count()):
+                    item = self.rules_actions_list.item(i)
+                    if item.data(QtCore.Qt.UserRole)["name"] == action_name:
+                        self.rules_actions_list.setCurrentRow(i)
+                        break
+
+    def _delete_rule_item(self):
+        """删除规则项"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            return
+
+        selected = self.action_rules_table.selectedItems()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "提示", "请先选择要删除的规则。")
+            return
+
+        row = selected[0].row()
+        rule_id = self.action_rules_table.item(row, 0).text()
+        condition = self.action_rules_table.item(row, 1).text()
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除规则 '{rule_id}' 吗？\n条件: {condition}",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            if self._rules_manager.delete_rule_item(action_name, rule_id):
+                self._load_rules_actions()
+                for i in range(self.rules_actions_list.count()):
+                    item = self.rules_actions_list.item(i)
+                    if item.data(QtCore.Qt.UserRole)["name"] == action_name:
+                        self.rules_actions_list.setCurrentRow(i)
+                        break
+
+    def _toggle_rule_item(self):
+        """切换规则项启用状态"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            return
+
+        selected = self.action_rules_table.selectedItems()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "提示", "请先选择要切换的规则。")
+            return
+
+        row = selected[0].row()
+        rule_id = self.action_rules_table.item(row, 0).text()
+
+        if self._rules_manager.toggle_rule_item(action_name, rule_id):
+            self._load_rules_actions()
+            for i in range(self.rules_actions_list.count()):
+                item = self.rules_actions_list.item(i)
+                if item.data(QtCore.Qt.UserRole)["name"] == action_name:
+                    self.rules_actions_list.setCurrentRow(i)
+                    break
+
+    # ========== 参数管理 ==========
+
+    def _add_parameter(self):
+        """添加动作参数"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            QtWidgets.QMessageBox.warning(self, "提示", "请先选择一个动作。")
+            return
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"添加参数 - {action_name}")
+        dialog.setMinimumWidth(400)
+
+        layout = QtWidgets.QFormLayout(dialog)
+
+        name_input = QtWidgets.QLineEdit()
+        name_input.setPlaceholderText("参数名称，如 text, element")
+        type_combo = QtWidgets.QComboBox()
+        type_combo.addItems(["string", "int", "float", "bool", "list[int]", "list[str]", "dict"])
+        type_combo.setEditable(True)
+        required_check = QtWidgets.QCheckBox("必填参数")
+        desc_input = QtWidgets.QLineEdit()
+        desc_input.setPlaceholderText("参数说明")
+
+        layout.addRow("参数名:", name_input)
+        layout.addRow("类型:", type_combo)
+        layout.addRow("", required_check)
+        layout.addRow("说明:", desc_input)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            param_name = name_input.text().strip()
+            if not param_name:
+                QtWidgets.QMessageBox.warning(self, "错误", "参数名不能为空。")
+                return
+
+            param = {
+                "name": param_name,
+                "type": type_combo.currentText(),
+                "required": required_check.isChecked(),
+                "description": desc_input.text().strip()
+            }
+
+            if self._rules_manager.add_parameter(action_name, param):
+                self._load_rules_actions()
+                self._select_action_by_name(action_name)
+            else:
+                QtWidgets.QMessageBox.warning(self, "错误", f"参数 '{param_name}' 已存在。")
+
+    def _edit_parameter(self):
+        """编辑动作参数"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            return
+
+        selected = self.action_detail_params.selectedItems()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "提示", "请先选择要编辑的参数。")
+            return
+
+        row = selected[0].row()
+        old_name = self.action_detail_params.item(row, 0).text()
+        old_type = self.action_detail_params.item(row, 1).text()
+        old_required = self.action_detail_params.item(row, 2).text() == "是"
+        old_desc = self.action_detail_params.item(row, 3).text()
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"编辑参数 - {old_name}")
+        dialog.setMinimumWidth(400)
+
+        layout = QtWidgets.QFormLayout(dialog)
+
+        name_input = QtWidgets.QLineEdit(old_name)
+        type_combo = QtWidgets.QComboBox()
+        type_combo.addItems(["string", "int", "float", "bool", "list[int]", "list[str]", "dict"])
+        type_combo.setEditable(True)
+        type_combo.setCurrentText(old_type)
+        required_check = QtWidgets.QCheckBox("必填参数")
+        required_check.setChecked(old_required)
+        desc_input = QtWidgets.QLineEdit(old_desc)
+
+        layout.addRow("参数名:", name_input)
+        layout.addRow("类型:", type_combo)
+        layout.addRow("", required_check)
+        layout.addRow("说明:", desc_input)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            updates = {
+                "name": name_input.text().strip(),
+                "type": type_combo.currentText(),
+                "required": required_check.isChecked(),
+                "description": desc_input.text().strip()
+            }
+
+            if self._rules_manager.update_parameter(action_name, old_name, updates):
+                self._load_rules_actions()
+                self._select_action_by_name(action_name)
+
+    def _delete_parameter(self):
+        """删除动作参数"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            return
+
+        selected = self.action_detail_params.selectedItems()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "提示", "请先选择要删除的参数。")
+            return
+
+        row = selected[0].row()
+        param_name = self.action_detail_params.item(row, 0).text()
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除参数 '{param_name}' 吗？",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            if self._rules_manager.delete_parameter(action_name, param_name):
+                self._load_rules_actions()
+                self._select_action_by_name(action_name)
+
+    def _select_action_by_name(self, action_name: str):
+        """根据名称选中动作"""
+        for i in range(self.rules_actions_list.count()):
+            item = self.rules_actions_list.item(i)
+            if item.data(QtCore.Qt.UserRole)["name"] == action_name:
+                self.rules_actions_list.setCurrentRow(i)
+                break
+
+    # ========== 导入导出 ==========
+
+    def _export_rules(self):
+        """导出动作规则"""
+        filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "导出动作规则",
+            "action_rules.json",
+            "JSON 文件 (*.json)"
+        )
+        if filepath:
+            if self._rules_manager.export_action_rules(filepath):
+                QtWidgets.QMessageBox.information(self, "成功", f"规则已导出到:\n{filepath}")
+            else:
+                QtWidgets.QMessageBox.warning(self, "错误", "导出失败。")
+
+    def _import_rules(self):
+        """导入动作规则"""
+        filepath, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "导入动作规则",
+            "",
+            "JSON 文件 (*.json)"
+        )
+        if not filepath:
+            return
+
+        # 询问导入模式
+        reply = QtWidgets.QMessageBox.question(
+            self, "导入模式",
+            "选择导入模式:\n\n点击'是'：合并模式（保留现有规则，添加新规则）\n点击'否'：替换模式（替换所有规则）",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel
+        )
+
+        if reply == QtWidgets.QMessageBox.Cancel:
+            return
+
+        merge = (reply == QtWidgets.QMessageBox.Yes)
+        success, message = self._rules_manager.import_action_rules(filepath, merge)
+
+        if success:
+            self._load_rules_actions()
+            QtWidgets.QMessageBox.information(self, "成功", message)
+        else:
+            QtWidgets.QMessageBox.warning(self, "错误", message)
+
+    # ========== 搜索过滤 ==========
+
+    def _filter_actions(self, text: str):
+        """过滤动作列表"""
+        search_text = text.lower().strip()
+        for i in range(self.rules_actions_list.count()):
+            item = self.rules_actions_list.item(i)
+            rule = item.data(QtCore.Qt.UserRole)
+            # 搜索动作名称、描述
+            match = (
+                search_text in rule["name"].lower() or
+                search_text in rule.get("description", "").lower()
+            )
+            item.setHidden(not match)
 
     def _build_diagnostics_page(self):
         page = QtWidgets.QWidget()
@@ -6252,6 +7973,443 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_theme = "light" if value == "亮色" else "dark"
         self.settings.setValue("theme", self.current_theme)
         self._apply_style()
+        # 更新自定义标题栏样式
+        if hasattr(self, 'title_bar'):
+            self.title_bar.update_theme()
+        # 更新硬编码样式的组件
+        self._update_component_themes()
+
+    def _update_component_themes(self):
+        """根据当前主题更新所有硬编码样式的组件"""
+        is_light = getattr(self, 'current_theme', 'dark') == 'light'
+
+        # ===== 应用安装页面 =====
+        # 设备列表样式
+        if hasattr(self, 'apk_device_list') and self.apk_device_list:
+            if is_light:
+                self.apk_device_list.setStyleSheet("""
+                    QListWidget {
+                        background: rgba(255, 255, 255, 0.95);
+                        border: 2px solid rgba(212, 212, 216, 0.8);
+                        border-radius: 8px;
+                        padding: 4px;
+                        color: #18181b;
+                        font-size: 13px;
+                    }
+                    QListWidget::item {
+                        padding: 8px 12px;
+                        border-radius: 4px;
+                        margin: 2px;
+                    }
+                    QListWidget::item:selected {
+                        background: rgba(99, 102, 241, 0.3);
+                        color: #18181b;
+                    }
+                    QListWidget::item:hover {
+                        background: rgba(228, 228, 231, 0.6);
+                    }
+                """)
+            else:
+                self.apk_device_list.setStyleSheet("""
+                    QListWidget {
+                        background: #18181b;
+                        border: 2px solid #27272a;
+                        border-radius: 8px;
+                        padding: 4px;
+                        color: #fafafa;
+                        font-size: 13px;
+                    }
+                    QListWidget::item {
+                        padding: 8px 12px;
+                        border-radius: 4px;
+                        margin: 2px;
+                    }
+                    QListWidget::item:selected {
+                        background: #3f3f46;
+                        color: #fafafa;
+                    }
+                    QListWidget::item:hover {
+                        background: #27272a;
+                    }
+                """)
+
+        # APK 拖动区域样式
+        if hasattr(self, 'apk_drop_zone') and self.apk_drop_zone:
+            self.apk_drop_zone._is_light_theme = is_light
+            self.apk_drop_zone._update_style(False)
+
+        # APK 安装状态样式
+        if hasattr(self, 'apk_install_status') and self.apk_install_status:
+            if is_light:
+                self.apk_install_status.setStyleSheet(
+                    "font-size: 13px; color: #52525b; background: rgba(228, 228, 231, 0.6); "
+                    "padding: 8px 16px; border-radius: 8px;"
+                )
+            else:
+                self.apk_install_status.setStyleSheet(
+                    "font-size: 13px; color: #a1a1aa; background: rgba(39, 39, 42, 0.6); "
+                    "padding: 8px 16px; border-radius: 8px;"
+                )
+
+        # APK 进度条样式
+        if hasattr(self, 'apk_progress') and self.apk_progress:
+            if is_light:
+                self.apk_progress.setStyleSheet("""
+                    QProgressBar {
+                        background: rgba(228, 228, 231, 0.6);
+                        border: 1px solid rgba(212, 212, 216, 0.5);
+                        border-radius: 8px;
+                        height: 20px;
+                        text-align: center;
+                        color: #18181b;
+                    }
+                    QProgressBar::chunk {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                            stop:0 #6366f1, stop:1 #8b5cf6);
+                        border-radius: 7px;
+                    }
+                """)
+            else:
+                self.apk_progress.setStyleSheet("""
+                    QProgressBar {
+                        background: rgba(39, 39, 42, 0.6);
+                        border: 1px solid rgba(63, 63, 70, 0.5);
+                        border-radius: 8px;
+                        height: 20px;
+                        text-align: center;
+                        color: #fafafa;
+                    }
+                    QProgressBar::chunk {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                            stop:0 #6366f1, stop:1 #8b5cf6);
+                        border-radius: 7px;
+                    }
+                """)
+
+        # ===== 定时任务页面 =====
+        # 任务列表样式
+        if hasattr(self, 'scheduled_task_list') and self.scheduled_task_list:
+            if is_light:
+                self.scheduled_task_list.setStyleSheet("""
+                    QTableWidget {
+                        gridline-color: rgba(212, 212, 216, 0.8);
+                        border: 1px solid rgba(212, 212, 216, 0.5);
+                        background: rgba(255, 255, 255, 0.95);
+                        color: #18181b;
+                    }
+                    QTableWidget::item {
+                        padding: 4px 8px;
+                        border-bottom: 1px solid rgba(212, 212, 216, 0.5);
+                    }
+                    QHeaderView::section {
+                        background: rgba(244, 244, 245, 0.95);
+                        border: 1px solid rgba(212, 212, 216, 0.5);
+                        padding: 6px;
+                        color: #52525b;
+                    }
+                """)
+            else:
+                self.scheduled_task_list.setStyleSheet("""
+                    QTableWidget {
+                        gridline-color: rgba(63, 63, 70, 0.8);
+                        border: 1px solid rgba(63, 63, 70, 0.5);
+                    }
+                    QTableWidget::item {
+                        padding: 4px 8px;
+                        border-bottom: 1px solid rgba(63, 63, 70, 0.5);
+                    }
+                    QHeaderView::section {
+                        background: rgba(39, 39, 42, 0.8);
+                        border: 1px solid rgba(63, 63, 70, 0.5);
+                        padding: 6px;
+                    }
+                """)
+
+        # 日期时间选择器样式
+        datetime_style_light = """
+            QDateTimeEdit {
+                background: rgba(255, 255, 255, 0.95);
+                border: 1px solid rgba(212, 212, 216, 0.8);
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: #18181b;
+            }
+            QDateTimeEdit::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                width: 20px;
+                border-left: 1px solid rgba(212, 212, 216, 0.8);
+                background: rgba(244, 244, 245, 0.5);
+            }
+            QDateTimeEdit::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid #71717a;
+            }
+        """
+        datetime_style_dark = """
+            QDateTimeEdit {
+                background: rgba(39, 39, 42, 0.8);
+                border: 1px solid rgba(63, 63, 70, 0.8);
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: #fafafa;
+            }
+            QDateTimeEdit::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                width: 20px;
+                border-left: 1px solid rgba(63, 63, 70, 0.8);
+                background: rgba(63, 63, 70, 0.5);
+            }
+            QDateTimeEdit::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid #a1a1aa;
+            }
+        """
+        if hasattr(self, 'sched_once_datetime') and self.sched_once_datetime:
+            self.sched_once_datetime.setStyleSheet(datetime_style_light if is_light else datetime_style_dark)
+
+        # ===== 任务执行页面 =====
+        # 设备执行状态提示框
+        if hasattr(self, 'multi_status_label') and self.multi_status_label:
+            if is_light:
+                self.multi_status_label.setStyleSheet(
+                    "font-size: 12px; color: #52525b; background: rgba(228, 228, 231, 0.6); "
+                    "padding: 8px 12px; border-radius: 8px;"
+                )
+            else:
+                self.multi_status_label.setStyleSheet(
+                    "font-size: 12px; color: #a1a1aa; background: rgba(39, 39, 42, 0.6); "
+                    "padding: 8px 12px; border-radius: 8px;"
+                )
+
+        # 实时预览状态
+        if hasattr(self, 'preview_status') and self.preview_status:
+            if is_light:
+                self.preview_status.setStyleSheet(
+                    "font-size: 10px; color: #52525b; background: rgba(228, 228, 231, 0.6); "
+                    "padding: 3px 8px; border-radius: 4px;"
+                )
+            else:
+                self.preview_status.setStyleSheet(
+                    "font-size: 10px; color: #71717a; background: rgba(39, 39, 42, 0.6); "
+                    "padding: 3px 8px; border-radius: 4px;"
+                )
+
+        # 预览设备选择框
+        if hasattr(self, 'preview_device_combo') and self.preview_device_combo:
+            if is_light:
+                self.preview_device_combo.setStyleSheet("""
+                    QComboBox {
+                        padding: 4px 8px;
+                        border: 1px solid rgba(212, 212, 216, 0.8);
+                        border-radius: 6px;
+                        background: rgba(255, 255, 255, 0.95);
+                        color: #18181b;
+                        font-size: 12px;
+                        min-width: 100px;
+                    }
+                    QComboBox::drop-down {
+                        border: none;
+                        width: 20px;
+                    }
+                    QComboBox QAbstractItemView {
+                        background: rgba(255, 255, 255, 0.98);
+                        border: 1px solid rgba(212, 212, 216, 0.8);
+                        border-radius: 6px;
+                        selection-background-color: rgba(99, 102, 241, 0.3);
+                        selection-color: #18181b;
+                        padding: 2px;
+                    }
+                """)
+            else:
+                self.preview_device_combo.setStyleSheet("""
+                    QComboBox {
+                        padding: 4px 8px;
+                        border: 1px solid #27272a;
+                        border-radius: 6px;
+                        background: #18181b;
+                        color: #fafafa;
+                        font-size: 12px;
+                        min-width: 100px;
+                    }
+                    QComboBox::drop-down {
+                        border: none;
+                        width: 20px;
+                    }
+                    QComboBox QAbstractItemView {
+                        background: #18181b;
+                        border: 1px solid #27272a;
+                        border-radius: 6px;
+                        selection-background-color: #3f3f46;
+                        selection-color: #fafafa;
+                        padding: 2px;
+                    }
+                """)
+
+        # 预览区域样式
+        if hasattr(self, 'preview_label') and self.preview_label:
+            if is_light:
+                self.preview_label.setStyleSheet("""
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #e4e4e7, stop:1 #d4d4d8);
+                    border: 2px solid rgba(161, 161, 170, 0.5);
+                    border-radius: 12px;
+                    color: #52525b;
+                    font-size: 12px;
+                """)
+            else:
+                self.preview_label.setStyleSheet("""
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #18181b, stop:1 #09090b);
+                    border: 2px solid #27272a;
+                    border-radius: 12px;
+                    color: #71717a;
+                    font-size: 12px;
+                """)
+
+        # ===== 控制台/仪表盘页面 =====
+        # 更新 metric cards 需要重新构建，这里更新快捷操作标题和按钮
+        self._update_dashboard_theme(is_light)
+
+    def _update_dashboard_theme(self, is_light):
+        """更新控制台/仪表盘页面的主题"""
+        # 更新欢迎标题
+        dashboard_page = self.stack.widget(0)
+        if dashboard_page:
+            title_label = dashboard_page.findChild(QtWidgets.QLabel, "title")
+            if title_label:
+                if is_light:
+                    title_label.setStyleSheet("""
+                        font-size: 28px;
+                        font-weight: 700;
+                        color: #18181b;
+                        letter-spacing: -0.5px;
+                        margin-bottom: 4px;
+                    """)
+                else:
+                    title_label.setStyleSheet("""
+                        font-size: 28px;
+                        font-weight: 700;
+                        color: #fafafa;
+                        letter-spacing: -0.5px;
+                        margin-bottom: 4px;
+                    """)
+
+        # 更新快捷操作卡片
+        actions_card = dashboard_page.findChild(QtWidgets.QFrame, "card") if dashboard_page else None
+        if actions_card:
+            card_title = actions_card.findChild(QtWidgets.QLabel, "cardTitle")
+            if card_title:
+                if is_light:
+                    card_title.setStyleSheet("font-size: 16px; font-weight: 600; color: #18181b; margin-bottom: 12px;")
+                else:
+                    card_title.setStyleSheet("font-size: 16px; font-weight: 600; color: #fafafa; margin-bottom: 12px;")
+
+        # 更新 metric cards
+        metric_cards = [
+            (self.metric_device, "device"),
+            (self.metric_model, "model"),
+            (self.metric_tasks, "tasks"),
+            (self.metric_status, "status"),
+        ]
+
+        icon_colors = {
+            "device": ("#10b981", "rgba(16, 185, 129, 0.1)"),
+            "model": ("#6366f1", "rgba(99, 102, 241, 0.1)"),
+            "tasks": ("#f59e0b", "rgba(245, 158, 11, 0.1)"),
+            "status": ("#22c55e", "rgba(34, 197, 94, 0.1)"),
+        }
+
+        for card, card_type in metric_cards:
+            if not card:
+                continue
+            accent_color, bg_tint = icon_colors.get(card_type, ("#6366f1", "rgba(99, 102, 241, 0.1)"))
+
+            if is_light:
+                card.setStyleSheet(
+                    f"""
+                    QFrame {{
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                            stop:0 rgba(255, 255, 255, 0.98), stop:1 rgba(250, 250, 250, 0.95));
+                        border: 1px solid rgba(212, 212, 216, 0.6);
+                        border-radius: 16px;
+                    }}
+                    QFrame:hover {{
+                        border: 1px solid {accent_color};
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                            stop:0 rgba(255, 255, 255, 1), stop:1 rgba(252, 252, 253, 0.98));
+                    }}
+                    """
+                )
+            else:
+                card.setStyleSheet(
+                    f"""
+                    QFrame {{
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                            stop:0 rgba(24, 24, 27, 0.95), stop:1 rgba(17, 17, 19, 0.95));
+                        border: 1px solid rgba(63, 63, 70, 0.4);
+                        border-radius: 16px;
+                    }}
+                    QFrame:hover {{
+                        border: 1px solid {accent_color};
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                            stop:0 rgba(30, 30, 34, 0.98), stop:1 rgba(20, 20, 23, 0.98));
+                    }}
+                    """
+                )
+
+            # 更新卡片内的标签颜色
+            for child in card.findChildren(QtWidgets.QLabel):
+                obj_name = child.objectName()
+                current_style = child.styleSheet()
+
+                if obj_name == "metricValue":
+                    if is_light:
+                        child.setStyleSheet(
+                            f"""
+                            font-size: 28px;
+                            font-weight: 700;
+                            color: #18181b;
+                            letter-spacing: -0.5px;
+                            background: transparent;
+                            border: none;
+                            padding-left: 2px;
+                            """
+                        )
+                    else:
+                        child.setStyleSheet(
+                            f"""
+                            font-size: 28px;
+                            font-weight: 700;
+                            color: #fafafa;
+                            letter-spacing: -0.5px;
+                            background: transparent;
+                            border: none;
+                            padding-left: 2px;
+                            """
+                        )
+                elif obj_name == "metricLabel":
+                    if is_light:
+                        child.setStyleSheet("font-size: 12px; color: #52525b; background: transparent; border: none;")
+                    else:
+                        child.setStyleSheet("font-size: 12px; color: #71717a; background: transparent; border: none;")
+                elif "font-size: 14px" in current_style and "font-weight: 600" in current_style:
+                    # 这是标题标签
+                    if is_light:
+                        child.setStyleSheet(
+                            "font-size: 14px; font-weight: 600; color: #52525b; "
+                            "letter-spacing: 0.3px; background: transparent; border: none;"
+                        )
+                    else:
+                        child.setStyleSheet(
+                            "font-size: 14px; font-weight: 600; color: #d4d4d8; "
+                            "letter-spacing: 0.3px; background: transparent; border: none;"
+                        )
 
     def _detect_virtualization(self):
         """检测当前虚拟化环境状态"""
@@ -6456,15 +8614,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.connect_input.setText(address)
                 self._append_device_log(f"[{self._timestamp()}] 已填入连接地址: {address}\n")
 
-    def _append_script_log(self, text):
-        self.script_log.moveCursor(QtGui.QTextCursor.End)
-        self.script_log.insertPlainText(text)
-        self.script_log.moveCursor(QtGui.QTextCursor.End)
-
-        self.logs_view.moveCursor(QtGui.QTextCursor.End)
-        self.logs_view.insertPlainText(text)
-        self.logs_view.moveCursor(QtGui.QTextCursor.End)
-
     def _append_diag_log(self, text):
         self.diagnostics_log.moveCursor(QtGui.QTextCursor.End)
         self.diagnostics_log.insertPlainText(text)
@@ -6475,19 +8624,169 @@ class MainWindow(QtWidgets.QMainWindow):
         self.logs_view.moveCursor(QtGui.QTextCursor.End)
 
     def _refresh_dashboard(self):
-        device_type = self.device_type_combo.currentText()
-        # Find the metric value labels within each card
-        for child in self.metric_device.findChildren(QtWidgets.QLabel):
-            if child.objectName() == "metricValue":
-                child.setText(device_type.upper())
-                break
-        # Update model display from active service
+        """Refresh all dashboard cards with real-time information."""
+        # === Update Device Card ===
+        try:
+            devices = self._get_connected_devices()
+            device_count = len(devices)
+            device_type = self.device_type_combo.currentText().upper()
+
+            # Update device card value
+            for child in self.metric_device.findChildren(QtWidgets.QLabel):
+                if child.objectName() == "metricValue":
+                    child.setText(f"{device_count} 台")
+                    break
+
+            # Update device card detail with device list
+            device_detail = ""
+            if device_count > 0:
+                device_names = [d.get('id', '')[:12] for d in devices[:3]]  # Show first 3 devices
+                device_detail = f"{device_type}: " + ", ".join(device_names)
+                if device_count > 3:
+                    device_detail += f" (+{device_count - 3})"
+            else:
+                device_detail = f"{device_type}: 无设备连接"
+
+            for child in self.metric_device.findChildren(QtWidgets.QLabel):
+                if child.objectName() == "metricDetail":
+                    child.setText(device_detail)
+                    break
+
+            # Update device card badge color based on connection status
+            badge_color = "#10b981" if device_count > 0 else "#71717a"
+            for child in self.metric_device.findChildren(QtWidgets.QLabel):
+                if child.objectName() == "statusBadge":
+                    child.setStyleSheet(f"""
+                        font-size: 12px;
+                        color: {badge_color};
+                        background: rgba(16, 185, 129, 0.1);
+                        border-radius: 12px;
+                        padding: 4px 8px;
+                        border: none;
+                    """)
+                    break
+        except Exception:
+            pass
+
+        # === Update Model Card ===
         active_service = self.model_services_manager.get_active_service()
         model_name = active_service.model_name if active_service else "-"
         for child in self.metric_model.findChildren(QtWidgets.QLabel):
             if child.objectName() == "metricValue":
                 child.setText(model_name or "-")
                 break
+
+        # === Update Tasks Card ===
+        total_tasks = self.manual_tasks_count + self.scheduled_tasks_count
+        for child in self.metric_tasks.findChildren(QtWidgets.QLabel):
+            if child.objectName() == "metricValue":
+                child.setText(str(total_tasks))
+                break
+
+        # Update tasks detail with breakdown
+        tasks_detail = f"手动: {self.manual_tasks_count} | 定时: {self.scheduled_tasks_count}"
+        for child in self.metric_tasks.findChildren(QtWidgets.QLabel):
+            if child.objectName() == "metricDetail":
+                child.setText(tasks_detail)
+                break
+
+        # === Update System Status Card ===
+        if self.system_diagnosis_result:
+            status_text = self.system_diagnosis_result.get("status", "未知")
+            status_detail = self.system_diagnosis_result.get("detail", "")
+            status_color = self.system_diagnosis_result.get("color", "#71717a")
+
+            for child in self.metric_status.findChildren(QtWidgets.QLabel):
+                if child.objectName() == "metricValue":
+                    child.setText(status_text)
+                    break
+
+            for child in self.metric_status.findChildren(QtWidgets.QLabel):
+                if child.objectName() == "metricDetail":
+                    child.setText(status_detail)
+                    break
+
+            for child in self.metric_status.findChildren(QtWidgets.QLabel):
+                if child.objectName() == "statusBadge":
+                    child.setStyleSheet(f"""
+                        font-size: 12px;
+                        color: {status_color};
+                        background: rgba(34, 197, 94, 0.1);
+                        border-radius: 12px;
+                        padding: 4px 8px;
+                        border: none;
+                    """)
+                    break
+
+    def _run_quick_diagnosis(self):
+        """Run a quick system diagnosis and update the dashboard status card."""
+        import shutil
+
+        issues = []
+        checks_passed = 0
+        total_checks = 0
+
+        # Check 1: ADB/HDC availability
+        total_checks += 1
+        device_type = self.device_type_combo.currentText().lower()
+        if device_type == "adb":
+            adb_path = shutil.which("adb")
+            if adb_path:
+                checks_passed += 1
+            else:
+                issues.append("ADB未安装")
+        elif device_type == "hdc":
+            hdc_path = shutil.which("hdc")
+            if hdc_path:
+                checks_passed += 1
+            else:
+                issues.append("HDC未安装")
+        else:
+            checks_passed += 1  # iOS doesn't need command line tools
+
+        # Check 2: Connected devices
+        total_checks += 1
+        try:
+            devices = self._get_connected_devices()
+            if len(devices) > 0:
+                checks_passed += 1
+            else:
+                issues.append("无设备连接")
+        except Exception:
+            issues.append("设备检测失败")
+
+        # Check 3: Model service configuration
+        total_checks += 1
+        active_service = self.model_services_manager.get_active_service()
+        if active_service and active_service.base_url and active_service.model_name:
+            checks_passed += 1
+        else:
+            issues.append("模型未配置")
+
+        # Determine overall status
+        if checks_passed == total_checks:
+            status = "正常"
+            color = "#22c55e"  # Green
+            detail = "所有系统运行正常"
+        elif checks_passed >= total_checks - 1:
+            status = "警告"
+            color = "#f59e0b"  # Yellow
+            detail = "; ".join(issues[:2])
+        else:
+            status = "异常"
+            color = "#ef4444"  # Red
+            detail = "; ".join(issues[:2])
+
+        self.system_diagnosis_result = {
+            "status": status,
+            "detail": detail,
+            "color": color,
+            "checks_passed": checks_passed,
+            "total_checks": total_checks
+        }
+
+        # Update the dashboard
+        self._refresh_dashboard()
 
     def _load_settings(self):
         # Load global settings (device, max_steps, lang)
@@ -7103,7 +9402,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._increment_tasks_counter()
         self.run_task_btn.setEnabled(True)
         self.stop_task_btn.setEnabled(False)
-        
+
+        # Wait for worker thread to fully finish before showing dialog
+        if self.task_worker and self.task_worker.isRunning():
+            self.task_worker.wait(500)
+
         # Show completion dialog
         self._show_task_completion_dialog(result, success=True)
 
@@ -7144,15 +9447,19 @@ class MainWindow(QtWidgets.QMainWindow):
             # Fallback to simple logging if dialog fails
             self._append_log(f"对话框显示失败: {e}\n")
 
-    def _increment_tasks_counter(self):
-        """Increment the completed tasks counter on the dashboard."""
-        metric_label = self.metric_tasks.findChild(QtWidgets.QLabel, "metricValue")
-        if metric_label:
-            try:
-                current = int(metric_label.text()) if metric_label.text() else 0
-            except ValueError:
-                current = 0
-            metric_label.setText(str(current + 1))
+    def _increment_tasks_counter(self, is_scheduled: bool = False):
+        """Increment the completed tasks counter on the dashboard.
+
+        Args:
+            is_scheduled: If True, increment scheduled tasks counter; otherwise manual tasks.
+        """
+        if is_scheduled:
+            self.scheduled_tasks_count += 1
+        else:
+            self.manual_tasks_count += 1
+
+        # Update the dashboard display
+        self._refresh_dashboard()
 
     def _append_timeline(self, text):
         timestamp = QtCore.QDateTime.currentDateTime().toString("HH:mm:ss")
@@ -7437,51 +9744,65 @@ class MainWindow(QtWidgets.QMainWindow):
             del self.preview_workers[device_id]
 
     def _start_preview(self):
+        """Start device preview using embedded screenshot display."""
+        device_id = self._get_preview_device_id()
+
+        if not device_id:
+            self.preview_status.setText("未选择设备")
+            print("[Preview] No device selected")
+            return
+
+        print(f"[Preview] Starting preview for device: {device_id}")
+
         if not self.preview_timer.isActive():
             self.preview_timer.start()
-        self.preview_status.setText("预览运行中。")
+
+        self.preview_status.setText(f"预览中: {device_id}")
         self.preview_start_btn.setEnabled(False)
         self.preview_stop_btn.setEnabled(True)
         self._request_preview_frame()
 
     def _stop_preview(self):
+        """Stop device preview."""
+        print("[Preview] Stopping preview")
         self.preview_timer.stop()
-        self.preview_status.setText("预览已停止。")
+        self.preview_status.setText("预览已停止")
+        self.preview_label.setText("📱\n\n预览区域\n\n选择设备后开始预览")
         self.preview_start_btn.setEnabled(True)
         self.preview_stop_btn.setEnabled(False)
+
+    def _get_preview_device_id(self) -> str | None:
+        """Get the current preview device ID."""
+        device_id = None
+        if hasattr(self, 'preview_devices') and self.preview_devices:
+            if self.preview_current_index < len(self.preview_devices):
+                device = self.preview_devices[self.preview_current_index]
+                device_id = device.get('id', '')
+
+        if not device_id:
+            device_id = self._get_selected_device_id()
+
+        return device_id
 
     def _snapshot_preview(self):
         self._request_preview_frame()
 
     def _request_preview_frame(self):
         if self.preview_inflight:
+            # print("[Preview] Request skipped - already in flight")
             return
         self.preview_inflight = True
         device_type = self._current_device_type()
-        
-        # Use preview device selection if available, otherwise fallback to device list
-        device_id = None
-        if hasattr(self, 'preview_devices') and self.preview_devices:
-            if self.preview_current_index < len(self.preview_devices):
-                device = self.preview_devices[self.preview_current_index]
-                device_id = device.get('id', '')
-        
-        # Fallback to device list selection
-        if not device_id:
-            device_id = self._get_selected_device_id()
-            
+
+        device_id = self._get_preview_device_id()
+
         if not device_id:
             self.preview_status.setText("未选择设备")
             self.preview_inflight = False
             return
-        
-        # Only update device status when device changes or first time
-        if not hasattr(self, '_last_preview_device_id') or self._last_preview_device_id != device_id:
-            self._last_preview_device_id = device_id
-            # Update device status only when device changes or first time
-            if device_id:
-                self.preview_status.setText(f"预览设备: {device_id}")
-        
+
+        # print(f"[Preview] Requesting frame from device: {device_id}")
+
         # WDA URL is not needed for ADB-only interface
         self.preview_worker = ScreenshotWorker(
             device_type=device_type,
@@ -7499,8 +9820,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _handle_preview_frame(self, data, is_sensitive):
         image = QtGui.QImage.fromData(data)
         if image.isNull():
-            self.preview_status.setText("预览解码失败。")
+            print("[Preview] Failed to decode image")
+            self.preview_status.setText("预览解码失败")
             return
+
+        # print(f"[Preview] Frame received: {image.width()}x{image.height()}, sensitive={is_sensitive}")
         self.last_preview_image = image
         pixmap = QtGui.QPixmap.fromImage(image).scaled(
             self.preview_label.size(),
@@ -7522,63 +9846,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _handle_preview_error(self, message):
         self.preview_status.setText(f"预览错误: {message}")
         self.preview_inflight = False
-
-    def _refresh_scripts(self):
-        self.script_list.clear()
-        roots = [Path("scripts"), Path("examples")]
-        items = []
-        for root in roots:
-            if not root.exists():
-                continue
-            for path in sorted(root.glob("*.py")):
-                items.append(str(path))
-        if not items:
-            self.script_list.addItem("没有找到脚本。")
-        else:
-            self.script_list.addItems(items)
-
-    def _run_script(self):
-        current = self.script_list.currentItem()
-        if not current:
-            self._append_script_log("请选择一个脚本来运行。\n")
-            return
-
-        # Check for task conflicts
-        if self._check_task_conflicts():
-            return
-
-        path = current.text()
-        if not os.path.exists(path):
-            self._append_script_log("脚本未找到。\n")
-            return
-
-        self.script_log.clear()
-        self.script_worker = ScriptWorker(path)
-        self.script_worker.log.connect(self._append_script_log)
-        self.script_worker.finished.connect(
-            lambda code: self._append_script_log(f"\n退出代码: {code}\n")
-        )
-        self.script_worker.failed.connect(
-            lambda msg: self._append_script_log(f"\n错误: {msg}\n")
-        )
-        self.script_worker.start()
-
-    def _refresh_apps(self):
-        self.apps_list.clear()
-        device_type = self._current_device_type()
-        if device_type == DeviceType.HDC:
-            apps = list_harmonyos_apps()
-        elif device_type == DeviceType.IOS:
-            apps = list_ios_apps()
-        else:
-            apps = list_supported_apps()
-        for app in sorted(apps):
-            self.apps_list.addItem(app)
-
-    def _filter_apps(self, text):
-        for i in range(self.apps_list.count()):
-            item = self.apps_list.item(i)
-            item.setHidden(text.lower() not in item.text().lower())
 
     def _clear_diagnostics(self):
         self.diagnostics_log.clear()

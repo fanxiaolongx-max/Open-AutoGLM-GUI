@@ -21,6 +21,7 @@ from phone_agent.hdc.device import (
 from phone_agent.hdc.input import (
     clear_text,
     detect_and_set_adb_keyboard,
+    press_enter,
     restore_keyboard,
     type_text,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "type_text",
     "clear_text",
     "detect_and_set_adb_keyboard",
+    "press_enter",
     "restore_keyboard",
     # Device control
     "get_current_app",

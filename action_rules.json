@@ -1,0 +1,419 @@
+[
+  {
+    "name": "Launch",
+    "description": "启动指定应用程序",
+    "parameters": [
+      {
+        "name": "app",
+        "type": "string",
+        "required": true,
+        "description": "应用名称，如'微信'、'Chrome'"
+      }
+    ],
+    "example": "do(action=\"Launch\", app=\"微信\")",
+    "adb_command": "adb shell am start -n <package>/<activity>",
+    "rules": [
+      {
+        "id": "launch_001",
+        "condition": "应用未安装",
+        "action": "返回错误提示，不执行启动",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "id": "launch_002",
+        "condition": "应用已在前台",
+        "action": "跳过启动，直接返回成功",
+        "priority": 5,
+        "enabled": true
+      },
+      {
+        "id": "launch_003",
+        "condition": "应用名称未在映射表中",
+        "action": "尝试模糊匹配或提示用户添加映射",
+        "priority": 3,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Tap",
+    "description": "点击屏幕指定坐标位置",
+    "parameters": [
+      {
+        "name": "element",
+        "type": "list[int]",
+        "required": true,
+        "description": "坐标 [x, y]，范围 0-1000"
+      },
+      {
+        "name": "message",
+        "type": "string",
+        "required": false,
+        "description": "敏感操作提示信息"
+      }
+    ],
+    "example": "do(action=\"Tap\", element=[500, 300])",
+    "adb_command": "adb shell input tap <x> <y>",
+    "rules": [
+      {
+        "id": "tap_001",
+        "condition": "坐标超出屏幕范围",
+        "action": "自动裁剪到有效范围 [0-1000]",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "id": "tap_002",
+        "condition": "连续快速点击同一位置",
+        "action": "合并为单次点击，防止误操作",
+        "priority": 5,
+        "enabled": true
+      },
+      {
+        "id": "tap_003",
+        "condition": "点击系统敏感区域（如删除按钮）",
+        "action": "显示确认对话框",
+        "priority": 8,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Type",
+    "description": "在当前焦点输入文本",
+    "parameters": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "description": "要输入的文本内容"
+      },
+      {
+        "name": "press_enter",
+        "type": "bool",
+        "required": false,
+        "description": "输入后是否按回车键"
+      }
+    ],
+    "example": "do(action=\"Type\", text=\"Hello World\", press_enter=True)",
+    "adb_command": "adb shell input text <text>",
+    "rules": [
+      {
+        "id": "type_001",
+        "condition": "文本包含中文字符",
+        "action": "使用ADB广播方式输入，确保中文正确",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "id": "type_002",
+        "condition": "输入框无焦点",
+        "action": "先尝试点击输入框获取焦点",
+        "priority": 8,
+        "enabled": true
+      },
+      {
+        "id": "type_003",
+        "condition": "文本长度超过100字符",
+        "action": "分段输入，每段50字符",
+        "priority": 5,
+        "enabled": true
+      },
+      {
+        "id": "type_004",
+        "condition": "输入前有旧内容",
+        "action": "先清空输入框再输入新内容",
+        "priority": 7,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Type_Name",
+    "description": "输入用户名等特殊文本（与Type相同处理）",
+    "parameters": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "description": "要输入的文本内容"
+      }
+    ],
+    "example": "do(action=\"Type_Name\", text=\"username\")",
+    "adb_command": "adb shell input text <text>",
+    "rules": [
+      {
+        "id": "typename_001",
+        "condition": "等同于Type动作",
+        "action": "使用Type动作的所有规则",
+        "priority": 10,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Swipe",
+    "description": "从起点滑动到终点",
+    "parameters": [
+      {
+        "name": "start",
+        "type": "list[int]",
+        "required": true,
+        "description": "起点坐标 [x, y]，范围 0-1000"
+      },
+      {
+        "name": "end",
+        "type": "list[int]",
+        "required": true,
+        "description": "终点坐标 [x, y]，范围 0-1000"
+      }
+    ],
+    "example": "do(action=\"Swipe\", start=[500, 800], end=[500, 200])",
+    "adb_command": "adb shell input swipe <x1> <y1> <x2> <y2>",
+    "rules": [
+      {
+        "id": "swipe_001",
+        "condition": "起点和终点相同",
+        "action": "转换为Tap动作",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "id": "swipe_002",
+        "condition": "滑动距离过短（<50像素）",
+        "action": "增加滑动距离以确保触发",
+        "priority": 5,
+        "enabled": true
+      },
+      {
+        "id": "swipe_003",
+        "condition": "滑动方向为垂直",
+        "action": "用于页面滚动场景",
+        "priority": 3,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Back",
+    "description": "按下返回键",
+    "parameters": [],
+    "example": "do(action=\"Back\")",
+    "adb_command": "adb shell input keyevent KEYCODE_BACK",
+    "rules": [
+      {
+        "id": "back_001",
+        "condition": "当前在应用首页",
+        "action": "可能退出应用，需确认",
+        "priority": 5,
+        "enabled": true
+      },
+      {
+        "id": "back_002",
+        "condition": "存在弹窗或对话框",
+        "action": "优先关闭弹窗",
+        "priority": 8,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Home",
+    "description": "按下Home键回到桌面",
+    "parameters": [],
+    "example": "do(action=\"Home\")",
+    "adb_command": "adb shell input keyevent KEYCODE_HOME",
+    "rules": [
+      {
+        "id": "home_001",
+        "condition": "任意场景",
+        "action": "返回桌面，应用进入后台",
+        "priority": 10,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Double Tap",
+    "description": "双击屏幕指定位置",
+    "parameters": [
+      {
+        "name": "element",
+        "type": "list[int]",
+        "required": true,
+        "description": "坐标 [x, y]，范围 0-1000"
+      }
+    ],
+    "example": "do(action=\"Double Tap\", element=[500, 500])",
+    "adb_command": "adb shell input tap <x> <y> && adb shell input tap <x> <y>",
+    "rules": [
+      {
+        "id": "dtap_001",
+        "condition": "两次点击间隔",
+        "action": "间隔100ms，确保识别为双击",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "id": "dtap_002",
+        "condition": "坐标超出范围",
+        "action": "自动裁剪到有效范围",
+        "priority": 8,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Long Press",
+    "description": "长按屏幕指定位置",
+    "parameters": [
+      {
+        "name": "element",
+        "type": "list[int]",
+        "required": true,
+        "description": "坐标 [x, y]，范围 0-1000"
+      }
+    ],
+    "example": "do(action=\"Long Press\", element=[500, 500])",
+    "adb_command": "adb shell input swipe <x> <y> <x> <y> 1000",
+    "rules": [
+      {
+        "id": "lpress_001",
+        "condition": "默认长按时长",
+        "action": "持续1000ms（1秒）",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "id": "lpress_002",
+        "condition": "长按菜单项",
+        "action": "可能触发上下文菜单",
+        "priority": 5,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Wait",
+    "description": "等待指定时间",
+    "parameters": [
+      {
+        "name": "duration",
+        "type": "string",
+        "required": false,
+        "description": "等待时间，如 '2 seconds'"
+      }
+    ],
+    "example": "do(action=\"Wait\", duration=\"2 seconds\")",
+    "adb_command": "",
+    "rules": [
+      {
+        "id": "wait_001",
+        "condition": "未指定时长",
+        "action": "默认等待1秒",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "id": "wait_002",
+        "condition": "等待时间超过10秒",
+        "action": "显示进度提示",
+        "priority": 5,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Take_over",
+    "description": "请求用户接管操作（如登录、验证码）",
+    "parameters": [
+      {
+        "name": "message",
+        "type": "string",
+        "required": false,
+        "description": "提示用户的消息"
+      }
+    ],
+    "example": "do(action=\"Take_over\", message=\"请完成登录验证\")",
+    "adb_command": "",
+    "rules": [
+      {
+        "id": "takeover_001",
+        "condition": "需要人工操作",
+        "action": "暂停自动化，等待用户完成后继续",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "id": "takeover_002",
+        "condition": "用户完成操作",
+        "action": "用户点击'继续'按钮后恢复自动化",
+        "priority": 8,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Note",
+    "description": "记录页面内容（占位功能）",
+    "parameters": [],
+    "example": "do(action=\"Note\")",
+    "adb_command": "",
+    "rules": [
+      {
+        "id": "note_001",
+        "condition": "占位功能",
+        "action": "当前版本不执行实际操作",
+        "priority": 10,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Call_API",
+    "description": "调用外部API进行内容处理（占位功能）",
+    "parameters": [],
+    "example": "do(action=\"Call_API\")",
+    "adb_command": "",
+    "rules": [
+      {
+        "id": "callapi_001",
+        "condition": "占位功能",
+        "action": "当前版本不执行实际操作",
+        "priority": 10,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  },
+  {
+    "name": "Interact",
+    "description": "请求用户交互选择",
+    "parameters": [],
+    "example": "do(action=\"Interact\")",
+    "adb_command": "",
+    "rules": [
+      {
+        "id": "interact_001",
+        "condition": "需要用户选择",
+        "action": "显示选项列表，等待用户选择后继续",
+        "priority": 10,
+        "enabled": true
+      }
+    ],
+    "is_custom": false
+  }
+]

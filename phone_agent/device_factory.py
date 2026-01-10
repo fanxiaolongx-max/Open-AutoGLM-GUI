@@ -121,6 +121,10 @@ class DeviceFactory:
         """Restore keyboard."""
         return self.module.restore_keyboard(ime, device_id)
 
+    def press_enter(self, device_id: str | None = None):
+        """Press Enter key."""
+        return self.module.press_enter(device_id)
+
     def list_devices(self):
         """List connected devices."""
         return self.module.list_devices()

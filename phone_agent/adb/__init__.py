@@ -20,10 +20,12 @@ from phone_agent.adb.device import (
 from phone_agent.adb.input import (
     clear_text,
     detect_and_set_adb_keyboard,
+    is_adb_keyboard_enabled,
+    press_enter,
     restore_keyboard,
     type_text,
 )
-from phone_agent.adb.screenshot import get_screenshot
+from phone_agent.adb.screenshot import get_screenshot, set_screenshot_verbose
 from phone_agent.adb.unlock import (
     ensure_device_unlocked,
     is_device_locked,
@@ -36,10 +38,13 @@ from phone_agent.adb.unlock import (
 __all__ = [
     # Screenshot
     "get_screenshot",
+    "set_screenshot_verbose",
     # Input
     "type_text",
     "clear_text",
     "detect_and_set_adb_keyboard",
+    "is_adb_keyboard_enabled",
+    "press_enter",
     "restore_keyboard",
     # Device control
     "get_current_app",

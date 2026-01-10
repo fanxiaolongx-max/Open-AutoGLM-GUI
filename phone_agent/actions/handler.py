@@ -182,6 +182,7 @@ class ActionHandler:
     def _handle_type(self, action: dict, width: int, height: int) -> ActionResult:
         """Handle text input action."""
         text = action.get("text", "")
+        press_enter = action.get("press_enter", False)
 
         device_factory = get_device_factory()
 
@@ -196,6 +197,11 @@ class ActionHandler:
         # Handle multiline text by splitting on newlines
         device_factory.type_text(text, self.device_id)
         time.sleep(TIMING_CONFIG.action.text_input_delay)
+
+        # Press Enter key if requested
+        if press_enter:
+            device_factory.press_enter(self.device_id)
+            time.sleep(TIMING_CONFIG.action.text_input_delay)
 
         return ActionResult(True, False)
 
@@ -371,9 +377,17 @@ def parse_action(response: str) -> dict[str, Any]:
     """
     import re
     print(f"Parsing action: {response}")
+
+    # Handle empty or whitespace-only responses early
+    if not response or not response.strip():
+        raise ValueError("Empty response from model")
     try:
         response = response.strip()
-        
+
+        # Check again after stripping
+        if not response:
+            raise ValueError("Empty response after stripping")
+
         # 1. 首先尝试从 <answer> 标签中提取动作
         answer_match = re.search(r'<answer>(.*?)</answer>', response, re.DOTALL)
         if answer_match:

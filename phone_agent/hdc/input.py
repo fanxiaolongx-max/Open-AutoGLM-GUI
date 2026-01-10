@@ -121,6 +121,24 @@ def detect_and_set_adb_keyboard(device_id: str | None = None) -> str:
         return ""
 
 
+def press_enter(device_id: str | None = None) -> None:
+    """
+    Press Enter key on the device.
+
+    Args:
+        device_id: Optional HDC device ID for multi-device setups.
+
+    Note:
+        HarmonyOS ENTER key code: 2054
+    """
+    hdc_prefix = _get_hdc_prefix(device_id)
+    _run_hdc_command(
+        hdc_prefix + ["shell", "uitest", "uiInput", "keyEvent", "2054"],
+        capture_output=True,
+        text=True,
+    )
+
+
 def restore_keyboard(ime: str, device_id: str | None = None) -> None:
     """
     Restore the original keyboard IME.

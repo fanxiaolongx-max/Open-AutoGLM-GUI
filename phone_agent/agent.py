@@ -105,11 +105,11 @@ class PhoneAgent:
                 return result.message or "Task completed"
 
             # Continue until finished or max steps reached
-            while self._step_count < self.agent_config.max_steps:
+            while not result.finished and self._step_count < self.agent_config.max_steps:
                 result = self._execute_step(is_first=False)
 
-                if result.finished:
-                    return result.message or "Task completed"
+            if result.finished:
+                return result.message or "Task completed"
 
             return "Max steps reached"
         finally:
@@ -213,7 +213,9 @@ class PhoneAgent:
         except ValueError:
             if self.agent_config.verbose:
                 traceback.print_exc()
-            action = finish(message=response.action)
+            # If action is empty, provide meaningful error message
+            error_msg = response.action if response.action.strip() else "模型返回了空的动作，可能是推理被截断"
+            action = finish(message=error_msg)
 
         if self.agent_config.verbose:
             # Print thinking process
