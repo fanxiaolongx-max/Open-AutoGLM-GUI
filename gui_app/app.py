@@ -111,24 +111,24 @@ class CustomTitleBar(QtWidgets.QWidget):
         layout.setContentsMargins(12, 0, 8, 0)
         layout.setSpacing(8)
 
-        # 窗口控制按钮（macOS 风格，左侧）
+        # 窗口控制按钮（macOS 风格，左侧小圆钮）
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.setSpacing(8)
 
-        self.close_btn = QtWidgets.QPushButton()
-        self.close_btn.setFixedSize(14, 14)
+        self.close_btn = QtWidgets.QPushButton("×")
+        self.close_btn.setFixedSize(12, 12)
         self.close_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self.close_btn.clicked.connect(self._close_window)
         self.close_btn.setToolTip("关闭")
 
-        self.minimize_btn = QtWidgets.QPushButton()
-        self.minimize_btn.setFixedSize(14, 14)
+        self.minimize_btn = QtWidgets.QPushButton("−")
+        self.minimize_btn.setFixedSize(12, 12)
         self.minimize_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self.minimize_btn.clicked.connect(self._minimize_window)
         self.minimize_btn.setToolTip("最小化")
 
-        self.maximize_btn = QtWidgets.QPushButton()
-        self.maximize_btn.setFixedSize(14, 14)
+        self.maximize_btn = QtWidgets.QPushButton("□")
+        self.maximize_btn.setFixedSize(12, 12)
         self.maximize_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self.maximize_btn.clicked.connect(self._toggle_maximize)
         self.maximize_btn.setToolTip("最大化")
@@ -179,32 +179,47 @@ class CustomTitleBar(QtWidgets.QWidget):
             }}
         """)
 
-        # macOS 风格的窗口按钮颜色
+        # macOS 风格的窗口按钮颜色（小圆钮带图标）
         self.close_btn.setStyleSheet("""
             QPushButton {
                 background: #ff5f57;
-                border-radius: 7px;
+                border-radius: 6px;
+                color: transparent;
+                font-size: 10px;
+                font-weight: bold;
+                padding: 0;
             }
             QPushButton:hover {
                 background: #ff3b30;
+                color: #4a0000;
             }
         """)
         self.minimize_btn.setStyleSheet("""
             QPushButton {
                 background: #ffbd2e;
-                border-radius: 7px;
+                border-radius: 6px;
+                color: transparent;
+                font-size: 10px;
+                font-weight: bold;
+                padding: 0;
             }
             QPushButton:hover {
                 background: #ff9500;
+                color: #4a3000;
             }
         """)
         self.maximize_btn.setStyleSheet("""
             QPushButton {
                 background: #28c840;
-                border-radius: 7px;
+                border-radius: 6px;
+                color: transparent;
+                font-size: 8px;
+                font-weight: bold;
+                padding: 0;
             }
             QPushButton:hover {
                 background: #34c759;
+                color: #004a00;
             }
         """)
 
@@ -1256,6 +1271,256 @@ class DropZoneWidget(QtWidgets.QLabel):
         event.ignore()
 
 
+class PythonHighlighter(QtGui.QSyntaxHighlighter):
+    """Python 语法高亮器"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._highlighting_rules = []
+
+        # 关键字
+        keyword_format = QtGui.QTextCharFormat()
+        keyword_format.setForeground(QtGui.QColor("#c678dd"))  # 紫色
+        keyword_format.setFontWeight(QtGui.QFont.Bold)
+        keywords = [
+            "and", "as", "assert", "async", "await", "break", "class", "continue",
+            "def", "del", "elif", "else", "except", "finally", "for", "from",
+            "global", "if", "import", "in", "is", "lambda", "None", "nonlocal",
+            "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+            "True", "False"
+        ]
+        for word in keywords:
+            pattern = QtCore.QRegularExpression(rf"\b{word}\b")
+            self._highlighting_rules.append((pattern, keyword_format))
+
+        # 内置函数
+        builtin_format = QtGui.QTextCharFormat()
+        builtin_format.setForeground(QtGui.QColor("#61afef"))  # 蓝色
+        builtins = [
+            "abs", "all", "any", "bin", "bool", "bytes", "callable", "chr", "dict",
+            "dir", "divmod", "enumerate", "eval", "exec", "filter", "float", "format",
+            "getattr", "globals", "hasattr", "hash", "help", "hex", "id", "input",
+            "int", "isinstance", "issubclass", "iter", "len", "list", "locals", "map",
+            "max", "min", "next", "object", "oct", "open", "ord", "pow", "print",
+            "range", "repr", "reversed", "round", "set", "setattr", "slice", "sorted",
+            "str", "sum", "super", "tuple", "type", "vars", "zip"
+        ]
+        for word in builtins:
+            pattern = QtCore.QRegularExpression(rf"\b{word}\b")
+            self._highlighting_rules.append((pattern, builtin_format))
+
+        # 字符串（单引号和双引号）
+        string_format = QtGui.QTextCharFormat()
+        string_format.setForeground(QtGui.QColor("#98c379"))  # 绿色
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r'"[^"\\]*(\\.[^"\\]*)*"'), string_format)
+        )
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r"'[^'\\]*(\\.[^'\\]*)*'"), string_format)
+        )
+
+        # 数字
+        number_format = QtGui.QTextCharFormat()
+        number_format.setForeground(QtGui.QColor("#d19a66"))  # 橙色
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r"\b[0-9]+\.?[0-9]*\b"), number_format)
+        )
+
+        # 注释
+        comment_format = QtGui.QTextCharFormat()
+        comment_format.setForeground(QtGui.QColor("#5c6370"))  # 灰色
+        comment_format.setFontItalic(True)
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r"#[^\n]*"), comment_format)
+        )
+
+        # 函数定义
+        function_format = QtGui.QTextCharFormat()
+        function_format.setForeground(QtGui.QColor("#e5c07b"))  # 黄色
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r"\bdef\s+(\w+)"), function_format)
+        )
+
+        # 类定义
+        class_format = QtGui.QTextCharFormat()
+        class_format.setForeground(QtGui.QColor("#e5c07b"))  # 黄色
+        class_format.setFontWeight(QtGui.QFont.Bold)
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r"\bclass\s+(\w+)"), class_format)
+        )
+
+        # self 和 cls
+        self_format = QtGui.QTextCharFormat()
+        self_format.setForeground(QtGui.QColor("#e06c75"))  # 红色
+        self_format.setFontItalic(True)
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r"\bself\b"), self_format)
+        )
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r"\bcls\b"), self_format)
+        )
+
+        # 装饰器
+        decorator_format = QtGui.QTextCharFormat()
+        decorator_format.setForeground(QtGui.QColor("#c678dd"))  # 紫色
+        self._highlighting_rules.append(
+            (QtCore.QRegularExpression(r"@\w+"), decorator_format)
+        )
+
+        # 多行字符串格式（用于 highlightBlock 中）
+        self._multiline_string_format = string_format
+        self._triple_single = QtCore.QRegularExpression(r"'''")
+        self._triple_double = QtCore.QRegularExpression(r'"""')
+
+    def highlightBlock(self, text):
+        # 应用单行规则
+        for pattern, fmt in self._highlighting_rules:
+            match_iter = pattern.globalMatch(text)
+            while match_iter.hasNext():
+                match = match_iter.next()
+                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
+
+        # 处理多行字符串（三引号）
+        self._handle_multiline_strings(text, '"""', 1)
+        self._handle_multiline_strings(text, "'''", 2)
+
+    def _handle_multiline_strings(self, text, delimiter, state):
+        """处理多行字符串高亮"""
+        # 如果之前的状态不是当前类型的多行字符串，检查是否需要开始
+        if self.previousBlockState() != state:
+            start_index = text.find(delimiter)
+            if start_index == -1:
+                return  # 这行没有这种三引号
+        else:
+            start_index = 0  # 从上一行延续
+
+        while start_index >= 0:
+            # 查找结束三引号
+            if self.previousBlockState() == state and start_index == 0:
+                # 从行首开始查找结束
+                end_index = text.find(delimiter, 0)
+            else:
+                # 查找匹配的结束三引号
+                end_index = text.find(delimiter, start_index + len(delimiter))
+
+            if end_index == -1:
+                # 没找到结束，整行都是字符串
+                self.setCurrentBlockState(state)
+                length = len(text) - start_index
+            else:
+                # 找到结束
+                length = end_index - start_index + len(delimiter)
+                self.setCurrentBlockState(0)
+
+            self.setFormat(start_index, length, self._multiline_string_format)
+
+            # 继续查找下一个开始
+            if end_index >= 0:
+                start_index = text.find(delimiter, end_index + len(delimiter))
+            else:
+                break
+
+
+class CodeEditorDialog(QtWidgets.QDialog):
+    """带语法高亮的代码编辑器对话框"""
+
+    def __init__(self, parent=None, title="代码编辑器", code="", readonly=False):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumSize(700, 500)
+        self.resize(800, 600)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # 代码编辑器
+        self.editor = QtWidgets.QPlainTextEdit()
+        self.editor.setStyleSheet("""
+            QPlainTextEdit {
+                font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+                font-size: 13px;
+                background-color: #282c34;
+                color: #abb2bf;
+                border: 1px solid #3e4451;
+                border-radius: 4px;
+                padding: 8px;
+                line-height: 1.5;
+            }
+        """)
+        self.editor.setPlainText(code)
+        self.editor.setReadOnly(readonly)
+
+        # 设置 Tab 宽度为 4 个空格
+        font_metrics = QtGui.QFontMetrics(self.editor.font())
+        self.editor.setTabStopDistance(4 * font_metrics.horizontalAdvance(' '))
+
+        # 应用语法高亮
+        self.highlighter = PythonHighlighter(self.editor.document())
+
+        # 行号显示标签
+        self.status_label = QtWidgets.QLabel()
+        self.status_label.setStyleSheet("color: #71717a; font-size: 12px;")
+        self._update_status()
+        self.editor.textChanged.connect(self._update_status)
+        self.editor.cursorPositionChanged.connect(self._update_cursor_position)
+
+        layout.addWidget(self.editor)
+        layout.addWidget(self.status_label)
+
+        # 按钮
+        button_layout = QtWidgets.QHBoxLayout()
+
+        if not readonly:
+            validate_btn = QtWidgets.QPushButton("验证语法")
+            validate_btn.clicked.connect(self._validate_syntax)
+            button_layout.addWidget(validate_btn)
+
+        button_layout.addStretch()
+
+        if readonly:
+            close_btn = QtWidgets.QPushButton("关闭")
+            close_btn.clicked.connect(self.reject)
+            button_layout.addWidget(close_btn)
+        else:
+            cancel_btn = QtWidgets.QPushButton("取消")
+            cancel_btn.clicked.connect(self.reject)
+            save_btn = QtWidgets.QPushButton("保存")
+            save_btn.clicked.connect(self.accept)
+            save_btn.setDefault(True)
+            button_layout.addWidget(cancel_btn)
+            button_layout.addWidget(save_btn)
+
+        layout.addLayout(button_layout)
+
+    def _update_status(self):
+        text = self.editor.toPlainText()
+        lines = text.count('\n') + 1
+        chars = len(text)
+        self.status_label.setText(f"行数: {lines}  |  字符数: {chars}")
+
+    def _update_cursor_position(self):
+        cursor = self.editor.textCursor()
+        line = cursor.blockNumber() + 1
+        col = cursor.columnNumber() + 1
+        text = self.editor.toPlainText()
+        total_lines = text.count('\n') + 1
+        chars = len(text)
+        self.status_label.setText(f"行 {line}, 列 {col}  |  共 {total_lines} 行, {chars} 字符")
+
+    def _validate_syntax(self):
+        code = self.editor.toPlainText()
+        try:
+            compile(code, "<string>", "exec")
+            QtWidgets.QMessageBox.information(self, "验证成功", "语法正确，没有发现错误。")
+        except SyntaxError as e:
+            QtWidgets.QMessageBox.warning(
+                self, "语法错误",
+                f"第 {e.lineno} 行存在语法错误:\n{e.msg}"
+            )
+
+    def get_code(self) -> str:
+        return self.editor.toPlainText()
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1336,6 +1601,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # Task counters for dashboard (manual vs scheduled)
         self.manual_tasks_count = 0
         self.scheduled_tasks_count = 0
+
+        # 初始化规则管理器，确保自定义配置在启动时加载并同步到运行时
+        from gui_app.rules_manager import get_rules_manager
+        self._rules_manager = get_rules_manager()
 
         # Dashboard auto-refresh timer
         self.dashboard_refresh_timer = QtCore.QTimer(self)
@@ -2922,7 +3191,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("模型服务", 2, "primary"),    # 模型服务 (index 2)
             ("定时任务", 4, "primary"),    # 定时任务 (index 4)
             ("系统诊断", 9, "primary"),    # 系统诊断 (index 9)
-            ("系统设置", 11, "primary"),   # 系统设置 (index 11)
+            ("系统设置", 10, "primary"),   # 系统设置 (index 10)
         ]
 
         buttons = []
@@ -6561,8 +6830,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_rules_page(self):
         """构建规则管理页面，展示系统中的固化规则"""
-        from gui_app.rules_manager import get_rules_manager
-        self._rules_manager = get_rules_manager()
+        # rules_manager 已在 MainWindow.__init__ 中初始化
 
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
@@ -6598,6 +6866,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tab 3: 动作类型规则
         actions_tab = self._build_rules_actions_tab()
         self.rules_tab.addTab(actions_tab, "动作类型")
+
+        # Tab 4: 提示词管理
+        prompts_tab = self._build_rules_prompts_tab()
+        self.rules_tab.addTab(prompts_tab, "提示词")
 
         layout.addWidget(header_widget)
         layout.addWidget(self.rules_tab, 1)
@@ -6759,15 +7031,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # 参数表格标题和工具栏
         params_header = QtWidgets.QHBoxLayout()
         params_label = QtWidgets.QLabel("参数:")
-        params_label.setStyleSheet("font-weight: bold; margin-top: 12px;")
+        params_label.setStyleSheet("font-weight: bold; margin-top: 11px;")
         add_param_btn = QtWidgets.QPushButton("+ 添加")
-        add_param_btn.setMaximumWidth(60)
         add_param_btn.clicked.connect(self._add_parameter)
         edit_param_btn = QtWidgets.QPushButton("编辑")
-        edit_param_btn.setMaximumWidth(50)
         edit_param_btn.clicked.connect(self._edit_parameter)
         del_param_btn = QtWidgets.QPushButton("删除")
-        del_param_btn.setMaximumWidth(50)
         del_param_btn.clicked.connect(self._delete_parameter)
         params_header.addWidget(params_label)
         params_header.addStretch()
@@ -6783,6 +7052,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_detail_params.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.action_detail_params.setMaximumHeight(120)
         self.action_detail_params.doubleClicked.connect(self._edit_parameter)
+        # 改善暗黑主题下表格线条可见性
+        self.action_detail_params.setStyleSheet("""
+            QTableWidget {
+                gridline-color: rgba(128, 128, 128, 0.5);
+                border: 1px solid rgba(128, 128, 128, 0.3);
+            }
+            QTableWidget::item {
+                border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+            }
+            QHeaderView::section {
+                border: 1px solid rgba(128, 128, 128, 0.3);
+                padding: 4px;
+            }
+        """)
 
         # 示例和ADB命令（折叠显示）
         example_adb_layout = QtWidgets.QHBoxLayout()
@@ -6820,25 +7103,45 @@ class MainWindow(QtWidgets.QMainWindow):
         delete_rule_btn.clicked.connect(self._delete_rule_item)
         toggle_rule_btn = QtWidgets.QPushButton("启用/禁用")
         toggle_rule_btn.clicked.connect(self._toggle_rule_item)
+        view_func_btn = QtWidgets.QPushButton("查看/编辑函数")
+        view_func_btn.setToolTip("双击条件列也可查看绑定的函数")
+        view_func_btn.clicked.connect(self._view_or_edit_condition_func)
         rules_toolbar.addWidget(add_rule_btn)
         rules_toolbar.addWidget(edit_rule_btn)
         rules_toolbar.addWidget(delete_rule_btn)
         rules_toolbar.addWidget(toggle_rule_btn)
+        rules_toolbar.addWidget(view_func_btn)
         rules_toolbar.addStretch()
 
         # 规则内容表格
         self.action_rules_table = QtWidgets.QTableWidget()
-        self.action_rules_table.setColumnCount(5)
-        self.action_rules_table.setHorizontalHeaderLabels(["ID", "条件", "执行动作", "优先级", "状态"])
+        self.action_rules_table.setColumnCount(7)
+        self.action_rules_table.setHorizontalHeaderLabels(["ID", "条件", "执行动作", "优先级", "条件函数", "动作函数", "状态"])
         self.action_rules_table.horizontalHeader().setStretchLastSection(True)
         self.action_rules_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.action_rules_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.action_rules_table.setColumnWidth(0, 100)
-        self.action_rules_table.setColumnWidth(1, 180)
-        self.action_rules_table.setColumnWidth(2, 200)
-        self.action_rules_table.setColumnWidth(3, 60)
+        self.action_rules_table.setColumnWidth(0, 90)
+        self.action_rules_table.setColumnWidth(1, 140)
+        self.action_rules_table.setColumnWidth(2, 160)
+        self.action_rules_table.setColumnWidth(3, 45)
         self.action_rules_table.setColumnWidth(4, 60)
-        self.action_rules_table.doubleClicked.connect(self._edit_rule_item)
+        self.action_rules_table.setColumnWidth(5, 60)
+        self.action_rules_table.setColumnWidth(6, 45)
+        self.action_rules_table.doubleClicked.connect(self._on_rule_table_double_click)
+        # 改善暗黑主题下表格线条可见性
+        self.action_rules_table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: rgba(128, 128, 128, 0.5);
+                border: 1px solid rgba(128, 128, 128, 0.3);
+            }
+            QTableWidget::item {
+                border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+            }
+            QHeaderView::section {
+                border: 1px solid rgba(128, 128, 128, 0.3);
+                padding: 4px;
+            }
+        """)
 
         # 导入导出工具栏
         import_export_layout = QtWidgets.QHBoxLayout()
@@ -6870,6 +7173,204 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._load_rules_actions()
         return tab
+
+    def _build_rules_prompts_tab(self):
+        """构建提示词管理标签页"""
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(0, 12, 0, 0)
+
+        # Description
+        desc = QtWidgets.QLabel("管理发送给AI模型的系统提示词（选中提示词进行编辑）")
+        desc.setStyleSheet("color: #71717a; font-size: 12px; margin-bottom: 8px;")
+
+        # Splitter for list and editor
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+
+        # Left: Prompt list
+        left_widget = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.prompts_list = QtWidgets.QListWidget()
+        self.prompts_list.currentRowChanged.connect(self._show_prompt_details)
+        left_layout.addWidget(self.prompts_list)
+
+        # Right: Prompt editor
+        right_widget = QtWidgets.QFrame()
+        right_widget.setObjectName("card")
+        right_layout = QtWidgets.QVBoxLayout(right_widget)
+
+        # 提示词名称和状态
+        self.prompt_name_label = QtWidgets.QLabel("选择一个提示词进行编辑")
+        self.prompt_name_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+
+        self.prompt_desc_label = QtWidgets.QLabel("")
+        self.prompt_desc_label.setStyleSheet("color: #71717a;")
+        self.prompt_desc_label.setWordWrap(True)
+
+        self.prompt_status_label = QtWidgets.QLabel("")
+        self.prompt_status_label.setStyleSheet("font-size: 12px;")
+
+        # 提示词编辑器
+        editor_label = QtWidgets.QLabel("提示词内容:")
+        editor_label.setStyleSheet("font-weight: bold; margin-top: 12px;")
+
+        self.prompt_editor = QtWidgets.QPlainTextEdit()
+        self.prompt_editor.setStyleSheet("font-family: 'Menlo', 'Monaco', 'Courier New'; font-size: 13px;")
+        self.prompt_editor.setPlaceholderText("在此编辑提示词内容...")
+
+        # 字数统计
+        self.prompt_char_count = QtWidgets.QLabel("字符数: 0")
+        self.prompt_char_count.setStyleSheet("color: #71717a; font-size: 12px;")
+        self.prompt_editor.textChanged.connect(self._update_prompt_char_count)
+
+        # 操作按钮
+        buttons_layout = QtWidgets.QHBoxLayout()
+        save_prompt_btn = QtWidgets.QPushButton("保存修改")
+        save_prompt_btn.clicked.connect(self._save_prompt)
+        reset_prompt_btn = QtWidgets.QPushButton("恢复默认")
+        reset_prompt_btn.clicked.connect(self._reset_prompt)
+        reset_all_prompts_btn = QtWidgets.QPushButton("全部恢复默认")
+        reset_all_prompts_btn.clicked.connect(self._reset_all_prompts)
+
+        buttons_layout.addWidget(save_prompt_btn)
+        buttons_layout.addWidget(reset_prompt_btn)
+        buttons_layout.addStretch()
+        buttons_layout.addWidget(reset_all_prompts_btn)
+
+        right_layout.addWidget(self.prompt_name_label)
+        right_layout.addWidget(self.prompt_desc_label)
+        right_layout.addWidget(self.prompt_status_label)
+        right_layout.addWidget(editor_label)
+        right_layout.addWidget(self.prompt_editor, 1)
+        right_layout.addWidget(self.prompt_char_count)
+        right_layout.addLayout(buttons_layout)
+
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+        splitter.setSizes([200, 500])
+
+        layout.addWidget(desc)
+        layout.addWidget(splitter, 1)
+
+        self._load_prompts_list()
+        return tab
+
+    def _load_prompts_list(self):
+        """加载提示词列表"""
+        prompts = self._rules_manager.get_all_prompts()
+
+        self.prompts_list.clear()
+        for key, prompt_info in prompts.items():
+            name = prompt_info.get("name", key)
+            is_customized = prompt_info.get("is_customized", False)
+            is_custom = prompt_info.get("is_custom", False)
+
+            if is_customized:
+                display = f"[已修改] {name}"
+            elif is_custom:
+                display = f"[自定义] {name}"
+            else:
+                display = name
+
+            item = QtWidgets.QListWidgetItem(display)
+            item.setData(QtCore.Qt.UserRole, key)
+            if is_customized:
+                item.setForeground(QtGui.QColor("#f59e0b"))
+            elif is_custom:
+                item.setForeground(QtGui.QColor("#22c55e"))
+            self.prompts_list.addItem(item)
+
+        if self.prompts_list.count() > 0:
+            self.prompts_list.setCurrentRow(0)
+
+    def _show_prompt_details(self, row):
+        """显示提示词详情"""
+        if row < 0:
+            return
+
+        item = self.prompts_list.item(row)
+        key = item.data(QtCore.Qt.UserRole)
+
+        prompts = self._rules_manager.get_all_prompts()
+        if key not in prompts:
+            return
+
+        prompt_info = prompts[key]
+        self._current_prompt_key = key
+
+        # 更新显示
+        self.prompt_name_label.setText(prompt_info.get("name", key))
+        self.prompt_desc_label.setText(prompt_info.get("description", ""))
+
+        is_customized = prompt_info.get("is_customized", False)
+        if is_customized:
+            self.prompt_status_label.setText("状态: 已修改（与默认值不同）")
+            self.prompt_status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
+        else:
+            self.prompt_status_label.setText("状态: 使用默认值")
+            self.prompt_status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+
+        # 加载内容到编辑器
+        self.prompt_editor.setPlainText(prompt_info.get("content", ""))
+
+    def _update_prompt_char_count(self):
+        """更新字符数统计"""
+        text = self.prompt_editor.toPlainText()
+        self.prompt_char_count.setText(f"字符数: {len(text)}")
+
+    def _save_prompt(self):
+        """保存提示词修改"""
+        if not hasattr(self, '_current_prompt_key'):
+            return
+
+        key = self._current_prompt_key
+        content = self.prompt_editor.toPlainText()
+
+        if self._rules_manager.update_prompt(key, content):
+            self._load_prompts_list()
+            # 重新选中当前项
+            for i in range(self.prompts_list.count()):
+                item = self.prompts_list.item(i)
+                if item.data(QtCore.Qt.UserRole) == key:
+                    self.prompts_list.setCurrentRow(i)
+                    break
+            QtWidgets.QMessageBox.information(self, "成功", "提示词已保存。\n\n注意：修改将在下次启动任务时生效。")
+
+    def _reset_prompt(self):
+        """恢复当前提示词为默认值"""
+        if not hasattr(self, '_current_prompt_key'):
+            return
+
+        key = self._current_prompt_key
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认恢复",
+            "确定要将此提示词恢复为默认值吗？",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            if self._rules_manager.reset_prompt(key):
+                self._load_prompts_list()
+                for i in range(self.prompts_list.count()):
+                    item = self.prompts_list.item(i)
+                    if item.data(QtCore.Qt.UserRole) == key:
+                        self.prompts_list.setCurrentRow(i)
+                        break
+                QtWidgets.QMessageBox.information(self, "成功", "已恢复为默认值。")
+
+    def _reset_all_prompts(self):
+        """恢复所有提示词为默认值"""
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认恢复",
+            "确定要将所有提示词恢复为默认值吗？\n这将清除所有自定义修改。",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._rules_manager.reset_all_prompts()
+            self._load_prompts_list()
+            QtWidgets.QMessageBox.information(self, "成功", "所有提示词已恢复为默认值。")
 
     def _load_rules_apps(self):
         """加载应用映射规则数据"""
@@ -6988,12 +7489,23 @@ class MainWindow(QtWidgets.QMainWindow):
         # 规则内容表格
         rules = rule.get("rules", [])
         self.action_rules_table.setRowCount(len(rules))
+
+        # 获取规则引擎用于检查预定义函数
+        try:
+            from phone_agent.actions.rule_engine import get_rule_engine
+            rule_engine = get_rule_engine()
+        except ImportError:
+            rule_engine = None
+
         for i, rule_item in enumerate(rules):
+            rule_id = rule_item.get("id", "")
+            condition = rule_item.get("condition", "")
+
             # ID
-            id_item = QtWidgets.QTableWidgetItem(rule_item.get("id", ""))
+            id_item = QtWidgets.QTableWidgetItem(rule_id)
             self.action_rules_table.setItem(i, 0, id_item)
             # 条件
-            cond_item = QtWidgets.QTableWidgetItem(rule_item.get("condition", ""))
+            cond_item = QtWidgets.QTableWidgetItem(condition)
             self.action_rules_table.setItem(i, 1, cond_item)
             # 执行动作
             action_item = QtWidgets.QTableWidgetItem(rule_item.get("action", ""))
@@ -7001,6 +7513,49 @@ class MainWindow(QtWidgets.QMainWindow):
             # 优先级
             priority_item = QtWidgets.QTableWidgetItem(str(rule_item.get("priority", 0)))
             self.action_rules_table.setItem(i, 3, priority_item)
+
+            # 函数状态
+            has_custom_func = rule_item.get("condition_func") is not None
+            has_predefined_func = False
+            if rule_engine:
+                condition_key = rule_engine.get_condition_key_for_rule(rule["name"], condition, rule_id)
+                has_predefined_func = condition_key is not None
+
+            if has_custom_func:
+                func_item = QtWidgets.QTableWidgetItem("自定义")
+                func_item.setForeground(QtGui.QColor("#22c55e"))  # 绿色
+                func_item.setToolTip("双击查看/编辑自定义函数")
+            elif has_predefined_func:
+                func_item = QtWidgets.QTableWidgetItem("预定义")
+                func_item.setForeground(QtGui.QColor("#3b82f6"))  # 蓝色
+                func_item.setToolTip("双击查看预定义函数源码")
+            else:
+                func_item = QtWidgets.QTableWidgetItem("无")
+                func_item.setForeground(QtGui.QColor("#71717a"))  # 灰色
+                func_item.setToolTip("此条件暂无绑定的检查函数")
+            self.action_rules_table.setItem(i, 4, func_item)
+
+            # 动作函数状态
+            has_custom_action_func = rule_item.get("action_func") is not None
+            has_predefined_action_func = False
+            if rule_engine:
+                action_key = rule_engine.get_action_key_for_rule(rule["name"], rule_item.get("action", ""), rule_id)
+                has_predefined_action_func = action_key is not None
+
+            if has_custom_action_func:
+                action_func_item = QtWidgets.QTableWidgetItem("自定义")
+                action_func_item.setForeground(QtGui.QColor("#22c55e"))  # 绿色
+                action_func_item.setToolTip("双击查看/编辑自定义动作函数")
+            elif has_predefined_action_func:
+                action_func_item = QtWidgets.QTableWidgetItem("预定义")
+                action_func_item.setForeground(QtGui.QColor("#3b82f6"))  # 蓝色
+                action_func_item.setToolTip("双击查看预定义动作函数源码")
+            else:
+                action_func_item = QtWidgets.QTableWidgetItem("无")
+                action_func_item.setForeground(QtGui.QColor("#71717a"))  # 灰色
+                action_func_item.setToolTip("此动作暂无绑定的执行函数")
+            self.action_rules_table.setItem(i, 5, action_func_item)
+
             # 状态
             enabled = rule_item.get("enabled", True)
             status_item = QtWidgets.QTableWidgetItem("启用" if enabled else "禁用")
@@ -7008,7 +7563,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 status_item.setForeground(QtGui.QColor("#22c55e"))
             else:
                 status_item.setForeground(QtGui.QColor("#ef4444"))
-            self.action_rules_table.setItem(i, 4, status_item)
+            self.action_rules_table.setItem(i, 6, status_item)
 
     def _filter_rules_apps(self, text):
         """过滤应用映射表格"""
@@ -7362,7 +7917,7 @@ class MainWindow(QtWidgets.QMainWindow):
         condition = self.action_rules_table.item(row, 1).text()
         action = self.action_rules_table.item(row, 2).text()
         priority = int(self.action_rules_table.item(row, 3).text())
-        enabled = self.action_rules_table.item(row, 4).text() == "启用"
+        enabled = self.action_rules_table.item(row, 6).text() == "启用"  # 状态列是第7列（索引6）
 
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle(f"编辑规则 - {rule_id}")
@@ -7456,6 +8011,406 @@ class MainWindow(QtWidgets.QMainWindow):
                 if item.data(QtCore.Qt.UserRole)["name"] == action_name:
                     self.rules_actions_list.setCurrentRow(i)
                     break
+
+    def _on_rule_table_double_click(self, index):
+        """规则表格双击处理 - 根据点击的列执行不同操作"""
+        column = index.column()
+        if column == 1 or column == 4:  # 条件列或条件函数列
+            self._view_or_edit_condition_func()
+        elif column == 2 or column == 5:  # 执行动作列或动作函数列
+            self._view_or_edit_action_func()
+        else:
+            self._edit_rule_item()
+
+    def _view_or_edit_condition_func(self):
+        """查看或编辑条件检查函数"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            QtWidgets.QMessageBox.warning(self, "提示", "请先选择一个动作。")
+            return
+
+        selected = self.action_rules_table.selectedItems()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "提示", "请先选择一条规则。")
+            return
+
+        row = selected[0].row()
+        rule_id = self.action_rules_table.item(row, 0).text()
+        condition = self.action_rules_table.item(row, 1).text()
+        func_status = self.action_rules_table.item(row, 4).text()
+
+        # 获取规则引擎
+        try:
+            from phone_agent.actions.rule_engine import get_rule_engine
+            rule_engine = get_rule_engine()
+        except ImportError:
+            rule_engine = None
+
+        # 检查是否有自定义函数
+        custom_func_code = self._rules_manager.get_rule_condition_func(action_name, rule_id)
+
+        if custom_func_code:
+            # 有自定义函数 - 编辑模式
+            dialog = CodeEditorDialog(
+                self,
+                title=f"编辑自定义条件函数 - {rule_id}",
+                code=custom_func_code,
+                readonly=False
+            )
+            if dialog.exec() == QtWidgets.QDialog.Accepted:
+                new_code = dialog.get_code()
+                if new_code.strip():
+                    # 验证并注册函数
+                    if rule_engine:
+                        success, message = rule_engine.register_custom_condition(rule_id, new_code)
+                        if not success:
+                            QtWidgets.QMessageBox.warning(self, "函数验证失败", message)
+                            return
+                    # 保存到规则管理器
+                    self._rules_manager.set_rule_condition_func(action_name, rule_id, new_code)
+                    self._refresh_current_action()
+                    QtWidgets.QMessageBox.information(self, "成功", "自定义条件函数已保存。")
+                else:
+                    # 删除自定义函数
+                    reply = QtWidgets.QMessageBox.question(
+                        self, "确认删除",
+                        "代码为空，是否删除自定义条件函数？",
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+                    )
+                    if reply == QtWidgets.QMessageBox.Yes:
+                        self._rules_manager.remove_rule_condition_func(action_name, rule_id)
+                        if rule_engine:
+                            rule_engine.unregister_custom_condition(rule_id)
+                        self._refresh_current_action()
+
+        elif func_status == "预定义" and rule_engine:
+            # 有预定义函数 - 只读查看模式
+            condition_key = rule_engine.get_condition_key_for_rule(action_name, condition, rule_id)
+            if condition_key:
+                source_code = rule_engine.get_predefined_condition_source(condition_key)
+                if source_code:
+                    dialog = CodeEditorDialog(
+                        self,
+                        title=f"查看预定义条件函数 - {condition_key}",
+                        code=source_code,
+                        readonly=True
+                    )
+                    # 添加"复制为自定义函数"按钮
+                    copy_btn = QtWidgets.QPushButton("复制为自定义函数")
+
+                    def copy_as_custom():
+                        dialog.reject()
+                        self._create_custom_func_from_predefined(action_name, rule_id, source_code)
+
+                    copy_btn.clicked.connect(copy_as_custom)
+                    dialog.layout().itemAt(2).layout().insertWidget(0, copy_btn)
+                    dialog.exec()
+                else:
+                    QtWidgets.QMessageBox.information(
+                        self, "提示",
+                        f"无法获取函数 '{condition_key}' 的源代码。"
+                    )
+            else:
+                QtWidgets.QMessageBox.information(
+                    self, "提示",
+                    "无法找到对应的预定义函数。"
+                )
+        else:
+            # 无函数 - 询问是否创建自定义函数
+            reply = QtWidgets.QMessageBox.question(
+                self, "创建自定义函数",
+                f"条件 '{condition}' 当前没有绑定的检查函数。\n\n是否为此条件创建自定义检查函数？",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Yes:
+                self._create_new_custom_func(action_name, rule_id)
+
+    def _create_custom_func_from_predefined(self, action_name: str, rule_id: str, source_code: str):
+        """从预定义函数复制创建自定义函数"""
+        # 修改函数名为 check_condition
+        import re
+        modified_code = re.sub(
+            r'def\s+_check_\w+\s*\(',
+            'def check_condition(',
+            source_code
+        )
+
+        dialog = CodeEditorDialog(
+            self,
+            title=f"基于预定义函数创建自定义函数 - {rule_id}",
+            code=modified_code,
+            readonly=False
+        )
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            new_code = dialog.get_code()
+            if new_code.strip():
+                # 验证并注册函数
+                try:
+                    from phone_agent.actions.rule_engine import get_rule_engine
+                    rule_engine = get_rule_engine()
+                    success, message = rule_engine.register_custom_condition(rule_id, new_code)
+                    if not success:
+                        QtWidgets.QMessageBox.warning(self, "函数验证失败", message)
+                        return
+                except ImportError:
+                    pass
+
+                self._rules_manager.set_rule_condition_func(action_name, rule_id, new_code)
+                self._refresh_current_action()
+                QtWidgets.QMessageBox.information(self, "成功", "自定义条件函数已创建。")
+
+    def _create_new_custom_func(self, action_name: str, rule_id: str):
+        """创建新的自定义条件函数"""
+        # 获取模板代码
+        try:
+            from phone_agent.actions.rule_engine import get_rule_engine
+            rule_engine = get_rule_engine()
+            template_code = rule_engine.get_custom_condition_template()
+        except ImportError:
+            template_code = """def check_condition(params: dict, context: dict) -> bool:
+    \"\"\"
+    自定义条件检查函数
+
+    Args:
+        params: 动作参数字典
+        context: 执行上下文字典
+
+    Returns:
+        True: 条件满足，触发规则动作
+        False: 条件不满足，跳过此规则
+    \"\"\"
+    # 在这里编写您的条件检查逻辑
+    return False
+"""
+
+        dialog = CodeEditorDialog(
+            self,
+            title=f"创建自定义条件函数 - {rule_id}",
+            code=template_code,
+            readonly=False
+        )
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            new_code = dialog.get_code()
+            if new_code.strip():
+                # 验证并注册函数
+                try:
+                    from phone_agent.actions.rule_engine import get_rule_engine
+                    rule_engine = get_rule_engine()
+                    success, message = rule_engine.register_custom_condition(rule_id, new_code)
+                    if not success:
+                        QtWidgets.QMessageBox.warning(self, "函数验证失败", message)
+                        return
+                except ImportError:
+                    pass
+
+                self._rules_manager.set_rule_condition_func(action_name, rule_id, new_code)
+                self._refresh_current_action()
+                QtWidgets.QMessageBox.information(self, "成功", "自定义条件函数已创建。")
+
+    def _refresh_current_action(self):
+        """刷新当前选中的动作详情"""
+        action_name = self._get_current_action_name()
+        if action_name:
+            self._load_rules_actions()
+            for i in range(self.rules_actions_list.count()):
+                item = self.rules_actions_list.item(i)
+                if item.data(QtCore.Qt.UserRole)["name"] == action_name:
+                    self.rules_actions_list.setCurrentRow(i)
+                    break
+
+    # ========== 动作函数管理 ==========
+
+    def _view_or_edit_action_func(self):
+        """查看或编辑动作执行函数"""
+        action_name = self._get_current_action_name()
+        if not action_name:
+            QtWidgets.QMessageBox.warning(self, "提示", "请先选择一个动作。")
+            return
+
+        selected = self.action_rules_table.selectedItems()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "提示", "请先选择一条规则。")
+            return
+
+        row = selected[0].row()
+        rule_id = self.action_rules_table.item(row, 0).text()
+        action_desc = self.action_rules_table.item(row, 2).text()
+        func_status = self.action_rules_table.item(row, 5).text()
+
+        # 获取规则引擎
+        try:
+            from phone_agent.actions.rule_engine import get_rule_engine
+            rule_engine = get_rule_engine()
+        except ImportError:
+            rule_engine = None
+
+        # 检查是否有自定义函数
+        custom_func_code = self._rules_manager.get_rule_action_func(action_name, rule_id)
+
+        if custom_func_code:
+            # 有自定义函数 - 编辑模式
+            dialog = CodeEditorDialog(
+                self,
+                title=f"编辑自定义动作函数 - {rule_id}",
+                code=custom_func_code,
+                readonly=False
+            )
+            if dialog.exec() == QtWidgets.QDialog.Accepted:
+                new_code = dialog.get_code()
+                if new_code.strip():
+                    # 验证并注册函数
+                    if rule_engine:
+                        success, message = rule_engine.register_custom_action(rule_id, new_code)
+                        if not success:
+                            QtWidgets.QMessageBox.warning(self, "函数验证失败", message)
+                            return
+                    # 保存到规则管理器
+                    self._rules_manager.set_rule_action_func(action_name, rule_id, new_code)
+                    self._refresh_current_action()
+                    QtWidgets.QMessageBox.information(self, "成功", "自定义动作函数已保存。")
+                else:
+                    # 删除自定义函数
+                    reply = QtWidgets.QMessageBox.question(
+                        self, "确认删除",
+                        "代码为空，是否删除自定义动作函数？",
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+                    )
+                    if reply == QtWidgets.QMessageBox.Yes:
+                        self._rules_manager.remove_rule_action_func(action_name, rule_id)
+                        if rule_engine:
+                            rule_engine.unregister_custom_action(rule_id)
+                        self._refresh_current_action()
+
+        elif func_status == "预定义" and rule_engine:
+            # 有预定义函数 - 只读查看模式
+            action_key = rule_engine.get_action_key_for_rule(action_name, action_desc, rule_id)
+            if action_key:
+                source_code = rule_engine.get_predefined_action_source(action_key)
+                if source_code:
+                    dialog = CodeEditorDialog(
+                        self,
+                        title=f"查看预定义动作函数 - {action_key}",
+                        code=source_code,
+                        readonly=True
+                    )
+                    # 添加"复制为自定义函数"按钮
+                    copy_btn = QtWidgets.QPushButton("复制为自定义函数")
+
+                    def copy_as_custom():
+                        dialog.reject()
+                        self._create_custom_action_func_from_predefined(action_name, rule_id, source_code)
+
+                    copy_btn.clicked.connect(copy_as_custom)
+                    dialog.layout().itemAt(2).layout().insertWidget(0, copy_btn)
+                    dialog.exec()
+                else:
+                    QtWidgets.QMessageBox.information(
+                        self, "提示",
+                        f"无法获取函数 '{action_key}' 的源代码。"
+                    )
+            else:
+                QtWidgets.QMessageBox.information(
+                    self, "提示",
+                    "无法找到对应的预定义函数。"
+                )
+        else:
+            # 无函数 - 询问是否创建自定义函数
+            reply = QtWidgets.QMessageBox.question(
+                self, "创建自定义函数",
+                f"动作 '{action_desc}' 当前没有绑定的执行函数。\n\n是否为此动作创建自定义执行函数？",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Yes:
+                self._create_new_custom_action_func(action_name, rule_id)
+
+    def _create_custom_action_func_from_predefined(self, action_name: str, rule_id: str, source_code: str):
+        """从预定义动作函数复制创建自定义函数"""
+        import re
+        modified_code = re.sub(
+            r'def\s+_execute_\w+\s*\(',
+            'def execute_action(',
+            source_code
+        )
+
+        dialog = CodeEditorDialog(
+            self,
+            title=f"基于预定义函数创建自定义动作函数 - {rule_id}",
+            code=modified_code,
+            readonly=False
+        )
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            new_code = dialog.get_code()
+            if new_code.strip():
+                # 验证并注册函数
+                try:
+                    from phone_agent.actions.rule_engine import get_rule_engine
+                    rule_engine = get_rule_engine()
+                    success, message = rule_engine.register_custom_action(rule_id, new_code)
+                    if not success:
+                        QtWidgets.QMessageBox.warning(self, "函数验证失败", message)
+                        return
+                except ImportError:
+                    pass
+
+                self._rules_manager.set_rule_action_func(action_name, rule_id, new_code)
+                self._refresh_current_action()
+                QtWidgets.QMessageBox.information(self, "成功", "自定义动作函数已创建。")
+
+    def _create_new_custom_action_func(self, action_name: str, rule_id: str):
+        """创建新的自定义动作执行函数"""
+        # 获取模板代码
+        try:
+            from phone_agent.actions.rule_engine import get_rule_engine
+            rule_engine = get_rule_engine()
+            template_code = rule_engine.get_custom_action_template()
+        except ImportError:
+            template_code = '''def execute_action(params: dict, context: dict, rule: dict) -> RuleCheckResult:
+    """
+    自定义动作执行函数
+
+    当规则的条件满足时，此函数将被调用来执行相应的动作。
+    函数可以修改参数、跳过执行、或中止执行。
+
+    Args:
+        params: 动作参数字典（可修改）
+        context: 执行上下文字典，包含 device_id, screen_width 等
+        rule: 当前规则信息，包含 id, condition, action, priority, enabled
+
+    Returns:
+        RuleCheckResult 对象，可选类型:
+        - RuleCheckResult(RuleResult.CONTINUE) - 继续执行原有逻辑
+        - RuleCheckResult(RuleResult.SKIP, message="...") - 跳过执行，返回成功
+        - RuleCheckResult(RuleResult.ABORT, message="...") - 中止执行，返回失败
+        - RuleCheckResult(RuleResult.MODIFIED, modified_params={...}) - 使用修改后的参数
+    """
+    # 在这里编写您的动作执行逻辑
+    # 示例：继续执行原有逻辑
+    return RuleCheckResult(RuleResult.CONTINUE)
+'''
+
+        dialog = CodeEditorDialog(
+            self,
+            title=f"创建自定义动作函数 - {rule_id}",
+            code=template_code,
+            readonly=False
+        )
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            new_code = dialog.get_code()
+            if new_code.strip():
+                # 验证并注册函数
+                try:
+                    from phone_agent.actions.rule_engine import get_rule_engine
+                    rule_engine = get_rule_engine()
+                    success, message = rule_engine.register_custom_action(rule_id, new_code)
+                    if not success:
+                        QtWidgets.QMessageBox.warning(self, "函数验证失败", message)
+                        return
+                except ImportError:
+                    pass
+
+                self._rules_manager.set_rule_action_func(action_name, rule_id, new_code)
+                self._refresh_current_action()
+                QtWidgets.QMessageBox.information(self, "成功", "自定义动作函数已创建。")
 
     # ========== 参数管理 ==========
 

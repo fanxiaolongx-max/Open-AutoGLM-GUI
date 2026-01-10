@@ -256,10 +256,28 @@ class RulesManager:
         self._load_all()
 
     def _load_all(self):
-        """加载所有配置"""
+        """加载所有配置并同步到运行时"""
         self._load_custom_apps()
         self._load_custom_timing()
         self._load_action_rules()
+
+        # 同步到运行时配置
+        self._sync_all_to_runtime()
+
+    def _sync_all_to_runtime(self):
+        """同步所有自定义配置到运行时"""
+        # 同步应用映射
+        if self._custom_apps:
+            self._sync_apps_to_runtime()
+
+        # 同步时间配置
+        if self._custom_timing:
+            for config_key, value in self._custom_timing.items():
+                try:
+                    category, key = config_key.split(".", 1)
+                    self._sync_timing_to_runtime(category, key, value)
+                except ValueError:
+                    pass
 
     def _load_custom_apps(self):
         """加载自定义应用映射"""
@@ -559,6 +577,90 @@ class RulesManager:
                 return True
         return False
 
+    # ========== 自定义条件函数管理 ==========
+
+    def get_rule_condition_func(self, action_name: str, rule_id: str) -> str | None:
+        """获取规则项的自定义条件函数代码"""
+        for rule in self._action_rules:
+            if rule["name"] == action_name:
+                rules = rule.get("rules", [])
+                for item in rules:
+                    if item.get("id") == rule_id:
+                        return item.get("condition_func")
+        return None
+
+    def set_rule_condition_func(self, action_name: str, rule_id: str, func_code: str) -> bool:
+        """设置规则项的自定义条件函数代码"""
+        for rule in self._action_rules:
+            if rule["name"] == action_name:
+                rules = rule.get("rules", [])
+                for item in rules:
+                    if item.get("id") == rule_id:
+                        item["condition_func"] = func_code
+                        self._save_action_rules()
+                        return True
+        return False
+
+    def remove_rule_condition_func(self, action_name: str, rule_id: str) -> bool:
+        """移除规则项的自定义条件函数"""
+        for rule in self._action_rules:
+            if rule["name"] == action_name:
+                rules = rule.get("rules", [])
+                for item in rules:
+                    if item.get("id") == rule_id:
+                        if "condition_func" in item:
+                            del item["condition_func"]
+                            self._save_action_rules()
+                            return True
+        return False
+
+    def has_custom_condition_func(self, action_name: str, rule_id: str) -> bool:
+        """检查规则项是否有自定义条件函数"""
+        func_code = self.get_rule_condition_func(action_name, rule_id)
+        return func_code is not None and len(func_code.strip()) > 0
+
+    # ========== 自定义动作函数管理 ==========
+
+    def get_rule_action_func(self, action_name: str, rule_id: str) -> str | None:
+        """获取规则项的自定义动作执行函数代码"""
+        for rule in self._action_rules:
+            if rule["name"] == action_name:
+                rules = rule.get("rules", [])
+                for item in rules:
+                    if item.get("id") == rule_id:
+                        return item.get("action_func")
+        return None
+
+    def set_rule_action_func(self, action_name: str, rule_id: str, func_code: str) -> bool:
+        """设置规则项的自定义动作执行函数代码"""
+        for rule in self._action_rules:
+            if rule["name"] == action_name:
+                rules = rule.get("rules", [])
+                for item in rules:
+                    if item.get("id") == rule_id:
+                        item["action_func"] = func_code
+                        self._save_action_rules()
+                        return True
+        return False
+
+    def remove_rule_action_func(self, action_name: str, rule_id: str) -> bool:
+        """移除规则项的自定义动作执行函数"""
+        for rule in self._action_rules:
+            if rule["name"] == action_name:
+                rules = rule.get("rules", [])
+                for item in rules:
+                    if item.get("id") == rule_id:
+                        if "action_func" in item:
+                            del item["action_func"]
+                            self._save_action_rules()
+                            return True
+        return False
+
+    def has_custom_action_func(self, action_name: str, rule_id: str) -> bool:
+        """检查规则项是否有自定义动作执行函数"""
+        func_code = self.get_rule_action_func(action_name, rule_id)
+        return func_code is not None and len(func_code.strip()) > 0
+
     # ========== 参数管理 ==========
 
     def get_action_parameters(self, action_name: str) -> list[dict]:
@@ -661,6 +763,142 @@ class RulesManager:
             return False, "JSON 格式错误"
         except Exception as e:
             return False, f"导入失败: {str(e)}"
+
+    # ========== 提示词管理 ==========
+
+    def _load_prompts(self):
+        """加载自定义提示词"""
+        if not hasattr(self, 'prompts_file'):
+            self.prompts_file = self.config_dir / "custom_prompts.json"
+        if not hasattr(self, '_custom_prompts'):
+            self._custom_prompts = {}
+
+        if self.prompts_file.exists():
+            try:
+                self._custom_prompts = json.loads(self.prompts_file.read_text(encoding="utf-8"))
+            except Exception:
+                self._custom_prompts = {}
+
+    def _save_prompts(self):
+        """保存自定义提示词"""
+        self.prompts_file.write_text(
+            json.dumps(self._custom_prompts, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+
+    def get_default_prompts(self) -> dict[str, dict]:
+        """获取默认提示词定义"""
+        # 直接读取提示词文件内容，避免触发完整的模块导入链
+        from pathlib import Path
+        import importlib.util
+
+        prompts_dir = Path(__file__).parent.parent / "phone_agent" / "config"
+
+        def load_prompt_from_file(filename: str) -> str:
+            """从文件加载提示词"""
+            filepath = prompts_dir / filename
+            if filepath.exists():
+                # 使用 importlib 加载单个模块
+                spec = importlib.util.spec_from_file_location("prompt_module", filepath)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    try:
+                        spec.loader.exec_module(module)
+                        return getattr(module, "SYSTEM_PROMPT", "")
+                    except Exception:
+                        pass
+            return ""
+
+        prompt_zh = load_prompt_from_file("prompts_zh.py")
+        prompt_en = load_prompt_from_file("prompts_en.py")
+
+        return {
+            "system_prompt_zh": {
+                "name": "系统提示词（中文）",
+                "description": "发送给AI模型的中文系统提示词，定义AI的角色和行为规则",
+                "content": prompt_zh,
+                "editable": True
+            },
+            "system_prompt_en": {
+                "name": "系统提示词（英文）",
+                "description": "发送给AI模型的英文系统提示词，定义AI的角色和行为规则",
+                "content": prompt_en,
+                "editable": True
+            },
+        }
+
+    def get_all_prompts(self) -> dict[str, dict]:
+        """获取所有提示词（默认 + 自定义覆盖）"""
+        self._load_prompts()
+        prompts = self.get_default_prompts()
+
+        # 应用自定义覆盖
+        for key, custom_content in self._custom_prompts.items():
+            if key in prompts:
+                prompts[key]["content"] = custom_content
+                prompts[key]["is_customized"] = True
+            else:
+                # 自定义新增的提示词
+                prompts[key] = {
+                    "name": key,
+                    "description": "自定义提示词",
+                    "content": custom_content,
+                    "editable": True,
+                    "is_custom": True
+                }
+
+        return prompts
+
+    def get_prompt(self, key: str) -> str:
+        """获取指定提示词内容"""
+        prompts = self.get_all_prompts()
+        if key in prompts:
+            return prompts[key]["content"]
+        return ""
+
+    def update_prompt(self, key: str, content: str) -> bool:
+        """更新提示词内容"""
+        self._load_prompts()
+        self._custom_prompts[key] = content
+        self._save_prompts()
+        return True
+
+    def reset_prompt(self, key: str) -> bool:
+        """重置提示词为默认值"""
+        self._load_prompts()
+        if key in self._custom_prompts:
+            del self._custom_prompts[key]
+            self._save_prompts()
+            return True
+        return False
+
+    def reset_all_prompts(self):
+        """重置所有提示词为默认值"""
+        self._custom_prompts = {}
+        self._save_prompts()
+
+    def add_custom_prompt(self, key: str, name: str, content: str) -> bool:
+        """添加自定义提示词"""
+        self._load_prompts()
+        if key in self.get_default_prompts():
+            return False  # 不能添加与默认同名的
+        self._custom_prompts[key] = content
+        self._save_prompts()
+        return True
+
+    def delete_custom_prompt(self, key: str) -> bool:
+        """删除自定义提示词"""
+        self._load_prompts()
+        if key in self._custom_prompts and key not in self.get_default_prompts():
+            del self._custom_prompts[key]
+            self._save_prompts()
+            return True
+        return False
+
+    def is_prompt_customized(self, key: str) -> bool:
+        """检查提示词是否被自定义修改过"""
+        self._load_prompts()
+        return key in self._custom_prompts
 
 
 # 全局实例

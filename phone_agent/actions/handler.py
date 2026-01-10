@@ -1,14 +1,18 @@
 """Action handler for processing AI model outputs."""
 
 import ast
+import logging
 import re
 import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from phone_agent.actions.rule_engine import RuleResult, get_rule_engine
 from phone_agent.config.timing import TIMING_CONFIG
 from phone_agent.device_factory import get_device_factory
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -43,6 +47,9 @@ class ActionHandler:
         self.takeover_callback = takeover_callback or self._default_takeover
         self._original_ime: str | None = None
         self._keyboard_set: bool = False
+        self._rule_engine = get_rule_engine()
+        self._last_tap_position: tuple[int, int] | None = None
+        self._last_tap_time: float = 0
 
     def setup_keyboard(self) -> None:
         """
@@ -111,6 +118,46 @@ class ActionHandler:
                 message=f"Unknown action: {action_name}",
             )
 
+        # 应用规则引擎
+        try:
+            context = {
+                "device_id": self.device_id,
+                "screen_width": screen_width,
+                "screen_height": screen_height,
+                "last_tap_position": self._last_tap_position,
+                "last_tap_time": self._last_tap_time,
+            }
+            rule_result = self._rule_engine.apply_rules(action_name, action, context)
+
+            if rule_result.result == RuleResult.ABORT:
+                logger.info(f"规则阻止执行动作 {action_name}: {rule_result.message}")
+                return ActionResult(
+                    success=False,
+                    should_finish=False,
+                    message=rule_result.message or f"规则阻止执行: {action_name}"
+                )
+
+            if rule_result.result == RuleResult.SKIP:
+                logger.info(f"规则跳过动作 {action_name}: {rule_result.message}")
+                return ActionResult(
+                    success=True,
+                    should_finish=False,
+                    message=rule_result.message or f"规则跳过: {action_name}"
+                )
+
+            if rule_result.result == RuleResult.MODIFIED and rule_result.modified_params:
+                # 使用修改后的参数
+                action = rule_result.modified_params
+                logger.info(f"规则修改了动作 {action_name} 的参数")
+
+                # 检查是否转换为其他动作
+                if action.get("_converted_from_swipe"):
+                    action_name = "Tap"
+                    handler_method = self._get_handler(action_name)
+
+        except Exception as e:
+            logger.warning(f"规则引擎执行失败，继续使用原有逻辑: {e}")
+
         try:
             return handler_method(action, screen_width, screen_height)
         except Exception as e:
@@ -177,6 +224,11 @@ class ActionHandler:
 
         device_factory = get_device_factory()
         device_factory.tap(x, y, self.device_id)
+
+        # 记录点击位置和时间，用于规则引擎检测连续快速点击
+        self._last_tap_position = (x, y)
+        self._last_tap_time = time.time()
+
         return ActionResult(True, False)
 
     def _handle_type(self, action: dict, width: int, height: int) -> ActionResult:

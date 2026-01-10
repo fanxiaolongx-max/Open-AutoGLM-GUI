@@ -20,12 +20,34 @@ def get_system_prompt(lang: str = "cn") -> str:
     """
     Get system prompt by language.
 
+    优先使用 rules_manager 中的自定义提示词，如果没有自定义则使用默认值。
+
     Args:
         lang: Language code, 'cn' for Chinese, 'en' for English.
 
     Returns:
         System prompt string.
     """
+    # 尝试从 rules_manager 获取自定义提示词
+    try:
+        from gui_app.rules_manager import get_rules_manager
+        rm = get_rules_manager()
+
+        if lang == "en":
+            prompt_key = "system_prompt_en"
+        else:
+            prompt_key = "system_prompt_zh"
+
+        # 检查是否有自定义提示词
+        if rm.is_prompt_customized(prompt_key):
+            custom_prompt = rm.get_prompt(prompt_key)
+            if custom_prompt:
+                return custom_prompt
+    except Exception:
+        # 如果 rules_manager 不可用，使用默认值
+        pass
+
+    # 使用默认提示词
     if lang == "en":
         return SYSTEM_PROMPT_EN
     return SYSTEM_PROMPT_ZH
