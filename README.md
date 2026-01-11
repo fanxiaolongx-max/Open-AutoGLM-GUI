@@ -27,9 +27,18 @@ https://raw.githubusercontent.com/zai-org/Open-AutoGLM/refs/heads/main/README.md
 ## 项目介绍
 
 Phone Agent 是一个基于 AutoGLM 构建的手机端智能助理框架，它能够以多模态方式理解手机屏幕内容，并通过自动化操作帮助用户完成任务。系统通过
-ADB(Android Debug Bridge)来控制设备，以视觉语言模型进行屏幕感知，再结合智能规划能力生成并执行操作流程。用户只需用自然语言描述需求，如“打开小红书搜索美食”，Phone
+ADB(Android Debug Bridge)来控制设备，以视觉语言模型进行屏幕感知，再结合智能规划能力生成并执行操作流程。用户只需用自然语言描述需求，如"打开小红书搜索美食"，Phone
 Agent 即可自动解析意图、理解当前界面、规划下一步动作并完成整个流程。系统还内置敏感操作确认机制，并支持在登录或验证码场景下进行人工接管。同时，它提供远程
 ADB 调试能力，可通过 WiFi 或网络连接设备，实现灵活的远程控制与开发。
+
+### 主要特性
+
+- 🖥️ **图形界面 (GUI)**：提供功能完善的桌面应用「鱼塘管理器」，支持设备管理、任务执行、定时调度等功能
+- 🤖 **AI 驱动**：基于视觉语言模型理解屏幕内容，自动规划和执行操作
+- 📱 **多设备支持**：支持 Android (ADB)、HarmonyOS (HDC)、iOS 设备
+- ⏰ **定时任务**：支持单次、每日、每周定时自动执行任务
+- 🔧 **规则引擎**：可自定义应用映射、时间延迟、动作规则和提示词
+- 🌐 **远程调试**：支持 WiFi 无线连接和二维码配对
 
 > ⚠️
 > 本项目仅供研究和学习使用。严禁用于非法获取信息、干扰系统或任何违法活动。请仔细审阅 [使用条款](resources/privacy_policy.txt)。
@@ -281,6 +290,40 @@ python scripts/check_deployment_cn.py --base-url http://你的IP:你的端口/v1
 - `--messages-file`: 可选，指定自定义测试消息文件(默认使用 `scripts/sample_messages.json`)
 
 ## 使用 AutoGLM
+
+### 图形界面 (GUI)
+
+本项目提供了功能完善的图形界面应用 **鱼塘管理器**，让您无需命令行即可轻松使用 AutoGLM。
+
+#### 启动 GUI
+
+```bash
+python run_gui.py
+```
+
+#### GUI 功能模块
+
+| 模块 | 功能说明 |
+|------|----------|
+| **控制台** | 系统概览仪表盘，显示设备状态、模型配置、任务统计等关键信息 |
+| **设备中心** | 管理 ADB/HDC 设备连接，支持 USB、WiFi 无线连接、二维码配对 |
+| **模型服务** | 配置和管理多个 AI 模型服务，支持一键切换激活的模型 |
+| **任务执行** | 核心功能页面，输入任务描述，AI 自动执行手机操作，支持实时预览 |
+| **定时任务** | 创建定时或周期性自动化任务，支持单次、每日、每周执行 |
+| **应用安装** | 批量安装 APK 到多台设备，支持拖拽安装 |
+| **文件管理** | 浏览和管理设备文件系统 |
+| **规则管理** | 管理应用映射、时间延迟、动作类型规则和系统提示词 |
+| **系统诊断** | 运行系统检查，排查 ADB、模型连接等问题 |
+| **系统设置** | 主题切换、虚拟化环境切换等全局设置 |
+
+#### GUI 界面特性
+
+- 🎨 **现代化界面**：支持暗色/亮色主题切换
+- 📱 **实时预览**：任务执行时实时显示手机屏幕
+- 🔄 **多设备支持**：同时管理和操作多台设备
+- 📋 **任务模板**：内置常用任务模板，快速开始
+- ⏰ **定时调度**：支持定时任务自动执行
+- 📊 **执行日志**：完整的操作日志和时间线记录
 
 ### 命令行
 
@@ -668,22 +711,50 @@ pytest tests/
 ### 完整项目结构
 
 ```
-phone_agent/
-├── __init__.py          # 包导出
-├── agent.py             # PhoneAgent 主类
-├── adb/                 # ADB 工具
-│   ├── connection.py    # 远程/本地连接管理
-│   ├── screenshot.py    # 屏幕截图
-│   ├── input.py         # 文本输入 (ADB Keyboard)
-│   └── device.py        # 设备控制 (点击、滑动等)
-├── actions/             # 操作处理
-│   └── handler.py       # 操作执行器
-├── config/              # 配置
-│   ├── apps.py          # 支持的应用映射
-│   ├── prompts_zh.py    # 中文系统提示词
-│   └── prompts_en.py    # 英文系统提示词
-└── model/               # AI 模型客户端
-    └── client.py        # OpenAI 兼容客户端
+Open-AutoGLM/
+├── main.py              # 命令行入口
+├── run_gui.py           # GUI 入口脚本
+├── phone_agent/         # Agent 核心模块
+│   ├── __init__.py      # 包导出
+│   ├── agent.py         # PhoneAgent 主类
+│   ├── adb/             # ADB 工具
+│   │   ├── connection.py    # 远程/本地连接管理
+│   │   ├── screenshot.py    # 屏幕截图
+│   │   ├── input.py         # 文本输入 (ADB Keyboard)
+│   │   └── device.py        # 设备控制 (点击、滑动等)
+│   ├── actions/         # 操作处理
+│   │   ├── handler.py       # 操作执行器
+│   │   └── rule_engine.py   # 规则引擎
+│   ├── config/          # 配置
+│   │   ├── apps.py          # Android 应用映射
+│   │   ├── apps_harmonyos.py    # 鸿蒙应用映射
+│   │   ├── apps_ios.py      # iOS 应用映射
+│   │   ├── prompts_zh.py    # 中文系统提示词
+│   │   ├── prompts_en.py    # 英文系统提示词
+│   │   └── timing.py        # 时间延迟配置
+│   └── model/           # AI 模型客户端
+│       └── client.py        # OpenAI 兼容客户端
+├── gui_app/             # GUI 应用模块
+│   ├── app.py           # 主窗口 (MainWindow)
+│   ├── components/      # UI 组件
+│   │   ├── workers.py       # 后台工作线程
+│   │   └── widgets.py       # 自定义控件
+│   ├── pages/           # 页面 Mixin 模块
+│   │   ├── dashboard_mixin.py       # 控制台页面
+│   │   ├── device_hub_mixin.py      # 设备中心页面
+│   │   ├── model_service_mixin.py   # 模型服务页面
+│   │   ├── task_runner_mixin.py     # 任务执行页面
+│   │   ├── scheduled_tasks_mixin.py # 定时任务页面
+│   │   ├── apk_installer_mixin.py   # 应用安装页面
+│   │   └── file_manager_mixin.py    # 文件管理页面
+│   ├── styles/          # 样式模块
+│   │   └── theme.py         # 主题样式表
+│   ├── model_services.py    # 多模型服务管理
+│   ├── scheduler.py         # 定时任务调度器
+│   ├── rules_manager.py     # 规则管理器
+│   ├── device_pin_manager.py    # 设备 PIN 管理
+│   └── custom_widgets.py    # 自定义控件
+└── examples/            # 使用示例
 ```
 
 ## 常见问题
