@@ -3327,11 +3327,11 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
                 self._clean_existing_connections(device_type)
             
             # Then refresh devices
-            self._refresh_devices()
-            
-            # Check if any devices found
-            if self.device_list.count() > 0:
-                self._append_device_log(f"[{self._timestamp()}] ✅ 检测到 {self.device_list.count()} 个设备\n")
+            device_count = self._refresh_devices()
+
+            # Check if any devices found (use actual device count, not list item count)
+            if device_count > 0:
+                self._append_device_log(f"[{self._timestamp()}] ✅ 检测到 {device_count} 个设备\n")
                 self._update_device_status("检测完成", "success")
             else:
                 self._append_device_log(f"[{self._timestamp()}] ⚠️ 未检测到设备\n")
@@ -3385,8 +3385,10 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
             self._append_device_log(f"[{self._timestamp()}] ⚠️ 清理连接时出错: {str(e)}\n")
 
     def _refresh_devices(self):
+        """Refresh device list and return actual device count."""
         device_type = self._current_device_type()
         self.device_list.clear()
+        device_count = 0
 
         # Show refresh status
         self.refresh_devices_btn.setEnabled(False)
@@ -3401,6 +3403,7 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
                     self.device_list.addItem("没有iOS设备连接。")
                     self._update_device_status("未发现iOS设备", "warning")
                 else:
+                    device_count = len(devices)
                     for device in devices:
                         name = device.device_name or device.device_id
                         line = f"{name} | {device.device_id} | {device.connection_type.value}"
@@ -3409,7 +3412,7 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
             else:
                 set_device_type(device_type)
                 factory = get_device_factory()
-                
+
                 # 检查工具是否已安装
                 tool_name = "adb" if device_type == DeviceType.ADB else "hdc"
                 if not self._is_tool_installed(tool_name):
@@ -3420,13 +3423,14 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
                     self._refresh_dashboard()
                     self.refresh_devices_btn.setEnabled(True)
                     self.refresh_devices_btn.setText("🔍 自动检测")
-                    return
-                
+                    return 0
+
                 devices = factory.list_devices()
                 if not devices:
                     self.device_list.addItem("没有设备连接。")
                     self._update_device_status("未发现设备", "warning")
                 else:
+                    device_count = len(devices)
                     for device in devices:
                         status = "OK" if device.status == "device" else device.status
                         line = f"{device.device_id} | {status} | {device.connection_type.value}"
@@ -3445,6 +3449,8 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
         finally:
             self.refresh_devices_btn.setEnabled(True)
             self.refresh_devices_btn.setText("🔍 自动检测")
+
+        return device_count
 
     def _is_tool_installed(self, tool_name: str) -> bool:
         """检查工具是否已安装"""
