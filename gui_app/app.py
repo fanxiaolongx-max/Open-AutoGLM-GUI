@@ -23,6 +23,7 @@ from phone_agent.xctest import list_devices as list_ios_devices
 from gui_app.model_services import ModelServicesManager, ModelServiceConfig
 from gui_app.scheduler import ScheduledTasksManager, ScheduledTask, ScheduleType, WeekDay
 from gui_app.custom_widgets import NoWheelSpinBox, NoWheelDoubleSpinBox, NoWheelComboBox, NoWheelTimeEdit
+from gui_app.email_service import EmailService, EmailConfig, EmailSendWorker
 
 # 导入拆分后的组件模块
 from gui_app.components import (
@@ -162,6 +163,8 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
         self.model_services_manager = ModelServicesManager()  # 多模型服务管理器
         self.scheduled_tasks_manager = ScheduledTasksManager(self)  # 定时任务管理器
         self.scheduled_tasks_manager.task_triggered.connect(self._on_scheduled_task_triggered)
+        self.email_service = EmailService(self)  # 邮件服务
+        self.email_send_worker = None  # 邮件发送 Worker
         self.task_worker = None
         self.script_worker = None
         self.diagnostic_worker = None
@@ -2573,6 +2576,112 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
         virt_layout.addWidget(virt_log_label)
         virt_layout.addWidget(self.virt_log)
 
+        # Email Settings Card
+        email_card = QtWidgets.QFrame()
+        email_card.setObjectName("card")
+        email_layout = QtWidgets.QVBoxLayout(email_card)
+        email_layout.setSpacing(12)
+
+        email_header_layout = QtWidgets.QHBoxLayout()
+
+        email_title = QtWidgets.QLabel("邮件报告设置")
+        email_title.setObjectName("cardTitle")
+
+        email_badge = QtWidgets.QLabel("任务完成通知")
+        email_badge.setStyleSheet(
+            "font-size: 10px; color: #6366f1; background: rgba(99, 102, 241, 0.15); "
+            "padding: 3px 8px; border-radius: 4px; font-weight: 600;"
+        )
+
+        email_header_layout.addWidget(email_title)
+        email_header_layout.addWidget(email_badge)
+        email_header_layout.addStretch()
+
+        email_desc = QtWidgets.QLabel(
+            "配置邮件服务器后，任务执行完成时可自动发送报告邮件。\n"
+            "报告包含执行结果统计和最后的执行截图。"
+        )
+        email_desc.setStyleSheet("color: #71717a; font-size: 12px; line-height: 1.5;")
+        email_desc.setWordWrap(True)
+
+        # Email form
+        email_form = QtWidgets.QFormLayout()
+        email_form.setSpacing(10)
+        email_form.setLabelAlignment(QtCore.Qt.AlignLeft)
+
+        # SMTP Server
+        self.email_smtp_server = QtWidgets.QLineEdit()
+        self.email_smtp_server.setPlaceholderText("例如: smtp.qq.com, smtp.163.com")
+        email_form.addRow("SMTP 服务器", self.email_smtp_server)
+
+        # SMTP Port
+        self.email_smtp_port = NoWheelSpinBox()
+        self.email_smtp_port.setRange(1, 65535)
+        self.email_smtp_port.setValue(465)
+        email_form.addRow("SMTP 端口", self.email_smtp_port)
+
+        # SSL/TLS
+        ssl_layout = QtWidgets.QHBoxLayout()
+        self.email_use_ssl = QtWidgets.QCheckBox("使用 SSL")
+        self.email_use_ssl.setChecked(True)
+        self.email_use_tls = QtWidgets.QCheckBox("使用 STARTTLS")
+        self.email_use_ssl.toggled.connect(lambda checked: self.email_use_tls.setChecked(False) if checked else None)
+        self.email_use_tls.toggled.connect(lambda checked: self.email_use_ssl.setChecked(False) if checked else None)
+        ssl_layout.addWidget(self.email_use_ssl)
+        ssl_layout.addWidget(self.email_use_tls)
+        ssl_layout.addStretch()
+        email_form.addRow("加密方式", ssl_layout)
+
+        # Sender Email
+        self.email_sender = QtWidgets.QLineEdit()
+        self.email_sender.setPlaceholderText("发件人邮箱地址")
+        email_form.addRow("发件人邮箱", self.email_sender)
+
+        # Sender Password
+        self.email_password = QtWidgets.QLineEdit()
+        self.email_password.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.email_password.setPlaceholderText("邮箱密码或授权码")
+        email_form.addRow("密码/授权码", self.email_password)
+
+        # Recipient Emails
+        self.email_recipients = QtWidgets.QLineEdit()
+        self.email_recipients.setPlaceholderText("收件人邮箱，多个用逗号分隔")
+        email_form.addRow("收件人", self.email_recipients)
+
+        # Enable auto send
+        self.email_enabled = QtWidgets.QCheckBox("任务完成后自动发送邮件报告")
+        email_form.addRow("自动发送", self.email_enabled)
+
+        # Buttons
+        email_btn_layout = QtWidgets.QHBoxLayout()
+        email_btn_layout.setSpacing(10)
+
+        self.email_save_btn = QtWidgets.QPushButton("保存配置")
+        self.email_save_btn.setObjectName("secondary")
+        self.email_save_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.email_save_btn.clicked.connect(self._save_email_config)
+
+        self.email_test_btn = QtWidgets.QPushButton("发送测试邮件")
+        self.email_test_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.email_test_btn.clicked.connect(self._send_test_email)
+
+        email_btn_layout.addWidget(self.email_save_btn)
+        email_btn_layout.addWidget(self.email_test_btn)
+        email_btn_layout.addStretch()
+
+        # Status label
+        self.email_status_label = QtWidgets.QLabel("")
+        self.email_status_label.setStyleSheet("font-size: 12px; color: #71717a;")
+
+        email_layout.addLayout(email_header_layout)
+        email_layout.addWidget(email_desc)
+        email_layout.addLayout(email_form)
+        email_layout.addLayout(email_btn_layout)
+        email_layout.addWidget(self.email_status_label)
+
+        # Load email config
+        self._load_email_config()
+
         # About Section
         about_card = QtWidgets.QFrame()
         about_card.setObjectName("card")
@@ -2593,6 +2702,7 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
 
         layout.addWidget(header_widget)
         layout.addWidget(settings_card)
+        layout.addWidget(email_card)
         layout.addWidget(virt_card)
         layout.addWidget(about_card)
         layout.addStretch()
@@ -2600,6 +2710,125 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
         scroll_area.setWidget(scroll_content)
         page_layout.addWidget(scroll_area)
         return page
+
+    def _load_email_config(self):
+        """从邮件服务加载配置到UI"""
+        config = self.email_service.get_config()
+        self.email_smtp_server.setText(config.smtp_server)
+        self.email_smtp_port.setValue(config.smtp_port)
+        self.email_use_ssl.setChecked(config.use_ssl)
+        self.email_use_tls.setChecked(config.use_tls)
+        self.email_sender.setText(config.sender_email)
+        self.email_password.setText(config.sender_password)
+        self.email_recipients.setText(config.recipient_emails)
+        self.email_enabled.setChecked(config.enabled)
+
+    def _save_email_config(self):
+        """保存邮件配置"""
+        config = EmailConfig(
+            smtp_server=self.email_smtp_server.text().strip(),
+            smtp_port=self.email_smtp_port.value(),
+            use_ssl=self.email_use_ssl.isChecked(),
+            use_tls=self.email_use_tls.isChecked(),
+            sender_email=self.email_sender.text().strip(),
+            sender_password=self.email_password.text(),
+            recipient_emails=self.email_recipients.text().strip(),
+            enabled=self.email_enabled.isChecked()
+        )
+        self.email_service.update_config(config)
+        self.email_status_label.setText("✓ 配置已保存")
+        self.email_status_label.setStyleSheet("font-size: 12px; color: #10b981;")
+        # 3秒后清除状态
+        QtCore.QTimer.singleShot(3000, lambda: self.email_status_label.setText(""))
+
+    def _send_test_email(self):
+        """发送测试邮件"""
+        # 先保存当前配置
+        self._save_email_config()
+
+        self.email_test_btn.setEnabled(False)
+        self.email_test_btn.setText("发送中...")
+        self.email_status_label.setText("正在发送测试邮件...")
+        self.email_status_label.setStyleSheet("font-size: 12px; color: #6366f1;")
+
+        # 在后台线程发送测试邮件
+        def send_test():
+            success, message = self.email_service.send_test_email()
+            return success, message
+
+        # 使用 QThread
+        class TestEmailWorker(QtCore.QThread):
+            finished = QtCore.Signal(bool, str)
+
+            def __init__(self, email_service):
+                super().__init__()
+                self.email_service = email_service
+
+            def run(self):
+                success, message = self.email_service.send_test_email()
+                self.finished.emit(success, message)
+
+        self._test_email_worker = TestEmailWorker(self.email_service)
+        self._test_email_worker.finished.connect(self._on_test_email_finished)
+        self._test_email_worker.start()
+
+    def _on_test_email_finished(self, success, message):
+        """测试邮件发送完成回调"""
+        self.email_test_btn.setEnabled(True)
+        self.email_test_btn.setText("发送测试邮件")
+
+        if success:
+            self.email_status_label.setText(f"✓ {message}")
+            self.email_status_label.setStyleSheet("font-size: 12px; color: #10b981;")
+        else:
+            self.email_status_label.setText(f"✗ {message}")
+            self.email_status_label.setStyleSheet("font-size: 12px; color: #ef4444;")
+
+    def _send_task_report_email(self, task_name: str, success_count: int, failed_count: int,
+                                 total_count: int, details: str, is_scheduled: bool = False):
+        """发送任务执行报告邮件"""
+        if not self.email_service.get_config().enabled:
+            return
+
+        # 获取最后的截图
+        screenshot_data = None
+        if self.last_preview_image:
+            try:
+                # last_preview_image 可能是 bytes 或 QImage
+                if isinstance(self.last_preview_image, bytes):
+                    screenshot_data = self.last_preview_image
+                elif hasattr(self.last_preview_image, 'save'):
+                    # 如果是 QImage，转换为 bytes
+                    from PySide6.QtCore import QBuffer, QIODevice
+                    buffer = QBuffer()
+                    buffer.open(QIODevice.WriteOnly)
+                    self.last_preview_image.save(buffer, "PNG")
+                    screenshot_data = bytes(buffer.data())
+                    buffer.close()
+            except Exception as e:
+                self._append_log(f"📧 获取截图失败: {e}\n")
+                screenshot_data = None
+
+        # 创建邮件发送 Worker
+        self.email_send_worker = EmailSendWorker(
+            email_service=self.email_service,
+            task_name=task_name,
+            success_count=success_count,
+            failed_count=failed_count,
+            total_count=total_count,
+            details=details,
+            screenshot_data=screenshot_data,
+            is_scheduled=is_scheduled
+        )
+        self.email_send_worker.finished.connect(self._on_email_send_finished)
+        self.email_send_worker.start()
+
+    def _on_email_send_finished(self, success, message):
+        """邮件发送完成回调"""
+        if success:
+            self._append_log(f"📧 邮件报告发送成功\n")
+        else:
+            self._append_log(f"📧 邮件报告发送失败: {message}\n")
 
     def _apply_theme(self, value):
         """应用主题设置"""

@@ -189,23 +189,40 @@ class PhoneAgent:
                 )
             )
 
-        # Get model response
-        try:
-            msgs = get_messages(self.agent_config.lang)
-            print("\n" + "=" * 50)
-            print(f"💭 {msgs['thinking']}:")
-            print("-" * 50)
-            response = self.model_client.request(self._context)
-        except Exception as e:
-            if self.agent_config.verbose:
-                traceback.print_exc()
-            return StepResult(
-                success=False,
-                finished=True,
-                action=None,
-                thinking="",
-                message=f"Model error: {e}",
-            )
+        # Get model response with retry for empty responses
+        max_retries = 2  # 最多重试2次
+        response = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                msgs = get_messages(self.agent_config.lang)
+                if attempt == 0:
+                    print("\n" + "=" * 50)
+                    print(f"💭 {msgs['thinking']}:")
+                    print("-" * 50)
+                else:
+                    print(f"\n⚠️ 模型返回空响应，正在重试 ({attempt}/{max_retries})...")
+                    print("-" * 50)
+
+                response = self.model_client.request(self._context)
+
+                # 检查响应是否为空
+                if response.action and response.action.strip():
+                    break  # 响应非空，退出重试循环
+                elif attempt < max_retries:
+                    print(f"⚠️ 模型返回空响应")
+                    continue  # 继续重试
+
+            except Exception as e:
+                if self.agent_config.verbose:
+                    traceback.print_exc()
+                return StepResult(
+                    success=False,
+                    finished=True,
+                    action=None,
+                    thinking="",
+                    message=f"Model error: {e}",
+                )
 
         # Parse action from response
         try:

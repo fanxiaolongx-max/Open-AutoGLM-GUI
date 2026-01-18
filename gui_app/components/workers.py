@@ -670,9 +670,17 @@ class MultiDeviceTaskWorker(QtCore.QThread):
         self.task = task
         self.config = config
         self._stop_requested = False
+        self._agent = None  # 保存 agent 引用以便停止时清理
 
     def request_stop(self):
+        """请求停止任务"""
         self._stop_requested = True
+        # 立即清理 agent 以中断正在进行的操作
+        if self._agent:
+            try:
+                self._agent.cleanup()
+            except Exception:
+                pass
 
     def _get_action_desc(self, result):
         """Get action description from step result."""
@@ -719,6 +727,16 @@ class MultiDeviceTaskWorker(QtCore.QThread):
                     api_key=self.config.get("api_key", ""),
                 )
                 agent = PhoneAgent(model_config, agent_config)
+
+            # 保存 agent 引用以便停止时清理
+            self._agent = agent
+
+            # 在开始执行前检查是否已请求停止
+            if self._stop_requested:
+                agent.cleanup()
+                self.log.emit(self.device_id, "任务已停止\n")
+                self.finished.emit(self.device_id, False, "用户停止")
+                return
 
             step_count = 0
             max_steps = self.config.get("max_steps", 50)

@@ -450,8 +450,8 @@ class ScheduledTasksMixin:
             btn_style = """
                 QPushButton {
                     padding: 2px 8px;
-                    font-size: 11px;
-                    min-height: 20px;
+                    font-size: px;
+                    min-height: 16px;
                     max-height: 22px;
                 }
             """
@@ -797,11 +797,39 @@ class ScheduledTasksMixin:
         self._increment_tasks_counter(is_scheduled=True)
         self._restore_sched_device_lock()
 
+        # 发送邮件报告（定时任务-单设备）
+        if hasattr(self, '_send_task_report_email'):
+            task = self.scheduled_tasks_manager.get_task(task_id)
+            task_name = task.name if task else task_id
+            log_content = self.sched_log.toPlainText()
+            self._send_task_report_email(
+                task_name=task_name,
+                success_count=1,
+                failed_count=0,
+                total_count=1,
+                details=log_content,
+                is_scheduled=True
+            )
+
     def _on_sched_task_failed(self, task_id, msg):
         """定时任务失败回调"""
         self._append_sched_log(f"任务失败: {msg}\n")
         self.scheduled_tasks_manager.mark_task_finished(task_id)
         self._restore_sched_device_lock()
+
+        # 发送失败报告邮件（定时任务-单设备）
+        if hasattr(self, '_send_task_report_email'):
+            task = self.scheduled_tasks_manager.get_task(task_id)
+            task_name = task.name if task else task_id
+            log_content = self.sched_log.toPlainText()
+            self._send_task_report_email(
+                task_name=task_name,
+                success_count=0,
+                failed_count=1,
+                total_count=1,
+                details=log_content,
+                is_scheduled=True
+            )
 
     def _restore_sched_device_lock(self):
         """恢复定时任务设备的锁屏状态"""
@@ -819,14 +847,18 @@ class ScheduledTasksMixin:
     def _on_sched_multi_task_finished(self):
         """多设备定时任务完成回调"""
         task_id = getattr(self, '_sched_multi_task_id', None)
+        success = 0
+        failed = 0
+        total = 0
+
         if task_id:
             success, failed = self.multi_device_manager.get_results_summary()
+            total = success + failed
             self._append_sched_log(f"多设备任务完成: {success} 成功, {failed} 失败\n")
             self.scheduled_tasks_manager.mark_task_finished(task_id)
             # Increment counter for each successful device
             for _ in range(success):
                 self._increment_tasks_counter(is_scheduled=True)
-            self._sched_multi_task_id = None
 
         # 恢复锁屏
         if hasattr(self, '_sched_devices_to_relock') and self._sched_devices_to_relock:
@@ -838,6 +870,24 @@ class ScheduledTasksMixin:
                 else:
                     self._append_sched_log(f"  ⚠ 锁屏失败\n")
             self._sched_devices_to_relock = []
+
+        # 发送邮件报告（定时任务-多设备）
+        if task_id and hasattr(self, '_send_task_report_email'):
+            task = self.scheduled_tasks_manager.get_task(task_id)
+            task_name = task.name if task else task_id
+            log_content = self.sched_log.toPlainText()
+            self._send_task_report_email(
+                task_name=task_name,
+                success_count=success,
+                failed_count=failed,
+                total_count=total,
+                details=log_content,
+                is_scheduled=True
+            )
+
+        # 清理任务 ID
+        if task_id:
+            self._sched_multi_task_id = None
 
         # 恢复普通任务的 all_finished 连接
         try:

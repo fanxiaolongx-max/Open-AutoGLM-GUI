@@ -487,6 +487,9 @@ class TaskRunnerMixin:
         # 在执行任务前，检查并解锁 ADB 设备，记录之前的锁屏状态
         from phone_agent.adb.unlock import ensure_device_unlocked, is_device_locked
         self._devices_to_relock = []  # 记录需要重新锁屏的设备
+        failed_devices = []  # 记录解锁失败的设备
+        valid_devices = []  # 记录可以执行任务的设备
+
         for device_id, device_type in devices:
             if device_type == DeviceType.ADB:
                 self._append_log(f"检查设备 {device_id} 锁屏状态...\n")
@@ -498,11 +501,52 @@ class TaskRunnerMixin:
                 success, message = ensure_device_unlocked(device_id)
                 if success:
                     self._append_log(f"  ✓ {message}\n")
+                    valid_devices.append((device_id, device_type))
                 else:
-                    self._append_log(f"  ⚠ {message}\n")
+                    self._append_log(f"  ✗ {message}\n")
+                    self._append_log(f"  ❌ 设备 {device_id} 解锁失败，跳过此设备\n")
+                    failed_devices.append((device_id, message))
+                    # 更新设备状态显示为失败
+                    for i in range(self.device_status_list.count()):
+                        item = self.device_status_list.item(i)
+                        if item.data(QtCore.Qt.UserRole) == device_id:
+                            item.setText(f"❌ {device_id}: 解锁失败")
+                            item.setBackground(QtGui.QColor(239, 68, 68, 30))
+                            break
+            else:
+                valid_devices.append((device_id, device_type))
 
-        self.multi_device_manager.start_tasks(devices, task, config)
-        self._append_timeline(f"批量任务开始: {len(devices)} 个设备")
+        # 如果所有设备都解锁失败，则直接返回失败
+        if not valid_devices:
+            self._append_log("\n❌ 所有设备解锁失败，无法执行任务\n")
+            self.run_task_btn.setEnabled(True)
+            self.stop_task_btn.setEnabled(False)
+            self.multi_status_label.setText(f"失败 - 所有设备解锁失败")
+            self.multi_status_label.setStyleSheet(
+                "font-size: 12px; color: #ef4444; background: rgba(239, 68, 68, 0.15); "
+                "padding: 8px 12px; border-radius: 8px;"
+            )
+            # 发送失败报告邮件
+            if hasattr(self, '_send_task_report_email'):
+                task_content = self.task_input.toPlainText().strip()
+                task_name = task_content[:50] + "..." if len(task_content) > 50 else task_content
+                log_content = self.task_log.toPlainText()
+                self._send_task_report_email(
+                    task_name=task_name,
+                    success_count=0,
+                    failed_count=len(devices),
+                    total_count=len(devices),
+                    details=log_content,
+                    is_scheduled=False
+                )
+            return
+
+        # 如果有部分设备解锁失败，提示用户
+        if failed_devices:
+            self._append_log(f"\n⚠️ {len(failed_devices)} 个设备解锁失败，将仅在 {len(valid_devices)} 个设备上执行任务\n")
+
+        self.multi_device_manager.start_tasks(valid_devices, task, config)
+        self._append_timeline(f"批量任务开始: {len(valid_devices)} 个设备")
 
     def _stop_multi_task(self):
         """停止所有设备的任务"""
@@ -513,6 +557,13 @@ class TaskRunnerMixin:
             running_count = len([w for w in self.multi_device_manager.workers.values() if w.isRunning()])
             if running_count > 0:
                 self.multi_device_manager.stop_all()
+                # 等待所有 worker 停止
+                for worker in self.multi_device_manager.workers.values():
+                    if worker.isRunning():
+                        worker.wait(2000)  # 等待最多2秒
+                        if worker.isRunning():
+                            worker.terminate()  # 强制终止
+                            worker.wait(500)
                 stopped_tasks.append(f"多设备任务 ({running_count} 个)")
 
         # Stop single task worker
@@ -619,6 +670,20 @@ class TaskRunnerMixin:
 
         # Show multi-device task completion dialog
         self._show_multi_device_completion_dialog(success, failed, total)
+
+        # 发送邮件报告（手动任务）
+        if hasattr(self, '_send_task_report_email'):
+            task_content = self.task_input.toPlainText().strip()
+            task_name = task_content[:50] + "..." if len(task_content) > 50 else task_content
+            log_content = self.task_log.toPlainText()
+            self._send_task_report_email(
+                task_name=task_name,
+                success_count=success,
+                failed_count=failed,
+                total_count=total,
+                details=log_content,
+                is_scheduled=False
+            )
 
     def _show_multi_device_completion_dialog(self, success, failed, total):
         """Show multi-device task completion dialog to user."""
