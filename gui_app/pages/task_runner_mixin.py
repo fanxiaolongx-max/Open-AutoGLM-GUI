@@ -26,21 +26,9 @@ class TaskRunnerMixin:
 
         header = QtWidgets.QLabel("任务执行")
         header.setObjectName("title")
-        header.setStyleSheet("""
-            font-size: 28px;
-            font-weight: 700;
-            color: #fafafa;
-            letter-spacing: -0.5px;
-            margin-bottom: 4px;
-        """)
 
         subtitle = QtWidgets.QLabel("支持多设备并行执行AI驱动的自动化任务")
-        subtitle.setStyleSheet("""
-            font-size: 16px;
-            color: #a1a1aa;
-            font-weight: 400;
-            letter-spacing: 0.2px;
-        """)
+        subtitle.setObjectName("subtitle")
 
         header_layout.addWidget(header)
         header_layout.addWidget(subtitle)

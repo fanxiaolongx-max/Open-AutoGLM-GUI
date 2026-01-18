@@ -55,6 +55,7 @@ Thumbs.db
 logs/
 /tmp/
 screenshots/
+device_pins.json
 
 # Keep old files during transition
 call_model.py

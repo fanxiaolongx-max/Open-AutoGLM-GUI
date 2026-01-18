@@ -23,10 +23,10 @@ class FileManagerMixin:
         header_layout.setSpacing(4)
 
         header = QtWidgets.QLabel("📁 文件管理")
-        header.setStyleSheet("font-size: 24px; font-weight: 600; color: #fafafa;")
+        header.setObjectName("title")
 
         subtitle = QtWidgets.QLabel("通过 ADB 管理设备文件系统")
-        subtitle.setStyleSheet("font-size: 13px; color: #71717a;")
+        subtitle.setObjectName("subtitle")
 
         header_layout.addWidget(header)
         header_layout.addWidget(subtitle)

@@ -91,6 +91,13 @@ QLabel#title {{
     letter-spacing: -0.5px;
 }}
 
+QLabel#subtitle {{
+    font-size: 14px;
+    font-weight: 400;
+    color: #a1a1aa;
+    letter-spacing: 0.2px;
+}}
+
 QLabel#cardTitle {{
     font-size: {card_title_font}px;
     font-weight: 600;
@@ -661,6 +668,13 @@ QLabel#title {{
     color: #18181b;
     padding: 6px 0 12px 0;
     letter-spacing: -0.5px;
+}}
+
+QLabel#subtitle {{
+    font-size: 14px;
+    font-weight: 400;
+    color: #71717a;
+    letter-spacing: 0.2px;
 }}
 
 QLabel#cardTitle {{

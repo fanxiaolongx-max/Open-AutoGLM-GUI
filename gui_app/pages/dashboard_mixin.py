@@ -23,21 +23,9 @@ class DashboardMixin:
 
         title = QtWidgets.QLabel("欢迎回来")
         title.setObjectName("title")
-        title.setStyleSheet("""
-            font-size: 28px;
-            font-weight: 700;
-            color: #fafafa;
-            letter-spacing: -0.5px;
-            margin-bottom: 4px;
-        """)
 
         subtitle = QtWidgets.QLabel("这是您的自动化工作区概览")
-        subtitle.setStyleSheet("""
-            font-size: 16px;
-            color: #a1a1aa;
-            font-weight: 400;
-            letter-spacing: 0.2px;
-        """)
+        subtitle.setObjectName("subtitle")
 
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)

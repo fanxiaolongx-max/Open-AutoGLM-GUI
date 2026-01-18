@@ -36,21 +36,9 @@ class ModelServiceMixin:
 
         header = QtWidgets.QLabel("模型服务")
         header.setObjectName("title")
-        header.setStyleSheet("""
-            font-size: 28px;
-            font-weight: 700;
-            color: #fafafa;
-            letter-spacing: -0.5px;
-            margin-bottom: 4px;
-        """)
 
         subtitle = QtWidgets.QLabel("配置和管理多个AI模型服务，支持智谱BigModel、ModelScope等")
-        subtitle.setStyleSheet("""
-            font-size: 16px;
-            color: #a1a1aa;
-            font-weight: 400;
-            letter-spacing: 0.2px;
-        """)
+        subtitle.setObjectName("subtitle")
 
         header_layout.addWidget(header)
         header_layout.addWidget(subtitle)
