@@ -897,7 +897,25 @@ class ScheduledTasksMixin:
         self.multi_device_manager.all_finished.connect(self._on_all_tasks_finished)
 
     def _append_sched_log(self, text):
-        """Append text to scheduled tasks log."""
+        """Append text to scheduled tasks log with timestamp and deduplication."""
+        # 去重：检查是否与上一条日志相同
+        if not hasattr(self, '_last_sched_log_text'):
+            self._last_sched_log_text = ""
+
+        # 跳过重复日志
+        text_stripped = text.strip()
+        if text_stripped and text_stripped == self._last_sched_log_text:
+            return
+        self._last_sched_log_text = text_stripped
+
+        # 添加时间戳（仅对非空行添加）
+        if text_stripped:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            text_with_time = f"[{timestamp}] {text}"
+        else:
+            text_with_time = text
+
         self.sched_log.moveCursor(QtGui.QTextCursor.End)
-        self.sched_log.insertPlainText(text)
+        self.sched_log.insertPlainText(text_with_time)
         self.sched_log.moveCursor(QtGui.QTextCursor.End)

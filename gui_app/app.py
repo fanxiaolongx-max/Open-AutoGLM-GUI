@@ -3371,12 +3371,31 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
             )
 
     def _append_log(self, text):
+        """Append text to log with timestamp and deduplication."""
+        # 去重：检查是否与上一条日志相同
+        if not hasattr(self, '_last_log_text'):
+            self._last_log_text = ""
+
+        # 跳过重复日志
+        text_stripped = text.strip()
+        if text_stripped and text_stripped == self._last_log_text:
+            return
+        self._last_log_text = text_stripped
+
+        # 添加时间戳（仅对非空行添加）
+        if text_stripped:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            text_with_time = f"[{timestamp}] {text}"
+        else:
+            text_with_time = text
+
         self.task_log.moveCursor(QtGui.QTextCursor.End)
-        self.task_log.insertPlainText(text)
+        self.task_log.insertPlainText(text_with_time)
         self.task_log.moveCursor(QtGui.QTextCursor.End)
 
         self.logs_view.moveCursor(QtGui.QTextCursor.End)
-        self.logs_view.insertPlainText(text)
+        self.logs_view.insertPlainText(text_with_time)
         self.logs_view.moveCursor(QtGui.QTextCursor.End)
 
     def _timestamp(self):
