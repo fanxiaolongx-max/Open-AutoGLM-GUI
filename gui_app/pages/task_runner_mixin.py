@@ -307,9 +307,17 @@ class TaskRunnerMixin:
         self.preview_stop_btn.clicked.connect(self._stop_preview)
         self.preview_stop_btn.setEnabled(False)
 
+        # 高清镜像按钮 (scrcpy)
+        self.scrcpy_btn = QtWidgets.QPushButton("高清镜像")
+        self.scrcpy_btn.setObjectName("success")
+        self.scrcpy_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.scrcpy_btn.setToolTip("使用 scrcpy 启动高清实时镜像 (30fps+)")
+        self.scrcpy_btn.clicked.connect(self._start_scrcpy_mirror)
+
         preview_controls.addStretch()
         preview_controls.addWidget(self.preview_start_btn)
         preview_controls.addWidget(self.preview_stop_btn)
+        preview_controls.addWidget(self.scrcpy_btn)
         preview_controls.addStretch()
 
         right_layout.addLayout(preview_header_layout)

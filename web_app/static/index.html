@@ -1,0 +1,2328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoGLM Web Server</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        [v-cloak] {
+            display: none;
+        }
+
+        /* Chat Page Styles */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 48px);
+            max-height: calc(100vh - 48px);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .chat-message {
+            display: flex;
+            gap: 10px;
+            max-width: 90%;
+        }
+
+        .chat-message.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .chat-message.assistant {
+            align-self: flex-start;
+        }
+
+        .chat-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .chat-message.user .chat-avatar {
+            background: #3b82f6;
+        }
+
+        .chat-message.assistant .chat-avatar {
+            background: #10b981;
+        }
+
+        .chat-bubble {
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        .chat-message.user .chat-bubble {
+            background: #3b82f6;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-message.assistant .chat-bubble {
+            background: #f3f4f6;
+            color: #18181b;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-bubble.running {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+        }
+
+        .chat-bubble.error {
+            background: #fee2e2;
+            border: 1px solid #ef4444;
+        }
+
+        .chat-bubble.success {
+            background: #d1fae5;
+            border: 1px solid #10b981;
+        }
+
+        /* Compact task result */
+        .task-result {
+            font-size: 12px;
+            margin-top: 6px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: 6px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .task-result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .task-log-item {
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 11px;
+            color: #666;
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .task-log-item:last-child {
+            border-bottom: none;
+        }
+
+        .chat-input-container {
+            padding: 12px 16px;
+            border-top: 1px solid #e5e5e5;
+            background: white;
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #e5e5e5;
+            border-radius: 20px;
+            font-size: 14px;
+            resize: none;
+            max-height: 100px;
+            line-height: 1.4;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .chat-send-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .chat-send-btn:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+        }
+
+        .chat-send-btn:hover:not(:disabled) {
+            background: #2563eb;
+        }
+
+        .chat-stop-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #ef4444;
+            color: white;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+            animation: pulse-red 1.5s infinite;
+        }
+        .chat-stop-btn:hover {
+            background: #dc2626;
+        }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+        }
+
+        .chat-device-selector {
+            padding: 8px 16px;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .chat-device-selector select {
+            padding: 4px 8px;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            font-size: 12px;
+            max-width: 200px;
+        }
+
+        .mini-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f59e0b;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 6px;
+        }
+
+        /* Chat header with email toggle */
+        .chat-header {
+            padding: 8px 16px;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+        .chat-header-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #666;
+        }
+        .email-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            background: #d1d5db;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle-switch.active {
+            background: #3b82f6;
+        }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            transition: left 0.2s;
+        }
+        .toggle-switch.active::after {
+            left: 18px;
+        }
+
+        /* Clickable task result */
+        .task-result {
+            font-size: 12px;
+            margin-top: 6px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: 6px;
+            max-height: 150px;
+            overflow-y: auto;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .task-result:hover {
+            background: rgba(0, 0, 0, 0.06);
+        }
+        .task-result-hint {
+            font-size: 10px;
+            color: #999;
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        /* Task Detail Modal */
+        .task-detail-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        .task-detail-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 85vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .task-detail-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .task-detail-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+        .task-detail-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #999;
+        }
+        .task-detail-close:hover {
+            color: #333;
+        }
+        .task-detail-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .task-detail-section {
+            margin-bottom: 20px;
+        }
+        .task-detail-section h4 {
+            font-size: 14px;
+            margin: 0 0 10px 0;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .task-detail-logs {
+            background: #18181b;
+            color: #a1a1aa;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 11px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .task-detail-screenshot {
+            text-align: center;
+        }
+        .task-detail-screenshot img {
+            max-width: 280px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .task-detail-screenshot-placeholder {
+            padding: 40px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            color: #999;
+        }
+        .task-detail-stats {
+            display: flex;
+            gap: 20px;
+            padding: 12px;
+            background: #f9fafb;
+            border-radius: 8px;
+        }
+        .task-detail-stat {
+            text-align: center;
+        }
+        .task-detail-stat-value {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .task-detail-stat-label {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Phone Preview Window Styles */
+        .phone-preview-window {
+            position: fixed;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            overflow: hidden;
+            min-width: 180px;
+            min-height: 200px;
+        }
+
+        .phone-preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #18181b;
+            color: white;
+            cursor: move;
+            user-select: none;
+        }
+
+        .phone-preview-title {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .phone-preview-controls {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .phone-preview-select {
+            background: #27272a;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            max-width: 100px;
+            cursor: pointer;
+        }
+
+        .phone-preview-btn {
+            background: #27272a;
+            border: none;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .phone-preview-btn:hover {
+            background: #3f3f46;
+        }
+
+        .phone-preview-body {
+            width: 300px;
+            height: 540px;
+            background: #f4f4f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .phone-preview-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .phone-preview-placeholder {
+            color: #a1a1aa;
+            font-size: 12px;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .phone-preview-toggle {
+            position: fixed;
+            bottom: 120px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #18181b;
+            color: white;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .phone-preview-toggle:hover {
+            background: #27272a;
+            transform: scale(1.1);
+        }
+
+        /* Chat Sessions Sidebar */
+        .chat-sessions-sidebar {
+            width: 220px;
+            background: #f9fafb;
+            border-right: 1px solid #e5e5e5;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .chat-sessions-header {
+            padding: 12px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-sessions-header h3 {
+            font-size: 13px;
+            margin: 0;
+            color: #333;
+        }
+        .chat-new-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .chat-new-btn:hover {
+            background: #2563eb;
+        }
+        .chat-sessions-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .chat-session-item {
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        .chat-session-item:hover {
+            background: #e5e7eb;
+        }
+        .chat-session-item.active {
+            background: #dbeafe;
+        }
+        .chat-session-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .chat-session-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .chat-session-time {
+            font-size: 11px;
+            color: #999;
+            margin-top: 2px;
+        }
+        .chat-session-delete {
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .chat-session-item:hover .chat-session-delete {
+            opacity: 1;
+        }
+        .chat-session-delete:hover {
+            background: #fee2e2;
+            color: #ef4444;
+        }
+        .chat-main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .chat-with-sidebar {
+            display: flex;
+            height: calc(100vh - 48px);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app" v-cloak>
+        <div class="app-container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h1>AutoGLM</h1>
+                    <div class="subtitle">AI Phone Automation</div>
+                </div>
+
+                <ul class="nav-menu">
+                    <li class="nav-item" :class="{ active: currentPage === 'chat' }" @click="currentPage = 'chat'">
+                        <span>💬</span>
+                        <span>Chat</span>
+                    </li>
+                    <li class="nav-item" :class="{ active: currentPage === 'devices' }"
+                        @click="currentPage = 'devices'">
+                        <span>📱</span>
+                        <span>Devices</span>
+                    </li>
+                    <li class="nav-item" :class="{ active: currentPage === 'tasks' }" @click="currentPage = 'tasks'">
+                        <span>▶️</span>
+                        <span>Run Task</span>
+                    </li>
+                    <li class="nav-item" :class="{ active: currentPage === 'scheduler' }"
+                        @click="currentPage = 'scheduler'">
+                        <span>⏰</span>
+                        <span>Scheduler</span>
+                    </li>
+                    <li class="nav-item" :class="{ active: currentPage === 'models' }" @click="currentPage = 'models'">
+                        <span>🤖</span>
+                        <span>Models</span>
+                    </li>
+                    <li class="nav-item" :class="{ active: currentPage === 'settings' }"
+                        @click="currentPage = 'settings'">
+                        <span>⚙️</span>
+                        <span>Settings</span>
+                    </li>
+                </ul>
+
+                <!-- Connection Status -->
+                <div style="position: absolute; bottom: 20px; left: 20px; right: 20px;">
+                    <div class="connection-status" :class="wsConnected ? 'connected' : 'disconnected'">
+                        <span class="status-dot"></span>
+                        <span>{{ wsConnected ? 'Connected' : 'Disconnected' }}</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Chat Page (Default) -->
+                <div v-if="currentPage === 'chat'" class="fade-in chat-with-sidebar">
+                    <!-- Sessions Sidebar -->
+                    <div class="chat-sessions-sidebar">
+                        <div class="chat-sessions-header">
+                            <h3>💬 会话历史</h3>
+                            <button class="chat-new-btn" @click="createNewSession">
+                                <span>+</span> 新建
+                            </button>
+                        </div>
+                        <div class="chat-sessions-list">
+                            <div v-if="chatSessions.length === 0" style="text-align: center; color: #999; padding: 20px; font-size: 12px;">
+                                暂无会话记录
+                            </div>
+                            <div v-for="session in chatSessions" :key="session.id"
+                                class="chat-session-item"
+                                :class="{ active: currentSessionId === session.id }"
+                                @click="switchSession(session.id)">
+                                <div class="chat-session-info">
+                                    <div class="chat-session-title">{{ session.title || '新会话' }}</div>
+                                    <div class="chat-session-time">{{ formatSessionTime(session.updatedAt) }}</div>
+                                </div>
+                                <button class="chat-session-delete" @click.stop="deleteSession(session.id)" title="删除会话">
+                                    🗑️
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Chat Area -->
+                    <div class="chat-main-area">
+                        <!-- Chat Header with Device Selector and Email Toggle -->
+                        <div class="chat-header">
+                            <div class="chat-header-left">
+                                <span>📱 设备:</span>
+                                <select v-model="chatDeviceId" @change="onChatDeviceChange">
+                                    <option value="">选择设备</option>
+                                    <option v-for="d in devices" :key="d.id" :value="d.id">
+                                        {{ d.name || d.id.substring(0, 20) }}
+                                    </option>
+                                </select>
+                                <span v-if="chatDeviceId" style="color: #10b981;">✓ 已连接</span>
+                                <span v-else style="color: #f59e0b;">请先选择设备</span>
+                            </div>
+                            <div class="chat-header-right">
+                                <div class="email-toggle">
+                                    <span>📧 自动发送邮件</span>
+                                    <div class="toggle-switch" :class="{ active: chatAutoEmail }" @click="chatAutoEmail = !chatAutoEmail"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                    <!-- Messages Area -->
+                    <div class="chat-messages" ref="chatMessagesRef">
+                        <div v-if="chatMessages.length === 0" style="text-align: center; color: #999; padding: 40px;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">🤖</div>
+                            <div>你好！请输入任务指令，我会帮你在手机上执行。</div>
+                            <div style="font-size: 12px; margin-top: 8px; color: #bbb;">例如：打开微信，发送消息给某人...</div>
+                        </div>
+                        <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-message" :class="msg.role">
+                            <div class="chat-avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
+                            <div class="chat-bubble" :class="msg.status || ''">
+                                <div v-if="msg.role === 'user'">{{ msg.content }}</div>
+                                <div v-else>
+                                    <div v-if="msg.status === 'running'">
+                                        <span class="mini-spinner"></span>正在执行任务...
+                                    </div>
+                                    <div v-else>{{ msg.content }}</div>
+                                    <!-- Compact Task Result (Clickable) -->
+                                    <div v-if="msg.logs && msg.logs.length > 0" class="task-result" @click="openTaskDetail(msg)">
+                                        <div class="task-result-header">
+                                            <span>执行日志 ({{ msg.logs.length }})</span>
+                                            <span v-if="msg.status === 'success'" style="color: #10b981;">✓ 完成</span>
+                                            <span v-else-if="msg.status === 'error'" style="color: #ef4444;">✗ 失败</span>
+                                        </div>
+                                        <div v-for="(log, i) in msg.logs.slice(-3)" :key="i" class="task-log-item">
+                                            {{ log }}
+                                        </div>
+                                        <div class="task-result-hint">点击查看详情和截图 →</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Input Area -->
+                    <div class="chat-input-container">
+                        <textarea v-model="chatInput" class="chat-input" placeholder="输入任务指令..." rows="1"
+                            @keydown.enter.exact.prevent="sendChatMessage" @input="adjustChatInputHeight"
+                            :disabled="chatRunning"></textarea>
+                        <button v-if="chatRunning" class="chat-stop-btn" @click="stopChatTask" title="停止任务">
+                            ⏹
+                        </button>
+                        <button v-else class="chat-send-btn" @click="sendChatMessage"
+                            :disabled="!chatInput.trim() || !chatDeviceId">
+                            ➤
+                        </button>
+                    </div>
+                </div>
+                </div>
+
+                <!-- Devices Page -->
+                <div v-if="currentPage === 'devices'" class="fade-in">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Connected Devices</h2>
+                            <button class="btn btn-primary" @click="refreshDevices" :disabled="loading">
+                                <span v-if="loading" class="loading-spinner"></span>
+                                <span v-else>🔄</span>
+                                Refresh
+                            </button>
+                        </div>
+
+                        <div v-if="loading && devices.length === 0" class="empty-state" style="padding: 40px;">
+                            <div class="loading-spinner" style="width: 40px; height: 40px;"></div>
+                            <p style="margin-top: 16px;">Loading devices...</p>
+                        </div>
+
+                        <div v-else-if="devices.length === 0" class="empty-state">
+                            <div style="font-size: 3rem; margin-bottom: 16px;">📱</div>
+                            <h3>No devices found</h3>
+                            <p>Connect a device via USB and click Refresh</p>
+                        </div>
+
+                        <div v-else class="device-grid">
+                            <div v-for="device in devices" :key="device.id" class="device-card"
+                                :class="{ selected: selectedDevices.includes(device.id) }"
+                                @click="toggleDeviceSelection(device.id)">
+                                <div class="device-header">
+                                    <div class="device-icon">📱</div>
+                                    <div>
+                                        <div class="device-name">{{ device.name || device.id }}</div>
+                                        <div class="device-id">{{ device.id.substring(0, 30) }}...</div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="device-status" :class="'status-' + device.status">
+                                        {{ device.status }}
+                                    </span>
+                                    <span v-if="device.model"
+                                        style="margin-left: 8px; font-size: 0.75rem; color: var(--text-secondary);">
+                                        {{ device.model }}
+                                    </span>
+                                </div>
+                                <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+                                    <button class="btn btn-sm btn-secondary" @click.stop="unlockDevice(device.id)">
+                                        🔓 Unlock
+                                    </button>
+                                    <div style="position: relative; display: flex; align-items: center;">
+                                        <input :type="showPinFor === device.id ? 'text' : 'password'" class="form-input"
+                                            style="width: 100px; height: 28px; font-size: 12px; padding: 4px 28px 4px 8px;"
+                                            :placeholder="devicePins[device.id] ? '••••' : 'PIN'" @click.stop
+                                            :value="pinInputValues[device.id] || ''"
+                                            @input="updateDevicePin(device.id, $event.target.value)"
+                                            @blur="saveDevicePin(device.id, $event.target.value)">
+                                        <button v-if="devicePins[device.id] || pinInputValues[device.id]"
+                                            style="position: absolute; right: 4px; background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px;"
+                                            @click.stop="toggleShowPin(device.id)"
+                                            :title="showPinFor === device.id ? '隐藏PIN' : '显示PIN'">
+                                            {{ showPinFor === device.id ? '🙈' : '👁️' }}
+                                        </button>
+                                    </div>
+                                    <span v-if="devicePins[device.id]" style="color: #22c55e; font-size: 12px;">✓</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tasks Page -->
+                <div v-if="currentPage === 'tasks'" class="fade-in">
+                    <!-- Selected Devices -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Selected Devices ({{ selectedDevices.length }})</h2>
+                            <button class="btn btn-secondary btn-sm" @click="selectAllDevices">
+                                {{ selectedDevices.length === devices.length ? 'Deselect All' : 'Select All' }}
+                            </button>
+                        </div>
+                        <div v-if="selectedDevices.length === 0" class="empty-state" style="padding: 20px;">
+                            <p>No devices selected. Go to Devices page to select devices.</p>
+                        </div>
+                        <div v-else style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            <span v-for="id in selectedDevices" :key="id" class="badge badge-info">
+                                {{ getDeviceName(id) }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Task Input -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Task</h2>
+                        </div>
+                        <div class="form-group">
+                            <textarea v-model="taskContent" class="form-textarea"
+                                placeholder="Enter task instructions... (e.g., Open WeChat and send a message to...)"
+                                rows="4" :disabled="taskRunning"></textarea>
+                        </div>
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn btn-primary" @click="runTask"
+                                :disabled="taskRunning || selectedDevices.length === 0">
+                                ▶️ Run Task
+                            </button>
+                            <button class="btn btn-danger" @click="stopTask" :disabled="!taskRunning">
+                                ⏹️ Stop
+                            </button>
+                        </div>
+
+                        <!-- Progress -->
+                        <div v-if="taskRunning" style="margin-top: 16px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span>Progress</span>
+                                <span>{{ taskProgress }}%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" :style="{ width: taskProgress + '%' }"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Logs -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Execution Log</h2>
+                            <button class="btn btn-secondary btn-sm" @click="taskLogs = []">
+                                Clear
+                            </button>
+                        </div>
+                        <div class="log-output" ref="logContainer">
+                            <div v-if="taskLogs.length === 0" style="color: #666;">
+                                Logs will appear here...
+                            </div>
+                            <div v-for="(log, index) in taskLogs" :key="index">
+                                <span style="color: #888;">[{{ log.time }}]</span> {{ log.message }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scheduler Page -->
+                <div v-if="currentPage === 'scheduler'" class="fade-in">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Scheduled Tasks</h2>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-primary" @click="showCreateScheduledTask">
+                                    ➕ New Task
+                                </button>
+                                <button class="btn btn-secondary" @click="loadScheduledTasks">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-if="scheduledTasks.length === 0 && !showSchedulerForm" class="empty-state">
+                            <div style="font-size: 3rem; margin-bottom: 16px;">⏰</div>
+                            <h3>No scheduled tasks</h3>
+                            <p>Click "New Task" to create a scheduled task</p>
+                        </div>
+
+                        <div v-else-if="!showSchedulerForm" class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Schedule</th>
+                                        <th>Next Run</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="task in scheduledTasks" :key="task.id">
+                                        <td>
+                                            <strong>{{ task.name }}</strong>
+                                            <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                                                {{ task.task_content.substring(0, 50) }}...
+                                            </div>
+                                        </td>
+                                        <td>{{ formatScheduleType(task) }}</td>
+                                        <td>{{ task.next_run ? new Date(task.next_run).toLocaleString() : '-' }}</td>
+                                        <td>
+                                            <span class="badge"
+                                                :class="task.enabled ? 'badge-success' : 'badge-warning'">
+                                                {{ task.enabled ? 'Enabled' : 'Disabled' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-secondary" @click="editScheduledTask(task)">
+                                                ✏️ Edit
+                                            </button>
+                                            <button class="btn btn-sm btn-secondary"
+                                                @click="toggleScheduledTask(task.id, !task.enabled)"
+                                                style="margin-left: 4px;">
+                                                {{ task.enabled ? '⏸️' : '▶️' }}
+                                            </button>
+                                            <button class="btn btn-sm btn-primary" @click="runScheduledTaskNow(task.id)"
+                                                style="margin-left: 4px;">
+                                                ⚡ Run
+                                            </button>
+                                            <button class="btn btn-sm btn-danger" @click="deleteScheduledTask(task.id)"
+                                                style="margin-left: 4px;">
+                                                🗑️
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Scheduler Form -->
+                        <div v-if="showSchedulerForm" style="padding: 16px;">
+                            <h3 style="margin-bottom: 16px;">{{ schedulerFormMode === 'create' ? 'Create New Task' :
+                                'Edit Task' }}</h3>
+
+                            <div class="form-group">
+                                <label class="form-label">Task Name</label>
+                                <input type="text" v-model="schedulerForm.name" class="form-input"
+                                    placeholder="My Scheduled Task">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Task Content</label>
+                                <textarea v-model="schedulerForm.task_content" class="form-textarea" rows="3"
+                                    placeholder="Enter task instructions..."></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Schedule Type</label>
+                                <select v-model="schedulerForm.schedule_type" class="form-select">
+                                    <option value="once">Once</option>
+                                    <option value="interval">Interval</option>
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="monthly">Monthly</option>
+                                </select>
+                            </div>
+
+                            <!-- Once -->
+                            <div v-if="schedulerForm.schedule_type === 'once'" class="form-group">
+                                <label class="form-label">Run At</label>
+                                <input type="datetime-local" v-model="schedulerForm.run_at" class="form-input">
+                            </div>
+
+                            <!-- Interval -->
+                            <div v-if="schedulerForm.schedule_type === 'interval'" class="form-group">
+                                <label class="form-label">Interval (minutes)</label>
+                                <input type="number" v-model.number="schedulerForm.interval_minutes" class="form-input"
+                                    min="1">
+                            </div>
+
+                            <!-- Daily -->
+                            <div v-if="schedulerForm.schedule_type === 'daily'" class="form-group">
+                                <label class="form-label">Daily Time</label>
+                                <input type="time" v-model="schedulerForm.daily_time" class="form-input">
+                            </div>
+
+                            <!-- Weekly -->
+                            <div v-if="schedulerForm.schedule_type === 'weekly'">
+                                <div class="form-group">
+                                    <label class="form-label">Days of Week</label>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                        <label v-for="(day, index) in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']"
+                                            :key="index" style="display: flex; align-items: center; gap: 4px;">
+                                            <input type="checkbox" :value="index" v-model="schedulerForm.weekly_days">
+                                            {{ day }}
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Time</label>
+                                    <input type="time" v-model="schedulerForm.weekly_time" class="form-input">
+                                </div>
+                            </div>
+
+                            <!-- Monthly -->
+                            <div v-if="schedulerForm.schedule_type === 'monthly'">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                                    <div class="form-group">
+                                        <label class="form-label">Day of Month</label>
+                                        <input type="number" v-model.number="schedulerForm.monthly_day"
+                                            class="form-input" min="1" max="31">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Time</label>
+                                        <input type="time" v-model="schedulerForm.monthly_time" class="form-input">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Target Devices -->
+                            <div class="form-group">
+                                <label class="form-label">Target Devices (leave empty for all)</label>
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                    <label v-for="device in devices" :key="device.id"
+                                        style="display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: #f3f4f6; border-radius: 4px;">
+                                        <input type="checkbox" :value="device.id" v-model="schedulerForm.devices">
+                                        {{ device.name || device.id.substring(0, 15) }}
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox" v-model="schedulerForm.enabled">
+                                    Enable task immediately
+                                </label>
+                            </div>
+
+                            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                                <button class="btn btn-primary" @click="saveScheduledTask" :disabled="loading">
+                                    {{ schedulerFormMode === 'create' ? '✅ Create' : '💾 Save' }}
+                                </button>
+                                <button class="btn btn-secondary" @click="cancelSchedulerForm">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Models Page -->
+                <div v-if="currentPage === 'models'" class="fade-in">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Model Services</h2>
+                            <button class="btn btn-primary" @click="loadModels">
+                                🔄 Refresh
+                            </button>
+                        </div>
+
+                        <div v-if="activeModel"
+                            style="margin-bottom: 16px; padding: 12px; background: #eff6ff; border-radius: 8px;">
+                            <strong>Active Model:</strong> {{ activeModel.name }} ({{ activeModel.model_name }})
+                        </div>
+
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Model</th>
+                                        <th>Base URL</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="service in modelServices" :key="service.id">
+                                        <td>
+                                            <strong>{{ service.name }}</strong>
+                                            <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                                                {{ service.description }}
+                                            </div>
+                                        </td>
+                                        <td>{{ service.model_name }}</td>
+                                        <td style="font-size: 0.75rem;">{{ service.base_url }}</td>
+                                        <td>
+                                            <span class="badge"
+                                                :class="service.is_active ? 'badge-success' : 'badge-info'">
+                                                {{ service.is_active ? 'Active' : 'Inactive' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-primary" @click="activateModel(service.id)"
+                                                :disabled="service.is_active">
+                                                Activate
+                                            </button>
+                                            <button class="btn btn-sm btn-secondary" @click="testModel(service.id)"
+                                                :disabled="loading" style="margin-left: 4px;">
+                                                Test
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Page -->
+                <div v-if="currentPage === 'settings'" class="fade-in">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Email Settings</h2>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">SMTP Server</label>
+                            <input type="text" v-model="emailConfig.smtp_server" class="form-input"
+                                placeholder="smtp.example.com">
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div class="form-group">
+                                <label class="form-label">Port</label>
+                                <input type="number" v-model="emailConfig.smtp_port" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Security</label>
+                                <select v-model="emailConfig.use_ssl" class="form-select">
+                                    <option :value="true">SSL</option>
+                                    <option :value="false">None/TLS</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Sender Email</label>
+                            <input type="email" v-model="emailConfig.sender_email" class="form-input"
+                                placeholder="your@email.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Password / App Password</label>
+                            <input type="password" v-model="emailConfig.sender_password" class="form-input"
+                                placeholder="••••••••">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Recipients (comma separated)</label>
+                            <input type="text" v-model="emailConfig.recipient_emails" class="form-input"
+                                placeholder="user1@email.com, user2@email.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" v-model="emailConfig.enabled">
+                                Enable automatic email reports
+                            </label>
+                        </div>
+
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn btn-primary" @click="saveEmailConfig">
+                                Save Settings
+                            </button>
+                            <button class="btn btn-secondary" @click="testEmail" :disabled="loading">
+                                Send Test Email
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">About</h2>
+                        </div>
+                        <p><strong>AutoGLM Web Server</strong> v0.1.0</p>
+                        <p style="margin-top: 8px; color: var(--text-secondary);">
+                            AI-powered phone automation tool. Web interface for Open-AutoGLM-GUI.
+                        </p>
+                        <p style="margin-top: 8px;">
+                            <a href="/docs" target="_blank">API Documentation</a>
+                        </p>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Task Detail Modal -->
+        <div v-cloak v-if="showTaskDetail" class="task-detail-modal" @click.self="showTaskDetail = false">
+            <div class="task-detail-content">
+                <div class="task-detail-header">
+                    <h3>📋 任务执行详情</h3>
+                    <button class="task-detail-close" @click="showTaskDetail = false">✕</button>
+                </div>
+                <div class="task-detail-body">
+                    <!-- Stats -->
+                    <div class="task-detail-section">
+                        <div class="task-detail-stats">
+                            <div class="task-detail-stat">
+                                <div class="task-detail-stat-value" :style="{ color: taskDetailData.status === 'success' ? '#10b981' : '#ef4444' }">
+                                    {{ taskDetailData.status === 'success' ? '✓' : '✗' }}
+                                </div>
+                                <div class="task-detail-stat-label">{{ taskDetailData.status === 'success' ? '执行成功' : '执行失败' }}</div>
+                            </div>
+                            <div class="task-detail-stat">
+                                <div class="task-detail-stat-value">{{ taskDetailData.logs ? taskDetailData.logs.length : 0 }}</div>
+                                <div class="task-detail-stat-label">日志条数</div>
+                            </div>
+                            <div class="task-detail-stat">
+                                <div class="task-detail-stat-value">{{ taskDetailData.screenshot ? '✓' : '—' }}</div>
+                                <div class="task-detail-stat-label">截图</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Screenshot -->
+                    <div class="task-detail-section">
+                        <h4>📸 执行截图</h4>
+                        <div class="task-detail-screenshot">
+                            <img v-if="taskDetailData.screenshot" :src="'data:image/png;base64,' + taskDetailData.screenshot" alt="Screenshot">
+                            <div v-else class="task-detail-screenshot-placeholder">
+                                暂无截图
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Full Logs -->
+                    <div class="task-detail-section">
+                        <h4>📝 完整执行日志</h4>
+                        <div class="task-detail-logs">
+                            <div v-if="taskDetailData.logs && taskDetailData.logs.length > 0">
+                                <div v-for="(log, i) in taskDetailData.logs" :key="i">{{ log }}</div>
+                            </div>
+                            <div v-else>暂无日志</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="toast-container">
+            <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.type">
+                {{ toast.message }}
+            </div>
+        </div>
+
+        <!-- Floating Phone Preview Window -->
+        <div v-if="showPhonePreview" class="phone-preview-window" :style="phonePreviewStyle"
+            @mousedown="startDragPreview">
+            <div class="phone-preview-header">
+                <span class="phone-preview-title">📱 Live Preview</span>
+                <div class="phone-preview-controls">
+                    <select v-model="previewDeviceId" @change="refreshPreview" class="phone-preview-select"
+                        @mousedown.stop>
+                        <option value="">Select Device</option>
+                        <option v-for="d in devices" :key="d.id" :value="d.id">
+                            {{ d.name || d.id.substring(0, 15) }}
+                        </option>
+                    </select>
+                    <button class="phone-preview-btn" @click.stop="refreshPreview" title="Refresh">🔄</button>
+                    <button class="phone-preview-btn" @click.stop="showPhonePreview = false" title="Close">✕</button>
+                </div>
+            </div>
+            <div class="phone-preview-body">
+                <div v-if="!previewDeviceId" class="phone-preview-placeholder">
+                    Select a device to preview
+                </div>
+                <img v-else-if="previewImage" :src="'data:image/png;base64,' + previewImage" class="phone-preview-image"
+                    @error="previewImage = null">
+                <div v-else class="phone-preview-placeholder">
+                    Loading...
+                </div>
+            </div>
+        </div>
+
+        <!-- Phone Preview Toggle Button -->
+        <button v-if="!showPhonePreview && devices.length > 0" class="phone-preview-toggle" @click="openPhonePreview"
+            title="Show Phone Preview">
+            📱
+        </button>
+    </div>
+
+    <!-- Vue.js 3 CDN with fallback -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script>
+        // Wait for Vue to load, with fallback
+        function initApp() {
+            if (typeof Vue === 'undefined') {
+                document.getElementById('app').innerHTML = '<div style="padding: 40px; text-align: center;"><h2>Loading failed</h2><p>Unable to load Vue.js. Please check your internet connection.</p><button onclick="location.reload()">Retry</button></div>';
+                return;
+            }
+
+            const { createApp, ref, onMounted, onUnmounted, watch } = Vue;
+
+            const app = createApp({
+                setup() {
+                    // State
+                    const currentPage = ref('chat');  // Default to chat page
+                    const devices = ref([]);
+                    const selectedDevices = ref([]);
+                    const taskContent = ref('');
+                    const taskRunning = ref(false);
+                    const taskProgress = ref(0);
+                    const taskLogs = ref([]);
+                    const scheduledTasks = ref([]);
+                    const modelServices = ref([]);
+                    const activeModel = ref(null);
+                    const emailConfig = ref({});
+                    const wsConnected = ref(false);
+                    const loading = ref(false);
+                    const toasts = ref([]);
+                    const devicePins = ref({});
+                    const pinInputValues = ref({});  // Store input values for PIN fields
+                    const showPinFor = ref('');  // Device ID for which PIN is visible
+                    const logContainer = ref(null);
+                    const showSchedulerForm = ref(false);
+                    const schedulerFormMode = ref('create');
+                    const schedulerForm = ref(getDefaultSchedulerForm());
+
+                    // Phone preview state
+                    const showPhonePreview = ref(false);
+                    const previewDeviceId = ref('');
+                    const previewImage = ref(null);
+                    const previewLoading = ref(false);
+                    const previewPosition = ref({ x: 100, y: 100 });
+                    let previewInterval = null;
+                    let isDragging = false;
+                    let dragOffset = { x: 0, y: 0 };
+
+                    // Chat state
+                    const chatMessages = ref([]);
+                    const chatInput = ref('');
+                    const chatDeviceId = ref('');
+                    const chatRunning = ref(false);
+                    const chatMessagesRef = ref(null);
+                    const chatAutoEmail = ref(false);  // Default: no auto email in chat mode
+                    let currentChatTaskId = null;
+
+                    // Chat sessions state
+                    const chatSessions = ref([]);
+                    const currentSessionId = ref('');
+                    const SESSIONS_STORAGE_KEY = 'autoglm_chat_sessions';
+
+                    // Task detail modal state
+                    const showTaskDetail = ref(false);
+                    const taskDetailData = ref({});
+
+                    // Calculate safe position for preview window
+                    function updatePreviewPosition() {
+                        const windowWidth = 300;
+                        const windowHeight = 580; // 540 + header
+                        const margin = 20;
+                        previewPosition.value = {
+                            x: Math.max(margin, window.innerWidth - windowWidth - margin),
+                            y: Math.max(margin, window.innerHeight - windowHeight - margin)
+                        };
+                    }
+
+                    function getDefaultSchedulerForm() {
+                        return {
+                            id: '',
+                            name: '',
+                            task_content: '',
+                            enabled: true,
+                            schedule_type: 'daily',
+                            run_at: '',
+                            interval_minutes: 60,
+                            daily_time: '09:00',
+                            weekly_days: [1],
+                            weekly_time: '09:00',
+                            monthly_day: 1,
+                            monthly_time: '09:00',
+                            devices: [],
+                        };
+                    }
+
+                    // WebSocket
+                    let ws = null;
+                    let reconnectTimer = null;
+
+                    function showToast(message, type = 'success') {
+                        const id = Date.now();
+                        toasts.value.push({ id, message, type });
+                        setTimeout(() => {
+                            toasts.value = toasts.value.filter(t => t.id !== id);
+                        }, 3000);
+                    }
+
+                    // API calls
+                    async function apiCall(url, options = {}) {
+                        try {
+                            const response = await fetch(url, {
+                                ...options,
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    ...options.headers,
+                                },
+                            });
+                            const data = await response.json();
+                            if (!response.ok) {
+                                throw new Error(data.detail || 'API Error');
+                            }
+                            return data;
+                        } catch (error) {
+                            showToast(error.message, 'error');
+                            throw error;
+                        }
+                    }
+
+                    // WebSocket connection
+                    function connectWebSocket() {
+                        try {
+                            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                            const wsUrl = `${protocol}//${window.location.host}/ws`;
+                            ws = new WebSocket(wsUrl);
+
+                            ws.onopen = () => {
+                                wsConnected.value = true;
+                                console.log('WebSocket connected');
+                            };
+
+                            ws.onclose = () => {
+                                wsConnected.value = false;
+                                console.log('WebSocket disconnected');
+                                reconnectTimer = setTimeout(connectWebSocket, 3000);
+                            };
+
+                            ws.onmessage = (event) => {
+                                try {
+                                    const data = JSON.parse(event.data);
+                                    handleWebSocketMessage(data);
+                                } catch (e) {
+                                    console.error('WebSocket message error:', e);
+                                }
+                            };
+
+                            ws.onerror = (error) => {
+                                console.error('WebSocket error:', error);
+                            };
+                        } catch (e) {
+                            console.error('WebSocket connection error:', e);
+                        }
+                    }
+
+                    function handleWebSocketMessage(data) {
+                        switch (data.type) {
+                            case 'init':
+                                if (data.task_status) {
+                                    taskRunning.value = data.task_status.running;
+                                    if (data.task_status.task) {
+                                        taskProgress.value = data.task_status.task.progress || 0;
+                                    }
+                                }
+                                break;
+                            case 'task_log':
+                                taskLogs.value.push({
+                                    time: new Date().toLocaleTimeString(),
+                                    message: data.message,
+                                });
+                                // Update chat message logs if in chat mode
+                                if (chatRunning.value && chatMessages.value.length > 0) {
+                                    const lastMsg = chatMessages.value[chatMessages.value.length - 1];
+                                    if (lastMsg.role === 'assistant' && lastMsg.status === 'running') {
+                                        if (!lastMsg.logs) lastMsg.logs = [];
+                                        lastMsg.logs.push(data.message);
+                                        scrollChatToBottom();
+                                    }
+                                }
+                                break;
+                            case 'task_progress':
+                                taskProgress.value = data.progress;
+                                break;
+                            case 'task_finished':
+                                taskRunning.value = false;
+                                showToast(data.message, data.success ? 'success' : 'error');
+                                // Update chat message status and use screenshot from WebSocket
+                                if (chatRunning.value && chatMessages.value.length > 0) {
+                                    const lastMsg = chatMessages.value[chatMessages.value.length - 1];
+                                    if (lastMsg.role === 'assistant' && lastMsg.status === 'running') {
+                                        lastMsg.status = data.success ? 'success' : 'error';
+                                        lastMsg.content = data.success ? '任务执行完成！' : '任务执行失败';
+                                        // Use screenshot from WebSocket (captured before lock)
+                                        if (data.screenshot) {
+                                            lastMsg.screenshot = data.screenshot;
+                                        }
+                                    }
+                                    chatRunning.value = false;
+                                    // Save session after task completes
+                                    saveCurrentSession();
+                                }
+                                break;
+                            case 'devices':
+                                devices.value = data.devices;
+                                break;
+                            case 'ping':
+                                if (ws && ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ type: 'pong' }));
+                                }
+                                break;
+                        }
+                    }
+
+                    // Device functions
+
+                    // Chat Session Management Functions
+                    function loadSessions() {
+                        try {
+                            const stored = localStorage.getItem(SESSIONS_STORAGE_KEY);
+                            if (stored) {
+                                chatSessions.value = JSON.parse(stored);
+                                // Sort by updatedAt descending
+                                chatSessions.value.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                            }
+                        } catch (e) {
+                            console.error('Failed to load sessions:', e);
+                            chatSessions.value = [];
+                        }
+                    }
+
+                    function saveSessions() {
+                        try {
+                            localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(chatSessions.value));
+                        } catch (e) {
+                            console.error('Failed to save sessions:', e);
+                        }
+                    }
+
+                    function saveCurrentSession() {
+                        if (!currentSessionId.value) return;
+
+                        const session = chatSessions.value.find(s => s.id === currentSessionId.value);
+                        if (session) {
+                            session.messages = chatMessages.value;
+                            session.updatedAt = new Date().toISOString();
+                            // Update title from first user message if not set
+                            if (!session.title || session.title === '新会话') {
+                                const firstUserMsg = chatMessages.value.find(m => m.role === 'user');
+                                if (firstUserMsg) {
+                                    session.title = firstUserMsg.content.substring(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '');
+                                }
+                            }
+                            saveSessions();
+                        }
+                    }
+
+                    function createNewSession() {
+                        // Save current session first
+                        saveCurrentSession();
+
+                        const newSession = {
+                            id: Date.now().toString(),
+                            title: '新会话',
+                            messages: [],
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString()
+                        };
+                        chatSessions.value.unshift(newSession);
+                        currentSessionId.value = newSession.id;
+                        chatMessages.value = [];
+                        saveSessions();
+                    }
+
+                    function switchSession(sessionId) {
+                        if (sessionId === currentSessionId.value) return;
+
+                        // Save current session first
+                        saveCurrentSession();
+
+                        const session = chatSessions.value.find(s => s.id === sessionId);
+                        if (session) {
+                            currentSessionId.value = session.id;
+                            chatMessages.value = session.messages || [];
+                            scrollChatToBottom();
+                        }
+                    }
+
+                    function deleteSession(sessionId) {
+                        if (!confirm('确定要删除这个会话吗？')) return;
+
+                        const index = chatSessions.value.findIndex(s => s.id === sessionId);
+                        if (index !== -1) {
+                            chatSessions.value.splice(index, 1);
+                            saveSessions();
+
+                            // If deleted current session, switch to another or create new
+                            if (sessionId === currentSessionId.value) {
+                                if (chatSessions.value.length > 0) {
+                                    switchSession(chatSessions.value[0].id);
+                                } else {
+                                    createNewSession();
+                                }
+                            }
+                        }
+                    }
+
+                    function formatSessionTime(isoString) {
+                        if (!isoString) return '';
+                        const date = new Date(isoString);
+                        const now = new Date();
+                        const diffMs = now - date;
+                        const diffMins = Math.floor(diffMs / 60000);
+                        const diffHours = Math.floor(diffMs / 3600000);
+                        const diffDays = Math.floor(diffMs / 86400000);
+
+                        if (diffMins < 1) return '刚刚';
+                        if (diffMins < 60) return `${diffMins}分钟前`;
+                        if (diffHours < 24) return `${diffHours}小时前`;
+                        if (diffDays < 7) return `${diffDays}天前`;
+                        return date.toLocaleDateString();
+                    }
+
+                    function initChatSessions() {
+                        loadSessions();
+                        // Auto-enter most recent session or create new one
+                        if (chatSessions.value.length > 0) {
+                            const mostRecent = chatSessions.value[0];
+                            currentSessionId.value = mostRecent.id;
+                            chatMessages.value = mostRecent.messages || [];
+                        } else {
+                            createNewSession();
+                        }
+                    }
+
+                    // Chat functions
+                    function scrollChatToBottom() {
+                        setTimeout(() => {
+                            if (chatMessagesRef.value) {
+                                chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight;
+                            }
+                        }, 50);
+                    }
+
+                    function onChatDeviceChange() {
+                        // Auto-select device for preview too
+                        if (chatDeviceId.value && !previewDeviceId.value) {
+                            previewDeviceId.value = chatDeviceId.value;
+                        }
+                    }
+
+                    function adjustChatInputHeight(e) {
+                        const el = e.target;
+                        el.style.height = 'auto';
+                        el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+                    }
+
+                    async function sendChatMessage() {
+                        const content = chatInput.value.trim();
+                        if (!content || !chatDeviceId.value || chatRunning.value) return;
+
+                        // Add user message
+                        chatMessages.value.push({
+                            role: 'user',
+                            content: content
+                        });
+
+                        // Clear input
+                        chatInput.value = '';
+
+                        // Add assistant message (running state)
+                        chatMessages.value.push({
+                            role: 'assistant',
+                            content: '',
+                            status: 'running',
+                            logs: [],
+                            screenshot: null
+                        });
+
+                        scrollChatToBottom();
+                        chatRunning.value = true;
+
+                        try {
+                            // Call run task API with send_email parameter
+                            await apiCall('/api/tasks/run', {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    task_content: content,
+                                    device_ids: [chatDeviceId.value],
+                                    send_email: chatAutoEmail.value,  // Use email toggle state
+                                }),
+                            });
+                            // Task started, WebSocket will handle updates
+                        } catch (error) {
+                            // Update last message to error
+                            const lastMsg = chatMessages.value[chatMessages.value.length - 1];
+                            if (lastMsg.role === 'assistant') {
+                                lastMsg.status = 'error';
+                                lastMsg.content = '启动任务失败: ' + (error.message || '未知错误');
+                            }
+                            chatRunning.value = false;
+                        }
+
+                        // Save session after sending message
+                        saveCurrentSession();
+                    }
+
+                    // Stop chat task
+                    async function stopChatTask() {
+                        try {
+                            await apiCall('/api/tasks/stop', { method: 'POST' });
+                            showToast('正在停止任务...');
+
+                            // Update chat message status
+                            if (chatMessages.value.length > 0) {
+                                const lastMsg = chatMessages.value[chatMessages.value.length - 1];
+                                if (lastMsg.role === 'assistant' && lastMsg.status === 'running') {
+                                    lastMsg.status = 'error';
+                                    lastMsg.content = '任务已停止';
+                                }
+                            }
+                            chatRunning.value = false;
+                            saveCurrentSession();
+                        } catch (error) {
+                            showToast('停止任务失败', 'error');
+                        }
+                    }
+
+                    // Open task detail modal
+                    // Open task detail modal
+                    function openTaskDetail(msg) {
+                        // Only show the screenshot that was captured when task completed
+                        // Do NOT fetch new screenshot - it would be incorrect
+                        taskDetailData.value = {
+                            status: msg.status,
+                            logs: msg.logs || [],
+                            screenshot: msg.screenshot || null
+                        };
+                        showTaskDetail.value = true;
+                    }
+
+                    // Device functions (original)
+                    async function refreshDevices() {
+                        loading.value = true;
+                        try {
+                            const data = await apiCall('/api/devices/refresh', { method: 'POST' });
+                            devices.value = data;
+                            showToast(`Found ${data.length} device(s)`);
+                        } catch (e) {
+                            console.error('Failed to refresh devices:', e);
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
+                    function toggleDeviceSelection(deviceId) {
+                        const index = selectedDevices.value.indexOf(deviceId);
+                        if (index === -1) {
+                            selectedDevices.value.push(deviceId);
+                        } else {
+                            selectedDevices.value.splice(index, 1);
+                        }
+                    }
+
+                    function selectAllDevices() {
+                        if (selectedDevices.value.length === devices.value.length) {
+                            selectedDevices.value = [];
+                        } else {
+                            selectedDevices.value = devices.value.map(d => d.id);
+                        }
+                    }
+
+                    function getDeviceName(id) {
+                        const device = devices.value.find(d => d.id === id);
+                        return device ? (device.name || device.id.substring(0, 20)) : id.substring(0, 20);
+                    }
+
+                    async function unlockDevice(deviceId) {
+                        try {
+                            const pin = pinInputValues.value[deviceId] || '';
+                            await apiCall(`/api/devices/${deviceId}/unlock`, {
+                                method: 'POST',
+                                body: JSON.stringify({ pin: pin }),
+                            });
+                            showToast('Device unlocked');
+                        } catch (error) {
+                            showToast('Failed to unlock device', 'error');
+                        }
+                    }
+
+                    // PIN management functions
+                    async function loadDevicePins() {
+                        try {
+                            const data = await apiCall('/api/devices/pins');
+                            devicePins.value = data.pins || {};
+                            // Load actual PIN values for display
+                            for (const deviceId of Object.keys(devicePins.value)) {
+                                try {
+                                    const pinData = await apiCall(`/api/devices/${deviceId}/pin`);
+                                    if (pinData.pin) {
+                                        pinInputValues.value[deviceId] = pinData.pin;
+                                    }
+                                } catch (e) {
+                                    // Ignore errors for individual PIN fetch
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Failed to load device PINs:', error);
+                        }
+                    }
+
+                    function updateDevicePin(deviceId, pin) {
+                        pinInputValues.value[deviceId] = pin;
+                        devicePins.value[deviceId] = pin ? true : false;
+                    }
+
+                    function toggleShowPin(deviceId) {
+                        if (showPinFor.value === deviceId) {
+                            showPinFor.value = '';
+                        } else {
+                            showPinFor.value = deviceId;
+                        }
+                    }
+
+                    async function saveDevicePin(deviceId, pin) {
+                        if (!pin) return;
+                        try {
+                            await apiCall(`/api/devices/${deviceId}/pin`, {
+                                method: 'PUT',
+                                body: JSON.stringify({ pin: pin }),
+                            });
+                            showToast('PIN saved');
+                        } catch (error) {
+                            showToast('Failed to save PIN', 'error');
+                        }
+                    }
+
+                    // Auto-scroll log container
+                    function scrollLogsToBottom() {
+                        if (logContainer.value) {
+                            logContainer.value.scrollTop = logContainer.value.scrollHeight;
+                        }
+                    }
+
+                    // Task functions
+                    async function runTask() {
+                        if (!taskContent.value.trim()) {
+                            showToast('Please enter a task', 'warning');
+                            return;
+                        }
+                        if (selectedDevices.value.length === 0) {
+                            showToast('Please select at least one device', 'warning');
+                            return;
+                        }
+
+                        taskLogs.value = [];
+                        taskProgress.value = 0;
+
+                        try {
+                            await apiCall('/api/tasks/run', {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    task_content: taskContent.value,
+                                    device_ids: selectedDevices.value,
+                                }),
+                            });
+                            taskRunning.value = true;
+                            showToast('Task started');
+                        } catch (error) {
+                            showToast('Failed to start task', 'error');
+                        }
+                    }
+
+                    async function stopTask() {
+                        try {
+                            await apiCall('/api/tasks/stop', { method: 'POST' });
+                            showToast('Stop signal sent');
+                        } catch (error) {
+                            showToast('Failed to stop task', 'error');
+                        }
+                    }
+
+                    // Scheduler functions
+                    async function loadScheduledTasks() {
+                        try {
+                            const data = await apiCall('/api/scheduler/tasks');
+                            scheduledTasks.value = data.tasks;
+                        } catch (error) {
+                            console.error('Failed to load scheduled tasks:', error);
+                        }
+                    }
+
+                    async function toggleScheduledTask(taskId, enabled) {
+                        try {
+                            await apiCall(`/api/scheduler/tasks/${taskId}/toggle`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ enabled }),
+                            });
+                            await loadScheduledTasks();
+                        } catch (error) {
+                            showToast('Failed to toggle task', 'error');
+                        }
+                    }
+
+                    async function runScheduledTaskNow(taskId) {
+                        try {
+                            await apiCall(`/api/scheduler/tasks/${taskId}/run`, { method: 'POST' });
+                            showToast('Task triggered');
+                        } catch (error) {
+                            showToast('Failed to run task', 'error');
+                        }
+                    }
+
+                    async function deleteScheduledTask(taskId) {
+                        if (!confirm('Are you sure you want to delete this task?')) return;
+                        try {
+                            await apiCall(`/api/scheduler/tasks/${taskId}`, { method: 'DELETE' });
+                            await loadScheduledTasks();
+                            showToast('Task deleted');
+                        } catch (error) {
+                            showToast('Failed to delete task', 'error');
+                        }
+                    }
+
+                    // Scheduler form functions
+                    function showCreateScheduledTask() {
+                        schedulerForm.value = getDefaultSchedulerForm();
+                        schedulerFormMode.value = 'create';
+                        showSchedulerForm.value = true;
+                    }
+
+                    function editScheduledTask(task) {
+                        schedulerForm.value = {
+                            id: task.id,
+                            name: task.name,
+                            task_content: task.task_content,
+                            enabled: task.enabled,
+                            schedule_type: task.schedule_type,
+                            run_at: task.run_at || '',
+                            interval_minutes: task.interval_minutes || 60,
+                            daily_time: task.daily_time || '09:00',
+                            weekly_days: task.weekly_days || [1],
+                            weekly_time: task.weekly_time || '09:00',
+                            monthly_day: task.monthly_day || 1,
+                            monthly_time: task.monthly_time || '09:00',
+                            devices: task.devices || [],
+                        };
+                        schedulerFormMode.value = 'edit';
+                        showSchedulerForm.value = true;
+                    }
+
+                    function cancelSchedulerForm() {
+                        showSchedulerForm.value = false;
+                        schedulerForm.value = getDefaultSchedulerForm();
+                    }
+
+                    async function saveScheduledTask() {
+                        if (!schedulerForm.value.name.trim()) {
+                            showToast('Please enter a task name', 'warning');
+                            return;
+                        }
+                        if (!schedulerForm.value.task_content.trim()) {
+                            showToast('Please enter task content', 'warning');
+                            return;
+                        }
+
+                        loading.value = true;
+                        try {
+                            if (schedulerFormMode.value === 'create') {
+                                await apiCall('/api/scheduler/tasks', {
+                                    method: 'POST',
+                                    body: JSON.stringify(schedulerForm.value),
+                                });
+                                showToast('Task created');
+                            } else {
+                                await apiCall(`/api/scheduler/tasks/${schedulerForm.value.id}`, {
+                                    method: 'PUT',
+                                    body: JSON.stringify(schedulerForm.value),
+                                });
+                                showToast('Task updated');
+                            }
+                            await loadScheduledTasks();
+                            cancelSchedulerForm();
+                        } catch (error) {
+                            showToast('Failed to save task', 'error');
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
+                    function formatScheduleType(task) {
+                        switch (task.schedule_type) {
+                            case 'once': return `Once: ${task.run_at}`;
+                            case 'interval': return `Every ${task.interval_minutes} min`;
+                            case 'daily': return `Daily @ ${task.daily_time}`;
+                            case 'weekly': return `Weekly @ ${task.weekly_time}`;
+                            case 'monthly': return `Monthly day ${task.monthly_day} @ ${task.monthly_time}`;
+                            default: return task.schedule_type;
+                        }
+                    }
+
+                    // Model functions
+                    async function loadModels() {
+                        try {
+                            const data = await apiCall('/api/models');
+                            modelServices.value = data.services;
+                            const active = modelServices.value.find(s => s.is_active);
+                            activeModel.value = active || null;
+                        } catch (error) {
+                            console.error('Failed to load models:', error);
+                        }
+                    }
+
+                    async function activateModel(serviceId) {
+                        try {
+                            await apiCall(`/api/models/${serviceId}/activate`, { method: 'POST' });
+                            await loadModels();
+                            showToast('Model activated');
+                        } catch (error) {
+                            showToast('Failed to activate model', 'error');
+                        }
+                    }
+
+                    async function testModel(serviceId) {
+                        loading.value = true;
+                        try {
+                            const data = await apiCall(`/api/models/${serviceId}/test`, { method: 'POST' });
+                            showToast(data.message, data.success ? 'success' : 'error');
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
+                    // Settings functions
+                    async function loadEmailConfig() {
+                        try {
+                            emailConfig.value = await apiCall('/api/settings/email');
+                        } catch (error) {
+                            console.error('Failed to load email config:', error);
+                        }
+                    }
+
+                    async function saveEmailConfig() {
+                        try {
+                            await apiCall('/api/settings/email', {
+                                method: 'PUT',
+                                body: JSON.stringify(emailConfig.value),
+                            });
+                            showToast('Email settings saved');
+                        } catch (error) {
+                            showToast('Failed to save email settings', 'error');
+                        }
+                    }
+
+                    async function testEmail() {
+                        loading.value = true;
+                        try {
+                            const data = await apiCall('/api/settings/email/test', { method: 'POST' });
+                            showToast(data.message, data.success ? 'success' : 'error');
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
+                    // Phone Preview Functions
+                    const phonePreviewStyle = Vue.computed(() => ({
+                        left: previewPosition.value.x + 'px',
+                        top: previewPosition.value.y + 'px',
+                    }));
+
+                    async function refreshPreview() {
+                        if (!previewDeviceId.value) return;
+                        // Don't set loading state - keep showing old image for smooth transition
+                        try {
+                            const response = await fetch(`/api/devices/${previewDeviceId.value}/screenshot/base64`);
+                            if (response.ok) {
+                                const data = await response.json();
+                                if (data.image) {
+                                    previewImage.value = data.image;
+                                }
+                            }
+                        } catch (e) {
+                            // Silently fail, keep old image
+                        }
+                    }
+
+                    function openPhonePreview() {
+                        updatePreviewPosition();
+                        showPhonePreview.value = true;
+                        if (!previewDeviceId.value && devices.value.length) {
+                            previewDeviceId.value = devices.value[0].id;
+                        }
+                        refreshPreview();
+                    }
+
+                    function startDragPreview(e) {
+                        if (e.target.closest('.phone-preview-controls') || e.target.closest('.phone-preview-body')) return;
+                        isDragging = true;
+                        dragOffset.x = e.clientX - previewPosition.value.x;
+                        dragOffset.y = e.clientY - previewPosition.value.y;
+                        document.addEventListener('mousemove', onDragPreview);
+                        document.addEventListener('mouseup', stopDragPreview);
+                    }
+
+                    function onDragPreview(e) {
+                        if (!isDragging) return;
+                        const maxX = window.innerWidth - 320;
+                        const maxY = window.innerHeight - 600;
+                        previewPosition.value.x = Math.max(0, Math.min(maxX, e.clientX - dragOffset.x));
+                        previewPosition.value.y = Math.max(0, Math.min(maxY, e.clientY - dragOffset.y));
+                    }
+
+                    function stopDragPreview() {
+                        isDragging = false;
+                        document.removeEventListener('mousemove', onDragPreview);
+                        document.removeEventListener('mouseup', stopDragPreview);
+                    }
+
+                    function startPreviewAutoRefresh() {
+                        stopPreviewAutoRefresh();
+                        previewInterval = setInterval(() => {
+                            if (showPhonePreview.value && previewDeviceId.value) {
+                                refreshPreview();
+                            }
+                        }, 2000); // Refresh every 2 seconds
+                    }
+
+                    function stopPreviewAutoRefresh() {
+                        if (previewInterval) {
+                            clearInterval(previewInterval);
+                            previewInterval = null;
+                        }
+                    }
+
+                    // Watch showPhonePreview to start/stop auto refresh
+                    watch(showPhonePreview, (show) => {
+                        if (show) {
+                            startPreviewAutoRefresh();
+                        } else {
+                            stopPreviewAutoRefresh();
+                        }
+                    });
+
+                    // Lifecycle
+                    onMounted(() => {
+                        console.log('App mounted, initializing...');
+                        connectWebSocket();
+                        refreshDevices();
+                        loadModels();
+                        loadDevicePins();
+                        initChatSessions();  // Initialize chat sessions from localStorage
+                    });
+
+                    onUnmounted(() => {
+                        if (ws) ws.close();
+                        if (reconnectTimer) clearTimeout(reconnectTimer);
+                    });
+
+                    // Watch page changes to load data
+                    watch(currentPage, (page) => {
+                        if (page === 'scheduler') loadScheduledTasks();
+                        if (page === 'models') loadModels();
+                        if (page === 'settings') loadEmailConfig();
+                    });
+
+                    // Watch taskLogs for auto-scroll
+                    watch(taskLogs, () => {
+                        // Use nextTick equivalent with setTimeout
+                        setTimeout(scrollLogsToBottom, 50);
+                    }, { deep: true });
+
+                    return {
+                        currentPage,
+                        devices,
+                        selectedDevices,
+                        taskContent,
+                        taskRunning,
+                        taskProgress,
+                        taskLogs,
+                        scheduledTasks,
+                        modelServices,
+                        activeModel,
+                        emailConfig,
+                        wsConnected,
+                        loading,
+                        toasts,
+                        devicePins,
+                        logContainer,
+                        showSchedulerForm,
+                        schedulerFormMode,
+                        schedulerForm,
+                        // Chat
+                        chatMessages,
+                        chatInput,
+                        chatDeviceId,
+                        chatRunning,
+                        chatMessagesRef,
+                        chatAutoEmail,
+                        sendChatMessage,
+                        stopChatTask,
+                        onChatDeviceChange,
+                        adjustChatInputHeight,
+                        openTaskDetail,
+                        showTaskDetail,
+                        taskDetailData,
+                        // Chat sessions
+                        chatSessions,
+                        currentSessionId,
+                        createNewSession,
+                        switchSession,
+                        deleteSession,
+                        formatSessionTime,
+                        // Phone preview
+                        showPhonePreview,
+                        previewDeviceId,
+                        previewImage,
+                        previewLoading,
+                        phonePreviewStyle,
+                        refreshPreview,
+                        openPhonePreview,
+                        startDragPreview,
+                        // Functions
+                        showToast,
+                        refreshDevices,
+                        toggleDeviceSelection,
+                        selectAllDevices,
+                        getDeviceName,
+                        unlockDevice,
+                        updateDevicePin,
+                        saveDevicePin,
+                        loadDevicePins,
+                        pinInputValues,
+                        showPinFor,
+                        toggleShowPin,
+                        runTask,
+                        stopTask,
+                        loadScheduledTasks,
+                        toggleScheduledTask,
+                        runScheduledTaskNow,
+                        deleteScheduledTask,
+                        showCreateScheduledTask,
+                        editScheduledTask,
+                        cancelSchedulerForm,
+                        saveScheduledTask,
+                        formatScheduleType,
+                        loadModels,
+                        activateModel,
+                        testModel,
+                        loadEmailConfig,
+                        saveEmailConfig,
+                        testEmail,
+                    };
+                },
+            });
+
+            app.mount('#app');
+            console.log('Vue app mounted successfully');
+        }
+
+        // Initialize after page load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                setTimeout(initApp, 100);
+            });
+        } else {
+            setTimeout(initApp, 100);
+        }
+    </script>
+</body>
+
+</html>

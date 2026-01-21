@@ -1,0 +1,169 @@
+# -*- coding: utf-8 -*-
+"""
+FastAPI main application for Open-AutoGLM-GUI Web Server.
+
+This module provides a web-based interface as an alternative to the GUI,
+supporting headless systems and multi-user web access.
+"""
+
+import logging
+import sys
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from web_app.config import config_manager
+from web_app.routers import (
+    devices_router,
+    tasks_router,
+    scheduler_router,
+    models_router,
+    settings_router,
+    websocket_router,
+)
+from web_app.services.scheduler_service import scheduler_service
+
+logger = logging.getLogger(__name__)
+
+# Static files directory
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan events."""
+    # Startup
+    logger.info("Starting AutoGLM Web Server...")
+
+    # Start the scheduler
+    await scheduler_service.start()
+    logger.info("Scheduler started")
+
+    # Register scheduler callback to execute tasks
+    def on_scheduled_task(task_id: str, task_content: str):
+        """Callback when a scheduled task should run."""
+        import asyncio
+        from web_app.services.task_service import task_service
+        from web_app.services.device_service import device_service
+
+        # Get task to find devices
+        task = scheduler_service.get_task(task_id)
+        if not task:
+            logger.error(f"Scheduled task {task_id} not found")
+            return
+
+        device_ids = task.devices if task.devices else []
+        if not device_ids:
+            # Use all connected devices if none specified
+            devices = device_service.get_all_devices()
+            device_ids = [d.id for d in devices]
+
+        if not device_ids:
+            logger.warning(f"No devices available for scheduled task {task_id}")
+            scheduler_service.mark_task_finished(task_id)
+            return
+
+        logger.info(f"Running scheduled task {task_id}: {task_content[:50]}...")
+
+        # Run task in background
+        async def run_scheduled():
+            try:
+                await task_service.run_task(task_content, device_ids, is_scheduled=True)
+            except Exception as e:
+                logger.error(f"Scheduled task {task_id} failed: {e}")
+            finally:
+                scheduler_service.mark_task_finished(task_id)
+
+        asyncio.create_task(run_scheduled())
+
+    scheduler_service.add_task_callback(on_scheduled_task)
+    logger.info("Scheduler callback registered")
+
+    # Refresh devices on startup
+    from web_app.services.device_service import device_service
+    await device_service.refresh_devices()
+    logger.info("Devices refreshed")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down AutoGLM Web Server...")
+    await scheduler_service.stop()
+    logger.info("Scheduler stopped")
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="AutoGLM Web Server",
+    description="Web interface for Open-AutoGLM-GUI - AI-powered phone automation",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# Configure CORS
+config = config_manager.get_config()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(devices_router)
+app.include_router(tasks_router)
+app.include_router(scheduler_router)
+app.include_router(models_router)
+app.include_router(settings_router)
+app.include_router(websocket_router)
+
+# Mount static files
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/")
+async def index():
+    """Serve the main page."""
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {
+        "message": "AutoGLM Web Server",
+        "version": "0.1.0",
+        "docs": "/docs",
+    }
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
+@app.get("/api")
+async def api_info():
+    """API information endpoint."""
+    return {
+        "name": "AutoGLM Web API",
+        "version": "0.1.0",
+        "endpoints": {
+            "devices": "/api/devices",
+            "tasks": "/api/tasks",
+            "scheduler": "/api/scheduler",
+            "models": "/api/models",
+            "settings": "/api/settings",
+            "websocket": "/ws",
+        },
+        "docs": "/docs",
+    }

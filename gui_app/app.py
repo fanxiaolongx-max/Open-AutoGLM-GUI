@@ -4555,6 +4555,55 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
         self.preview_status.setText(f"预览错误: {message}")
         self.preview_inflight = False
 
+    def _start_scrcpy_mirror(self):
+        """启动 scrcpy 高清镜像"""
+        import shutil
+
+        # 检查 scrcpy 是否安装
+        scrcpy_path = shutil.which("scrcpy")
+        if not scrcpy_path:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "scrcpy 未安装",
+                "未找到 scrcpy，请先安装：\n\n"
+                "macOS: brew install scrcpy\n"
+                "Linux: apt install scrcpy\n"
+                "Windows: https://github.com/Genymobile/scrcpy/releases"
+            )
+            return
+
+        # 获取当前选中的设备
+        device_id = self._get_preview_device_id()
+        if not device_id:
+            self._append_log("请先选择一个设备\n")
+            return
+
+        # 构建 scrcpy 命令
+        cmd = [
+            scrcpy_path,
+            "-s", device_id,           # 指定设备
+            "--window-title", f"镜像: {device_id[:20]}",  # 窗口标题
+            "--stay-awake",            # 保持设备唤醒
+            "--show-touches",          # 显示触摸点
+        ]
+
+        try:
+            # 启动 scrcpy（非阻塞）
+            self._scrcpy_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            self._append_log(f"🎬 已启动高清镜像: {device_id}\n")
+            self.preview_status.setText("高清镜像运行中")
+        except Exception as e:
+            self._append_log(f"❌ 启动 scrcpy 失败: {e}\n")
+            QtWidgets.QMessageBox.critical(
+                self,
+                "启动失败",
+                f"无法启动 scrcpy：{e}"
+            )
+
     def _clear_diagnostics(self):
         self.diagnostics_log.clear()
         self.diagnostics_summary.clear()
