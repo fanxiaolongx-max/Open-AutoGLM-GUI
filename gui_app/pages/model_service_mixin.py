@@ -387,6 +387,7 @@ class ModelServiceMixin:
             base_url=self.base_url_input.text().strip(),
             api_key=self.api_key_input.text().strip(),
             model_name=self.model_input.text().strip(),
+            protocol=self.protocol_combo.currentData() or ModelProtocol.OPENAI.value,
         )
 
         self.service_status_label.setText("测试中...")

@@ -811,41 +811,45 @@
             <!-- Sidebar -->
             <aside class="sidebar">
                 <div class="sidebar-header">
-                    <h1>AutoGLM</h1>
-                    <div class="subtitle">AI Phone Automation</div>
+                    <h1>鱼塘管理器</h1>
+                    <div class="subtitle">AI 手机自动化专家</div>
                 </div>
 
                 <ul class="nav-menu">
                     <li class="nav-item" :class="{ active: currentPage === 'chat' }" @click="currentPage = 'chat'">
                         <span>💬</span>
-                        <span>Chat</span>
+                        <span>对话</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'devices' }"
                         @click="currentPage = 'devices'">
                         <span>📱</span>
-                        <span>Devices</span>
+                        <span>设备</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'tasks' }" @click="currentPage = 'tasks'">
                         <span>▶️</span>
-                        <span>Run Task</span>
+                        <span>任务执行</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'scheduler' }"
                         @click="currentPage = 'scheduler'">
                         <span>⏰</span>
-                        <span>Scheduler</span>
+                        <span>定时任务</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'models' }" @click="currentPage = 'models'">
                         <span>🤖</span>
-                        <span>Models</span>
+                        <span>模型配置</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'files' }" @click="currentPage = 'files'">
                         <span>📁</span>
-                        <span>Files</span>
+                        <span>文件管理</span>
+                    </li>
+                    <li class="nav-item" :class="{ active: currentPage === 'rules' }" @click="currentPage = 'rules'">
+                        <span>📋</span>
+                        <span>规则配置</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'settings' }"
                         @click="currentPage = 'settings'">
                         <span>⚙️</span>
-                        <span>Settings</span>
+                        <span>设置</span>
                     </li>
                 </ul>
 
@@ -853,7 +857,7 @@
                 <div style="position: absolute; bottom: 20px; left: 20px; right: 20px;">
                     <div class="connection-status" :class="wsConnected ? 'connected' : 'disconnected'">
                         <span class="status-dot"></span>
-                        <span>{{ wsConnected ? 'Connected' : 'Disconnected' }}</span>
+                        <span>{{ wsConnected ? '已连接' : '未连接' }}</span>
                     </div>
                 </div>
             </aside>
@@ -1178,9 +1182,9 @@
                     <!-- Selected Devices -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Selected Devices ({{ selectedDevices.length }})</h2>
+                            <h2 class="card-title">已选设备 ({{ selectedDevices.length }})</h2>
                             <button class="btn btn-secondary btn-sm" @click="selectAllDevices">
-                                {{ selectedDevices.length === devices.length ? 'Deselect All' : 'Select All' }}
+                                {{ selectedDevices.length === devices.length ? '取消全选' : '全选' }}
                             </button>
                         </div>
                         <div v-if="selectedDevices.length === 0" class="empty-state" style="padding: 20px;">
@@ -1196,7 +1200,7 @@
                     <!-- Task Input -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Task</h2>
+                            <h2 class="card-title">任务</h2>
                         </div>
                         <div class="form-group">
                             <textarea v-model="taskContent" class="form-textarea"
@@ -1206,10 +1210,10 @@
                         <div style="display: flex; gap: 12px;">
                             <button class="btn btn-primary" @click="runTask"
                                 :disabled="taskRunning || selectedDevices.length === 0">
-                                ▶️ Run Task
+                                ▶️ 执行任务
                             </button>
                             <button class="btn btn-danger" @click="stopTask" :disabled="!taskRunning">
-                                ⏹️ Stop
+                                ⏹️ 停止
                             </button>
                         </div>
 
@@ -1228,9 +1232,9 @@
                     <!-- Logs -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Execution Log</h2>
+                            <h2 class="card-title">执行日志</h2>
                             <button class="btn btn-secondary btn-sm" @click="taskLogs = []">
-                                Clear
+                                清空
                             </button>
                         </div>
                         <div class="log-output" ref="logContainer">
@@ -1248,21 +1252,21 @@
                 <div v-if="currentPage === 'scheduler'" class="fade-in">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Scheduled Tasks</h2>
+                            <h2 class="card-title">定时任务列表</h2>
                             <div style="display: flex; gap: 8px;">
                                 <button class="btn btn-primary" @click="showCreateScheduledTask">
-                                    ➕ New Task
+                                    ➕ 新建任务
                                 </button>
                                 <button class="btn btn-secondary" @click="loadScheduledTasks">
-                                    🔄 Refresh
+                                    🔄 刷新
                                 </button>
                             </div>
                         </div>
 
                         <div v-if="scheduledTasks.length === 0 && !showSchedulerForm" class="empty-state">
                             <div style="font-size: 3rem; margin-bottom: 16px;">⏰</div>
-                            <h3>No scheduled tasks</h3>
-                            <p>Click "New Task" to create a scheduled task</p>
+                            <h3>暂无定时任务</h3>
+                            <p>点击"新建任务"创建定时任务</p>
                         </div>
 
                         <div v-else-if="!showSchedulerForm" class="table-container">
@@ -1317,65 +1321,64 @@
 
                         <!-- Scheduler Form -->
                         <div v-if="showSchedulerForm" style="padding: 16px;">
-                            <h3 style="margin-bottom: 16px;">{{ schedulerFormMode === 'create' ? 'Create New Task' :
-                                'Edit Task' }}</h3>
+                            <h3 style="margin-bottom: 16px;">{{ schedulerFormMode === 'create' ? '创建定时任务' :
+                                '编辑任务' }}</h3>
 
                             <div class="form-group">
-                                <label class="form-label">Task Name</label>
-                                <input type="text" v-model="schedulerForm.name" class="form-input"
-                                    placeholder="My Scheduled Task">
+                                <label class="form-label">任务名称</label>
+                                <input type="text" v-model="schedulerForm.name" class="form-input" placeholder="我的定时任务">
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label">Task Content</label>
+                                <label class="form-label">任务内容</label>
                                 <textarea v-model="schedulerForm.task_content" class="form-textarea" rows="3"
-                                    placeholder="Enter task instructions..."></textarea>
+                                    placeholder="输入任务指令..."></textarea>
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label">Schedule Type</label>
+                                <label class="form-label">任务类型</label>
                                 <select v-model="schedulerForm.schedule_type" class="form-select">
-                                    <option value="once">Once</option>
-                                    <option value="interval">Interval</option>
-                                    <option value="daily">Daily</option>
-                                    <option value="weekly">Weekly</option>
-                                    <option value="monthly">Monthly</option>
+                                    <option value="once">单次</option>
+                                    <option value="interval">间隔</option>
+                                    <option value="daily">每天</option>
+                                    <option value="weekly">每周</option>
+                                    <option value="monthly">每月</option>
                                 </select>
                             </div>
 
                             <!-- Once -->
                             <div v-if="schedulerForm.schedule_type === 'once'" class="form-group">
-                                <label class="form-label">Run At</label>
+                                <label class="form-label">执行时间</label>
                                 <input type="datetime-local" v-model="schedulerForm.run_at" class="form-input">
                             </div>
 
                             <!-- Interval -->
                             <div v-if="schedulerForm.schedule_type === 'interval'" class="form-group">
-                                <label class="form-label">Interval (minutes)</label>
+                                <label class="form-label">间隔时间（分钟）</label>
                                 <input type="number" v-model.number="schedulerForm.interval_minutes" class="form-input"
                                     min="1">
                             </div>
 
                             <!-- Daily -->
                             <div v-if="schedulerForm.schedule_type === 'daily'" class="form-group">
-                                <label class="form-label">Daily Time</label>
+                                <label class="form-label">每天时间</label>
                                 <input type="time" v-model="schedulerForm.daily_time" class="form-input">
                             </div>
 
                             <!-- Weekly -->
                             <div v-if="schedulerForm.schedule_type === 'weekly'">
                                 <div class="form-group">
-                                    <label class="form-label">Days of Week</label>
+                                    <label class="form-label">每周哪几天</label>
                                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                        <label v-for="(day, index) in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']"
-                                            :key="index" style="display: flex; align-items: center; gap: 4px;">
+                                        <label v-for="(day, index) in ['日', '一', '二', '三', '四', '五', '六']" :key="index"
+                                            style="display: flex; align-items: center; gap: 4px;">
                                             <input type="checkbox" :value="index" v-model="schedulerForm.weekly_days">
                                             {{ day }}
                                         </label>
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Time</label>
+                                    <label class="form-label">时间</label>
                                     <input type="time" v-model="schedulerForm.weekly_time" class="form-input">
                                 </div>
                             </div>
@@ -1384,12 +1387,12 @@
                             <div v-if="schedulerForm.schedule_type === 'monthly'">
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                                     <div class="form-group">
-                                        <label class="form-label">Day of Month</label>
+                                        <label class="form-label">每月第几天</label>
                                         <input type="number" v-model.number="schedulerForm.monthly_day"
                                             class="form-input" min="1" max="31">
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label">Time</label>
+                                        <label class="form-label">时间</label>
                                         <input type="time" v-model="schedulerForm.monthly_time" class="form-input">
                                     </div>
                                 </div>
@@ -1397,7 +1400,7 @@
 
                             <!-- Target Devices -->
                             <div class="form-group">
-                                <label class="form-label">Target Devices (leave empty for all)</label>
+                                <label class="form-label">目标设备（留空表示所有设备）</label>
                                 <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                     <label v-for="device in devices" :key="device.id"
                                         style="display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: #f3f4f6; border-radius: 4px;">
@@ -1410,16 +1413,16 @@
                             <div class="form-group">
                                 <label style="display: flex; align-items: center; gap: 8px;">
                                     <input type="checkbox" v-model="schedulerForm.enabled">
-                                    Enable task immediately
+                                    立即启用任务
                                 </label>
                             </div>
 
                             <div style="display: flex; gap: 12px; margin-top: 16px;">
                                 <button class="btn btn-primary" @click="saveScheduledTask" :disabled="loading">
-                                    {{ schedulerFormMode === 'create' ? '✅ Create' : '💾 Save' }}
+                                    {{ schedulerFormMode === 'create' ? '✅ 创建' : '💾 保存' }}
                                 </button>
                                 <button class="btn btn-secondary" @click="cancelSchedulerForm">
-                                    Cancel
+                                    取消
                                 </button>
                             </div>
                         </div>
@@ -1848,22 +1851,22 @@
                 <div v-if="currentPage === 'settings'" class="fade-in">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Email Settings</h2>
+                            <h2 class="card-title">邮件设置</h2>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">SMTP Server</label>
+                            <label class="form-label">SMTP 服务器</label>
                             <input type="text" v-model="emailConfig.smtp_server" class="form-input"
                                 placeholder="smtp.example.com">
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                             <div class="form-group">
-                                <label class="form-label">Port</label>
+                                <label class="form-label">端口</label>
                                 <input type="number" v-model="emailConfig.smtp_port" class="form-input">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Security</label>
+                                <label class="form-label">加密</label>
                                 <select v-model="emailConfig.use_ssl" class="form-select">
                                     <option :value="true">SSL</option>
                                     <option :value="false">None/TLS</option>
@@ -1872,19 +1875,19 @@
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Sender Email</label>
+                            <label class="form-label">发送邮箱</label>
                             <input type="email" v-model="emailConfig.sender_email" class="form-input"
                                 placeholder="your@email.com">
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Password / App Password</label>
+                            <label class="form-label">密码 / 授权码</label>
                             <input type="password" v-model="emailConfig.sender_password" class="form-input"
                                 placeholder="••••••••">
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Recipients (comma separated)</label>
+                            <label class="form-label">收件人（逗号分隔）</label>
                             <input type="text" v-model="emailConfig.recipient_emails" class="form-input"
                                 placeholder="user1@email.com, user2@email.com">
                         </div>
@@ -1892,23 +1895,330 @@
                         <div class="form-group">
                             <label style="display: flex; align-items: center; gap: 8px;">
                                 <input type="checkbox" v-model="emailConfig.enabled">
-                                Enable automatic email reports
+                                启用自动邮件报告
                             </label>
                         </div>
 
                         <div style="display: flex; gap: 12px;">
                             <button class="btn btn-primary" @click="saveEmailConfig">
-                                Save Settings
+                                保存设置
                             </button>
                             <button class="btn btn-secondary" @click="testEmail" :disabled="loading">
-                                Send Test Email
+                                发送测试邮件
                             </button>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">About</h2>
+                            <h2 class="card-title">关于</h2>
+                        </div>
+                        <p><strong>AutoGLM Web Server</strong> v0.1.0</p>
+                        <p style="margin-top: 8px; color: var(--text-secondary);">
+                            AI-powered phone automation tool. Web interface for Open-AutoGLM-GUI.
+                        </p>
+                        <p style="margin-top: 8px;">
+                            <a href="/docs" target="_blank">API Documentation</a>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Rules Page -->
+                <div v-if="currentPage === 'rules'" class="fade-in">
+                    <!-- App Mappings Card -->
+                    <div class="card">
+                        <div class="card-header"
+                            style="display: flex; justify-content: space-between; align-items: center;">
+                            <h2 class="card-title">📱 应用映射</h2>
+                            <button class="btn btn-sm btn-primary" @click="showAddAppModal = true">+ 添加</button>
+                        </div>
+                        <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 14px;">
+                            配置应用名称到包名的映射，用于 Launch 动作
+                        </p>
+                        <div v-if="appMappings.length === 0" class="empty-state" style="padding: 20px;">
+                            <p>暂无应用映射配置</p>
+                        </div>
+                        <div v-else style="max-height: 300px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid var(--border);">
+                                        <th style="text-align: left; padding: 8px; font-weight: 500;">
+                                            应用名称</th>
+                                        <th style="text-align: left; padding: 8px; font-weight: 500;">包名
+                                        </th>
+                                        <th style="text-align: right; padding: 8px; font-weight: 500; width: 100px;">
+                                            操作
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="app in appMappings" :key="app.app_name"
+                                        style="border-bottom: 1px solid var(--border);">
+                                        <td style="padding: 8px;">
+                                            {{ app.app_name }}
+                                            <span v-if="app.is_custom"
+                                                style="font-size: 12px; color: var(--primary); margin-left: 4px;">自定义</span>
+                                        </td>
+                                        <td
+                                            style="padding: 8px; color: var(--text-secondary); font-family: monospace; font-size: 13px;">
+                                            {{ app.package_name }}
+                                        </td>
+                                        <td style="padding: 8px; text-align: right;">
+                                            <template v-if="app.is_custom">
+                                                <button class="btn btn-sm btn-secondary" @click="editAppMapping(app)"
+                                                    style="margin-right: 4px;">编辑</button>
+                                                <button class="btn btn-sm btn-danger"
+                                                    @click="deleteAppMapping(app.app_name)">删除</button>
+                                            </template>
+                                            <span v-else
+                                                style="color: var(--text-secondary); font-size: 12px;">内置</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Timing Config Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">⏱️ 时间延迟配置</h2>
+                        </div>
+                        <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 14px;">
+                            配置各种操作的延迟时间（单位：秒）
+                        </p>
+                        <div v-if="timingConfig">
+                            <!-- Action Timing -->
+                            <div style="margin-bottom: 16px;">
+                                <h4 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">
+                                    动作延迟</h4>
+                                <div
+                                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
+                                    <div v-for="(value, key) in timingConfig.action" :key="'action-'+key"
+                                        class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" style="font-size: 12px;">{{
+                                            formatTimingKey(key)
+                                            }}</label>
+                                        <input type="number" step="0.1" min="0" :value="value"
+                                            @change="updateTiming('action', key, $event.target.value)"
+                                            class="form-input" style="font-size: 13px;">
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Device Timing -->
+                            <div style="margin-bottom: 16px;">
+                                <h4 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">
+                                    设备延迟</h4>
+                                <div
+                                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
+                                    <div v-for="(value, key) in timingConfig.device" :key="'device-'+key"
+                                        class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" style="font-size: 12px;">{{
+                                            formatTimingKey(key)
+                                            }}</label>
+                                        <input type="number" step="0.1" min="0" :value="value"
+                                            @change="updateTiming('device', key, $event.target.value)"
+                                            class="form-input" style="font-size: 13px;">
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Connection Timing -->
+                            <div>
+                                <h4 style="margin-bottom: 8px; font-size: 14px; color: var(--text-secondary);">
+                                    连接延迟</h4>
+                                <div
+                                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
+                                    <div v-for="(value, key) in timingConfig.connection" :key="'conn-'+key"
+                                        class="form-group" style="margin-bottom: 0;">
+                                        <label class="form-label" style="font-size: 12px;">{{
+                                            formatTimingKey(key)
+                                            }}</label>
+                                        <input type="number" step="0.1" min="0" :value="value"
+                                            @change="updateTiming('connection', key, $event.target.value)"
+                                            class="form-input" style="font-size: 13px;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Rules Card -->
+                    <div class="card">
+                        <div class="card-header"
+                            style="display: flex; justify-content: space-between; align-items: center;">
+                            <h2 class="card-title">🎯 动作规则</h2>
+                            <button class="btn btn-sm btn-secondary" @click="resetActionRules">重置为默认</button>
+                        </div>
+                        <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 14px;">
+                            配置各种动作的执行规则和条件
+                        </p>
+                        <div v-if="actionRules.length === 0" class="empty-state" style="padding: 20px;">
+                            <p>加载中...</p>
+                        </div>
+                        <div v-else>
+                            <div v-for="action in actionRules" :key="action.name" class="action-rule-item"
+                                style="border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow: hidden;">
+                                <div @click="toggleActionExpand(action.name)"
+                                    style="padding: 12px 16px; background: var(--bg-secondary); cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong>{{ action.name }}</strong>
+                                        <span v-if="action.is_custom"
+                                            style="font-size: 12px; color: var(--primary); margin-left: 8px;">自定义</span>
+                                        <p style="font-size: 13px; color: var(--text-secondary); margin: 4px 0 0 0;">
+                                            {{ action.description }}</p>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-size: 12px; color: var(--text-secondary);">{{
+                                            action.rules ? action.rules.length : 0 }} 条规则</span>
+                                        <span style="transition: transform 0.2s;"
+                                            :style="{ transform: expandedActions[action.name] ? 'rotate(90deg)' : '' }">▶</span>
+                                    </div>
+                                </div>
+                                <div v-if="expandedActions[action.name]"
+                                    style="padding: 16px; border-top: 1px solid var(--border);">
+                                    <div
+                                        style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span style="font-size: 13px; color: var(--text-secondary);">规则列表</span>
+                                        <button class="btn btn-sm btn-primary" @click="showAddRuleModal(action.name)">+
+                                            添加规则</button>
+                                    </div>
+                                    <div v-if="!action.rules || action.rules.length === 0"
+                                        style="padding: 20px; text-align: center; color: var(--text-secondary);">
+                                        暂无规则
+                                    </div>
+                                    <div v-else>
+                                        <div v-for="rule in action.rules" :key="rule.id"
+                                            style="padding: 10px; background: var(--bg-secondary); border-radius: 6px; margin-bottom: 8px;">
+                                            <div
+                                                style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                                <div style="flex: 1;">
+                                                    <div
+                                                        style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                                        <label
+                                                            style="display: flex; align-items: center; cursor: pointer;">
+                                                            <input type="checkbox" :checked="rule.enabled"
+                                                                @change="toggleRuleEnabled(action.name, rule.id)"
+                                                                style="margin-right: 6px;">
+                                                        </label>
+                                                        <strong style="font-size: 13px;"
+                                                            :style="{ opacity: rule.enabled ? 1 : 0.5 }">
+                                                            {{ rule.condition }}
+                                                        </strong>
+                                                    </div>
+                                                    <p style="font-size: 12px; color: var(--text-secondary); margin: 0;"
+                                                        :style="{ opacity: rule.enabled ? 1 : 0.5 }">
+                                                        → {{ rule.action }}
+                                                    </p>
+                                                </div>
+                                                <div style="display: flex; gap: 4px;">
+                                                    <button class="btn btn-sm btn-secondary"
+                                                        @click="editRuleItem(action.name, rule)">编辑</button>
+                                                    <button class="btn btn-sm btn-danger"
+                                                        @click="deleteRuleItem(action.name, rule.id)">删除</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System Prompts Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">📝 系统提示词</h2>
+                        </div>
+                        <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 14px;">
+                            自定义 AI 模型的系统提示词
+                        </p>
+                        <div v-if="systemPrompts">
+                            <div v-for="(prompt, key) in systemPrompts" :key="key" style="margin-bottom: 16px;">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <label class="form-label" style="margin-bottom: 0;">
+                                        {{ prompt.name }}
+                                        <span v-if="prompt.is_customized"
+                                            style="font-size: 12px; color: var(--primary); margin-left: 4px;">(已自定义)</span>
+                                    </label>
+                                    <button v-if="prompt.is_customized" class="btn btn-sm btn-secondary"
+                                        @click="resetPrompt(key)">
+                                        重置
+                                    </button>
+                                </div>
+                                <textarea v-model="prompt.content" class="form-input"
+                                    style="min-height: 150px; font-family: monospace; font-size: 13px;"
+                                    @blur="savePrompt(key, prompt.content)"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Page -->
+                <div v-if="currentPage === 'settings'" class="fade-in">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">邮件设置</h2>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">SMTP 服务器</label>
+                            <input type="text" v-model="emailConfig.smtp_server" class="form-input"
+                                placeholder="smtp.example.com">
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div class="form-group">
+                                <label class="form-label">端口</label>
+                                <input type="number" v-model="emailConfig.smtp_port" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">加密</label>
+                                <select v-model="emailConfig.use_ssl" class="form-select">
+                                    <option :value="true">SSL</option>
+                                    <option :value="false">None/TLS</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">发送邮箱</label>
+                            <input type="email" v-model="emailConfig.sender_email" class="form-input"
+                                placeholder="your@email.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">密码 / 授权码</label>
+                            <input type="password" v-model="emailConfig.sender_password" class="form-input"
+                                placeholder="••••••••">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">收件人（逗号分隔）</label>
+                            <input type="text" v-model="emailConfig.recipient_emails" class="form-input"
+                                placeholder="user1@email.com, user2@email.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" v-model="emailConfig.enabled">
+                                启用自动邮件报告
+                            </label>
+                        </div>
+
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn btn-primary" @click="saveEmailConfig">
+                                保存设置
+                            </button>
+                            <button class="btn btn-secondary" @click="testEmail" :disabled="loading">
+                                发送测试邮件
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">关于</h2>
                         </div>
                         <p><strong>AutoGLM Web Server</strong> v0.1.0</p>
                         <p style="margin-top: 8px; color: var(--text-secondary);">
@@ -2020,6 +2330,69 @@
             </div>
         </div>
 
+        <!-- App Mapping Modal -->
+        <div v-if="showAddAppModal" class="task-detail-modal" @click.self="showAddAppModal = false">
+            <div class="task-detail-content" style="max-width: 500px;">
+                <div class="task-detail-header">
+                    <h3>{{ editingApp ? '编辑应用映射' : '添加应用映射' }}</h3>
+                    <button class="task-detail-close" @click="showAddAppModal = false">✕</button>
+                </div>
+                <div class="task-detail-body" style="padding: 20px;">
+                    <div class="form-group">
+                        <label class="form-label">应用名称</label>
+                        <input type="text" v-model="appForm.app_name" class="form-input" placeholder="如：微信"
+                            :disabled="editingApp && !editingApp.is_custom">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">包名</label>
+                        <input type="text" v-model="appForm.package_name" class="form-input"
+                            placeholder="如：com.tencent.mm">
+                    </div>
+                    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+                        <button class="btn btn-secondary" @click="showAddAppModal = false">取消</button>
+                        <button class="btn btn-primary" @click="saveAppMapping">保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rule Item Modal -->
+        <div v-if="showRuleModal" class="task-detail-modal" @click.self="showRuleModal = false">
+            <div class="task-detail-content" style="max-width: 500px;">
+                <div class="task-detail-header">
+                    <h3>{{ editingRule ? '编辑规则' : '添加规则' }} - {{ editingRuleAction }}</h3>
+                    <button class="task-detail-close" @click="showRuleModal = false">✕</button>
+                </div>
+                <div class="task-detail-body" style="padding: 20px;">
+                    <div class="form-group">
+                        <label class="form-label">条件</label>
+                        <input type="text" v-model="ruleForm.condition" class="form-input" placeholder="如：应用未安装">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">动作</label>
+                        <input type="text" v-model="ruleForm.action" class="form-input" placeholder="如：返回错误提示">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">优先级</label>
+                            <input type="number" v-model.number="ruleForm.priority" class="form-input" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">状态</label>
+                            <select v-model="ruleForm.enabled" class="form-select">
+                                <option :value="true">启用</option>
+                                <option :value="false">禁用</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+                        <button class="btn btn-secondary" @click="showRuleModal = false">取消</button>
+                        <button class="btn btn-primary" @click="saveRuleItem">保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Phone Preview Toggle Button -->
         <button v-if="!showPhonePreview && devices.length > 0" class="phone-preview-toggle" @click="openPhonePreview"
             title="Show Phone Preview">
@@ -2075,6 +2448,20 @@
                         };
                     }
                     const emailConfig = ref({});
+                    // Rules configuration state
+                    const appMappings = ref([]);
+                    const timingConfig = ref(null);
+                    const systemPrompts = ref(null);
+                    const showAddAppModal = ref(false);
+                    const editingApp = ref(null);
+                    const appForm = ref({ app_name: '', package_name: '' });
+                    // Action rules state
+                    const actionRules = ref([]);
+                    const expandedActions = ref({});
+                    const showRuleModal = ref(false);
+                    const editingRuleAction = ref('');
+                    const editingRule = ref(null);
+                    const ruleForm = ref({ condition: '', action: '', priority: 0, enabled: true });
                     const wsConnected = ref(false);
                     const loading = ref(false);
                     const toasts = ref([]);
@@ -2257,20 +2644,9 @@
                                     });
                                 }
 
-                                // 2. Scheduler Page Logs (schedulerLogs) - Only for scheduled tasks
-                                if (data.task_type === 'scheduled') {
-                                    // Add to the beginning of the list (newest first) to match API sort order
-                                    schedulerLogs.value.unshift({
-                                        timestamp: new Date().toISOString(),
-                                        message: data.message,
-                                        task_id: data.task_id,
-                                        success: null // Log entry doesn't strictly have success status yet
-                                    });
-                                    // Limit size
-                                    if (schedulerLogs.value.length > 50) {
-                                        schedulerLogs.value = schedulerLogs.value.slice(0, 50);
-                                    }
-                                }
+                                // 2. Scheduler Page: Don't add real-time logs here
+                                // schedulerLogs is populated from API (summary per execution cycle)
+                                // Real-time logs for scheduled tasks are not displayed in scheduler page
 
                                 // 3. Chat Page Logs (chatMessages)
                                 if (chatMessages.value.length > 0) {
@@ -2375,6 +2751,10 @@
                                     chatRunning.value = false;
                                     // Save session after task completes
                                     saveCurrentSession();
+                                }
+                                // Refresh scheduler logs when a scheduled task finishes
+                                if (data.task_type === 'scheduled') {
+                                    loadSchedulerLogs();
                                 }
                                 break;
                             case 'task_tokens':
@@ -3390,24 +3770,28 @@
 
                     // Open task detail modal
                     async function openTaskDetail(msg) {
-                        // 只从数据库加载截图，不再使用 base64
-                        let screenshots = msg.screenshots || [];
+                        // 始终从服务器获取完整的截图列表（WebSocket 可能只推送了部分截图）
+                        let screenshots = [];
 
-                        // 如果消息没有 screenshots 数据，且存在 session_id 和 message_id，则从服务器获取
-                        if (screenshots.length === 0 && currentSessionId.value && msg.id) {
+                        // 如果存在 session_id 和 message_id，则从服务器获取完整截图列表
+                        if (currentSessionId.value && msg.id) {
                             try {
                                 const screenshotData = await apiCall(
                                     `/api/chat/sessions/${currentSessionId.value}/screenshots?message_id=${msg.id}`
                                 );
                                 if (screenshotData && screenshotData.length > 0) {
                                     screenshots = screenshotData;
-                                    // 更新消息对象中的 screenshots，以便下次打开时不需要再次获取
+                                    // 更新消息对象中的 screenshots
                                     msg.screenshots = screenshots;
                                 }
                             } catch (error) {
                                 console.error('Failed to load screenshots:', error);
-                                // 继续显示，即使获取失败
+                                // 获取失败时使用本地缓存的数据
+                                screenshots = msg.screenshots || [];
                             }
+                        } else {
+                            // 没有 session/message id，使用本地数据
+                            screenshots = msg.screenshots || [];
                         }
 
                         taskDetailData.value = {
@@ -4158,6 +4542,213 @@
                         }
                     }
 
+                    // Rules configuration functions
+                    async function loadAppMappings() {
+                        try {
+                            const data = await apiCall('/api/rules/apps');
+                            appMappings.value = data.apps || [];
+                        } catch (error) {
+                            console.error('Failed to load app mappings:', error);
+                        }
+                    }
+
+                    async function loadTimingConfig() {
+                        try {
+                            timingConfig.value = await apiCall('/api/rules/timing');
+                        } catch (error) {
+                            console.error('Failed to load timing config:', error);
+                        }
+                    }
+
+                    async function loadSystemPrompts() {
+                        try {
+                            const data = await apiCall('/api/rules/prompts');
+                            systemPrompts.value = data.prompts || {};
+                        } catch (error) {
+                            console.error('Failed to load prompts:', error);
+                        }
+                    }
+
+                    function formatTimingKey(key) {
+                        return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    }
+
+                    async function updateTiming(category, key, value) {
+                        try {
+                            await apiCall('/api/rules/timing', {
+                                method: 'PUT',
+                                body: JSON.stringify({ category, key, value: parseFloat(value) }),
+                            });
+                            showToast('时间配置已更新');
+                        } catch (error) {
+                            showToast('更新失败', 'error');
+                            loadTimingConfig(); // Reload on error
+                        }
+                    }
+
+                    function editAppMapping(app) {
+                        editingApp.value = app;
+                        appForm.value = { app_name: app.app_name, package_name: app.package_name };
+                        showAddAppModal.value = true;
+                    }
+
+                    async function saveAppMapping() {
+                        if (!appForm.value.app_name || !appForm.value.package_name) {
+                            showToast('请填写完整信息', 'error');
+                            return;
+                        }
+                        try {
+                            if (editingApp.value) {
+                                await apiCall(`/api/rules/apps/${encodeURIComponent(editingApp.value.app_name)}`, {
+                                    method: 'PUT',
+                                    body: JSON.stringify({
+                                        new_name: appForm.value.app_name,
+                                        package_name: appForm.value.package_name,
+                                    }),
+                                });
+                                showToast('应用映射已更新');
+                            } else {
+                                await apiCall('/api/rules/apps', {
+                                    method: 'POST',
+                                    body: JSON.stringify(appForm.value),
+                                });
+                                showToast('应用映射已添加');
+                            }
+                            showAddAppModal.value = false;
+                            editingApp.value = null;
+                            appForm.value = { app_name: '', package_name: '' };
+                            await loadAppMappings();
+                        } catch (error) {
+                            showToast(error.message || '操作失败', 'error');
+                        }
+                    }
+
+                    async function deleteAppMapping(appName) {
+                        if (!confirm(`确定删除应用映射「${appName}」吗？`)) return;
+                        try {
+                            await apiCall(`/api/rules/apps/${encodeURIComponent(appName)}`, { method: 'DELETE' });
+                            showToast('应用映射已删除');
+                            await loadAppMappings();
+                        } catch (error) {
+                            showToast('删除失败', 'error');
+                        }
+                    }
+
+                    async function savePrompt(key, content) {
+                        try {
+                            await apiCall(`/api/rules/prompts/${key}`, {
+                                method: 'PUT',
+                                body: JSON.stringify({ content }),
+                            });
+                            showToast('提示词已保存');
+                        } catch (error) {
+                            showToast('保存失败', 'error');
+                        }
+                    }
+
+                    async function resetPrompt(key) {
+                        if (!confirm('确定重置为默认提示词吗？')) return;
+                        try {
+                            await apiCall(`/api/rules/prompts/${key}/reset`, { method: 'POST' });
+                            showToast('提示词已重置');
+                            await loadSystemPrompts();
+                        } catch (error) {
+                            showToast('重置失败', 'error');
+                        }
+                    }
+
+                    // Action rules functions
+                    async function loadActionRules() {
+                        try {
+                            const data = await apiCall('/api/rules/actions');
+                            actionRules.value = data.actions || [];
+                        } catch (error) {
+                            console.error('Failed to load action rules:', error);
+                        }
+                    }
+
+                    function toggleActionExpand(actionName) {
+                        expandedActions.value[actionName] = !expandedActions.value[actionName];
+                    }
+
+                    async function toggleRuleEnabled(actionName, ruleId) {
+                        try {
+                            await apiCall(`/api/rules/actions/${encodeURIComponent(actionName)}/rules/${ruleId}/toggle`, { method: 'PUT' });
+                            await loadActionRules();
+                        } catch (error) {
+                            showToast('操作失败', 'error');
+                        }
+                    }
+
+                    function showAddRuleModal(actionName) {
+                        editingRuleAction.value = actionName;
+                        editingRule.value = null;
+                        ruleForm.value = { condition: '', action: '', priority: 0, enabled: true };
+                        showRuleModal.value = true;
+                    }
+
+                    function editRuleItem(actionName, rule) {
+                        editingRuleAction.value = actionName;
+                        editingRule.value = rule;
+                        ruleForm.value = {
+                            condition: rule.condition,
+                            action: rule.action,
+                            priority: rule.priority || 0,
+                            enabled: rule.enabled
+                        };
+                        showRuleModal.value = true;
+                    }
+
+                    async function saveRuleItem() {
+                        if (!ruleForm.value.condition || !ruleForm.value.action) {
+                            showToast('请填写完整信息', 'error');
+                            return;
+                        }
+                        try {
+                            if (editingRule.value) {
+                                // Update existing rule
+                                await apiCall(`/api/rules/actions/${encodeURIComponent(editingRuleAction.value)}/rules/${editingRule.value.id}`, {
+                                    method: 'PUT',
+                                    body: JSON.stringify(ruleForm.value),
+                                });
+                                showToast('规则已更新');
+                            } else {
+                                // Add new rule
+                                await apiCall(`/api/rules/actions/${encodeURIComponent(editingRuleAction.value)}/rules`, {
+                                    method: 'POST',
+                                    body: JSON.stringify(ruleForm.value),
+                                });
+                                showToast('规则已添加');
+                            }
+                            showRuleModal.value = false;
+                            await loadActionRules();
+                        } catch (error) {
+                            showToast(error.message || '操作失败', 'error');
+                        }
+                    }
+
+                    async function deleteRuleItem(actionName, ruleId) {
+                        if (!confirm('确定删除此规则吗？')) return;
+                        try {
+                            await apiCall(`/api/rules/actions/${encodeURIComponent(actionName)}/rules/${ruleId}`, { method: 'DELETE' });
+                            showToast('规则已删除');
+                            await loadActionRules();
+                        } catch (error) {
+                            showToast('删除失败', 'error');
+                        }
+                    }
+
+                    async function resetActionRules() {
+                        if (!confirm('确定重置所有动作规则为默认值吗？')) return;
+                        try {
+                            await apiCall('/api/rules/actions/reset', { method: 'POST' });
+                            showToast('动作规则已重置');
+                            await loadActionRules();
+                        } catch (error) {
+                            showToast('重置失败', 'error');
+                        }
+                    }
+
                     // Phone Preview Functions
                     const phonePreviewStyle = Vue.computed(() => ({
                         left: previewPosition.value.x + 'px',
@@ -4276,7 +4867,15 @@
                             loadModels();
                             loadModelPresets();
                         }
-                        if (page === 'settings') loadEmailConfig();
+                        if (page === 'settings') {
+                            loadEmailConfig();
+                        }
+                        if (page === 'rules') {
+                            loadAppMappings();
+                            loadTimingConfig();
+                            loadActionRules();
+                            loadSystemPrompts();
+                        }
                     });
 
                     // Watch taskLogs for auto-scroll
@@ -4308,6 +4907,34 @@
                         loadModelPresets,
                         getPresetsByCategory,
                         emailConfig,
+                        // Rules configuration
+                        appMappings,
+                        timingConfig,
+                        systemPrompts,
+                        showAddAppModal,
+                        editingApp,
+                        appForm,
+                        formatTimingKey,
+                        updateTiming,
+                        editAppMapping,
+                        saveAppMapping,
+                        deleteAppMapping,
+                        savePrompt,
+                        resetPrompt,
+                        // Action rules
+                        actionRules,
+                        expandedActions,
+                        showRuleModal,
+                        editingRuleAction,
+                        editingRule,
+                        ruleForm,
+                        toggleActionExpand,
+                        toggleRuleEnabled,
+                        showAddRuleModal,
+                        editRuleItem,
+                        saveRuleItem,
+                        deleteRuleItem,
+                        resetActionRules,
                         wsConnected,
                         loading,
                         toasts,

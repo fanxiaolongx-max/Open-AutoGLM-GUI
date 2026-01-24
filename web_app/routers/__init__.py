@@ -8,6 +8,7 @@ from web_app.routers.models import router as models_router
 from web_app.routers.settings import router as settings_router
 from web_app.routers.websocket import router as websocket_router
 from web_app.routers.chat import router as chat_router
+from web_app.routers.rules import router as rules_router
 
 __all__ = [
     "devices_router",
@@ -17,4 +18,5 @@ __all__ = [
     "settings_router",
     "websocket_router",
     "chat_router",
+    "rules_router",
 ]

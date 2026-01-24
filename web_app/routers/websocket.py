@@ -113,7 +113,7 @@ def on_task_progress(task_id: str, progress: int):
         logger.error(f"Failed to broadcast progress: {e}")
 
 
-def on_task_finished(task_id: str, success: bool, message: str, screenshot: str = None, screenshot_id: str = None):
+def on_task_finished(task_id: str, success: bool, message: str, screenshot: str = None, screenshot_id: str = None, task_type: str = None):
     """Callback for task completion (thread-safe)."""
     global _main_loop
     if _main_loop is None:
@@ -127,6 +127,7 @@ def on_task_finished(task_id: str, success: bool, message: str, screenshot: str 
                 "message": message,
                 # 不再发送 base64 截图，只发送 screenshot_id，前端从数据库加载
                 "screenshot_id": screenshot_id,
+                "task_type": task_type,  # 包含任务类型，让前端知道是定时任务还是手动任务
             }))
         )
     except Exception as e:

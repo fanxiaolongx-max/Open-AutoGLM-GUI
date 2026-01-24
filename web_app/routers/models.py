@@ -47,6 +47,7 @@ class TestConfigRequest(BaseModel):
     base_url: str
     api_key: str = ""
     model_name: str = ""
+    protocol: str = "openai"
 
 
 @router.get("")

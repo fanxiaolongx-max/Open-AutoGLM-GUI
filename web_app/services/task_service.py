@@ -147,21 +147,21 @@ class TaskService:
         if callback in self._token_callbacks:
             self._token_callbacks.remove(callback)
 
-    def add_finished_callback(self, callback: Callable[[str, bool, str, Optional[str], Optional[str]], None]):
-        """Add a callback for task completion. Callback receives (task_id, success, message, screenshot, screenshot_id)."""
+    def add_finished_callback(self, callback: Callable[[str, bool, str, Optional[str], Optional[str], Optional[str]], None]):
+        """Add a callback for task completion. Callback receives (task_id, success, message, screenshot, screenshot_id, task_type)."""
         self._finished_callbacks.append(callback)
 
-    def remove_finished_callback(self, callback: Callable[[str, bool, str, Optional[str], Optional[str]], None]):
+    def remove_finished_callback(self, callback: Callable[[str, bool, str, Optional[str], Optional[str], Optional[str]], None]):
         """Remove a finished callback."""
         if callback in self._finished_callbacks:
             self._finished_callbacks.remove(callback)
 
-    def _emit_finished(self, task_id: str, success: bool, message: str, screenshot: Optional[str] = None, screenshot_id: Optional[str] = None):
+    def _emit_finished(self, task_id: str, success: bool, message: str, screenshot: Optional[str] = None, screenshot_id: Optional[str] = None, task_type: Optional[str] = None):
         """Emit task finished event to all callbacks."""
         # screenshot 参数保留以保持兼容性，但不再使用 base64，只使用 screenshot_id
         for callback in self._finished_callbacks:
             try:
-                callback(task_id, success, message, None, screenshot_id)  # 不传递 base64 截图
+                callback(task_id, success, message, None, screenshot_id, task_type)  # 不传递 base64 截图
             except Exception:
                 pass
 
@@ -596,7 +596,8 @@ class TaskService:
             all_success,
             f"Task {task.status}: {len([r for r in task.results if r.get('success')])} succeeded, {len([r for r in task.results if not r.get('success')])} failed",
             None,  # 不再发送 base64 截图
-            screenshot_id  # 只发送 screenshot_id
+            screenshot_id,  # 只发送 screenshot_id
+            task.task_type  # 传递任务类型
         )
 
         self._current_task = None

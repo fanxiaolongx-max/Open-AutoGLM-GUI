@@ -175,13 +175,19 @@ async def run_task_now(task_id: str, background_tasks: BackgroundTasks, _: bool 
     # Run in background
     async def run_scheduled():
         try:
-            result = await task_service.run_task(task.task_content, device_ids, is_scheduled=True)
+            result = await task_service.run_task(task.task_content, device_ids, is_scheduled=True, task_type="scheduled")
+            # Record log
+            success_count = sum(1 for r in result.results if r.get("success", False))
+            failed_count = len(result.results) - success_count
+            success = result.status == "completed" and failed_count == 0
+            message = f"完成: {success_count} 成功, {failed_count} 失败"
+            details = "\n".join(result.logs) if result.logs else ""
+            scheduler_service.add_task_log(task_id, success, message, details)
             # Broadcast task finished
             from web_app.routers.websocket import broadcast_task_finished
-            success = result.status == "completed"
-            message = f"Scheduled task {result.status}"
             await broadcast_task_finished(result.id, success, message)
         except Exception as e:
+            scheduler_service.add_task_log(task_id, False, f"执行失败: {str(e)}", "")
             from web_app.routers.websocket import broadcast_task_finished
             await broadcast_task_finished("", False, f"Task failed: {str(e)}")
 

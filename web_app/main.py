@@ -28,6 +28,7 @@ from web_app.routers import (
     settings_router,
     websocket_router,
     chat_router,
+    rules_router,
 )
 from web_app.services.scheduler_service import scheduler_service
 
@@ -83,7 +84,7 @@ async def lifespan(app: FastAPI):
         # Run task in background
         async def run_scheduled():
             try:
-                result = await task_service.run_task(task_content, device_ids, is_scheduled=True)
+                result = await task_service.run_task(task_content, device_ids, is_scheduled=True, task_type="scheduled")
                 # Record log
                 success_count = sum(1 for r in result.results if r.get("success", False))
                 failed_count = len(result.results) - success_count
@@ -143,6 +144,7 @@ app.include_router(models_router)
 app.include_router(settings_router)
 app.include_router(websocket_router)
 app.include_router(chat_router)
+app.include_router(rules_router)
 
 # Mount static files
 if STATIC_DIR.exists():
