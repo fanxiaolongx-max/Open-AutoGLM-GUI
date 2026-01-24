@@ -27,6 +27,7 @@ from web_app.routers import (
     models_router,
     settings_router,
     websocket_router,
+    chat_router,
 )
 from web_app.services.scheduler_service import scheduler_service
 
@@ -39,8 +40,15 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
+    import asyncio
+
     # Startup
     logger.info("Starting AutoGLM Web Server...")
+
+    # Set the main event loop for thread-safe WebSocket callbacks
+    from web_app.routers.websocket import set_main_loop
+    set_main_loop(asyncio.get_event_loop())
+    logger.info("Main event loop registered for WebSocket callbacks")
 
     # Start the scheduler
     await scheduler_service.start()
@@ -75,9 +83,17 @@ async def lifespan(app: FastAPI):
         # Run task in background
         async def run_scheduled():
             try:
-                await task_service.run_task(task_content, device_ids, is_scheduled=True)
+                result = await task_service.run_task(task_content, device_ids, is_scheduled=True)
+                # Record log
+                success_count = sum(1 for r in result.results if r.get("success", False))
+                failed_count = len(result.results) - success_count
+                success = result.status == "completed" and failed_count == 0
+                message = f"完成: {success_count} 成功, {failed_count} 失败"
+                details = "\n".join(result.logs) if result.logs else ""
+                scheduler_service.add_task_log(task_id, success, message, details)
             except Exception as e:
                 logger.error(f"Scheduled task {task_id} failed: {e}")
+                scheduler_service.add_task_log(task_id, False, f"执行失败: {str(e)}", "")
             finally:
                 scheduler_service.mark_task_finished(task_id)
 
@@ -126,6 +142,7 @@ app.include_router(scheduler_router)
 app.include_router(models_router)
 app.include_router(settings_router)
 app.include_router(websocket_router)
+app.include_router(chat_router)
 
 # Mount static files
 if STATIC_DIR.exists():

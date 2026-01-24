@@ -7,6 +7,7 @@ from web_app.routers.scheduler import router as scheduler_router
 from web_app.routers.models import router as models_router
 from web_app.routers.settings import router as settings_router
 from web_app.routers.websocket import router as websocket_router
+from web_app.routers.chat import router as chat_router
 
 __all__ = [
     "devices_router",
@@ -15,4 +16,5 @@ __all__ = [
     "models_router",
     "settings_router",
     "websocket_router",
+    "chat_router",
 ]

@@ -109,7 +109,11 @@ Examples:
 
     try:
         import uvicorn
+    except ImportError:
+        logger.error("uvicorn not installed. Please run: pip install uvicorn[standard]")
+        sys.exit(1)
 
+    try:
         logger.info(f"Starting server at http://{args.host}:{args.port}")
         logger.info(f"API docs available at http://localhost:{args.port}/docs")
         logger.info(f"Web interface at http://localhost:{args.port}")
@@ -122,9 +126,6 @@ Examples:
             workers=args.workers if not args.reload else 1,
             log_level="info",
         )
-    except ImportError:
-        logger.error("uvicorn not installed. Please run: pip install uvicorn[standard]")
-        sys.exit(1)
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
     except Exception as e:

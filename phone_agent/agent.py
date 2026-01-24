@@ -80,6 +80,15 @@ class PhoneAgent:
 
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
+        self._stop_requested = False  # Stop flag for graceful termination
+
+    def request_stop(self) -> None:
+        """Request the agent to stop at the next step."""
+        self._stop_requested = True
+
+    def is_stop_requested(self) -> bool:
+        """Check if stop has been requested."""
+        return self._stop_requested
 
     def run(self, task: str) -> str:
         """
@@ -93,11 +102,16 @@ class PhoneAgent:
         """
         self._context = []
         self._step_count = 0
+        self._stop_requested = False  # Reset stop flag
 
         # Set up ADB keyboard once at task start
         self.action_handler.setup_keyboard()
 
         try:
+            # Check stop before first step
+            if self._stop_requested:
+                return "Task stopped by user"
+
             # First step with user prompt
             result = self._execute_step(task, is_first=True)
 
@@ -106,6 +120,11 @@ class PhoneAgent:
 
             # Continue until finished or max steps reached
             while not result.finished and self._step_count < self.agent_config.max_steps:
+                # Check stop flag before each step
+                if self._stop_requested:
+                    print("\n⏹️ Task stopped by user")
+                    return "Task stopped by user"
+
                 result = self._execute_step(is_first=False)
 
             if result.finished:
@@ -204,7 +223,19 @@ class PhoneAgent:
                     print(f"\n⚠️ 模型返回空响应，正在重试 ({attempt}/{max_retries})...")
                     print("-" * 50)
 
+                if self._stop_requested:
+                    return StepResult(
+                        success=False,
+                        finished=True,
+                        action=None,
+                        message="Task stopped by user",
+                    )
+
                 response = self.model_client.request(self._context)
+
+                # Print token usage if available
+                if response.total_tokens > 0:
+                    print(f"[TOKENS]{response.input_tokens},{response.output_tokens},{response.total_tokens}[/TOKENS]")
 
                 # 检查响应是否为空
                 if response.action and response.action.strip():
@@ -240,6 +271,17 @@ class PhoneAgent:
             print(f"🎯 {msgs['action']}:")
             print(json.dumps(action, ensure_ascii=False, indent=2))
             print("=" * 50 + "\n")
+
+        # Check for stop request before executing action
+        if self._stop_requested:
+            print("\n⏹️ Task stopped by user (before execution)")
+            return StepResult(
+                success=False,
+                finished=True,
+                action=action,
+                thinking=response.thinking,
+                message="Task stopped by user",
+            )
 
         # Remove image from context to save space
         self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])

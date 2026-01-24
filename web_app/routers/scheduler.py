@@ -201,3 +201,34 @@ async def toggle_task(
     if not success:
         raise HTTPException(status_code=404, detail="Task not found")
     return {"success": True, "enabled": request.enabled}
+
+
+@router.get("/logs")
+async def get_all_logs(limit: int = 50, _: bool = Depends(verify_token)):
+    """Get all execution logs across all tasks."""
+    logs = scheduler_service.get_all_logs(limit)
+    return {"logs": logs}
+
+
+@router.delete("/logs")
+async def clear_all_logs(_: bool = Depends(verify_token)):
+    """Clear all execution logs."""
+    scheduler_service.clear_all_logs()
+    return {"success": True, "message": "All logs cleared"}
+
+
+@router.get("/tasks/{task_id}/logs")
+async def get_task_logs(task_id: str, limit: int = 20, _: bool = Depends(verify_token)):
+    """Get execution logs for a specific task."""
+    task = scheduler_service.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    logs = scheduler_service.get_task_logs(task_id, limit)
+    return {"task_id": task_id, "task_name": task.name, "logs": logs}
+
+
+@router.delete("/tasks/{task_id}/logs")
+async def clear_task_logs(task_id: str, _: bool = Depends(verify_token)):
+    """Clear logs for a specific task."""
+    scheduler_service.clear_task_logs(task_id)
+    return {"success": True, "message": "Logs cleared"}

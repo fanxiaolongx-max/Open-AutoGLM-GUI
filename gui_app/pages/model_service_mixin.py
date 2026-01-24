@@ -4,7 +4,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from gui_app.custom_widgets import NoWheelComboBox, NoWheelSpinBox, NoWheelDoubleSpinBox
-from gui_app.model_services import ModelServiceConfig
+from gui_app.model_services import ModelServiceConfig, ModelProtocol
 
 
 class ModelServiceMixin:
@@ -86,14 +86,25 @@ class ModelServiceMixin:
         list_btn_layout.addWidget(self.delete_service_btn)
         list_btn_layout.addWidget(self.activate_service_btn)
 
-        # Preset templates
+        # Preset templates - 按协议分组
         preset_header = QtWidgets.QLabel("快速添加模板")
         preset_header.setStyleSheet("color: #71717a; font-size: 12px; margin-top: 10px;")
 
         self.preset_combo = NoWheelComboBox()
         self.preset_combo.addItem("选择预置模板...")
-        for preset in self.model_services_manager.get_preset_templates():
-            self.preset_combo.addItem(preset.name, preset.id)
+        # 按协议分组显示预设模板
+        grouped_presets = self.model_services_manager.get_preset_templates_grouped()
+        for category, presets in grouped_presets.items():
+            # 添加分组标题（禁用项作为分隔符）
+            separator_item = f"── {category} ──"
+            self.preset_combo.addItem(separator_item, None)
+            # 设置分组标题样式（禁用选择）
+            idx = self.preset_combo.count() - 1
+            self.preset_combo.model().item(idx).setEnabled(False)
+            self.preset_combo.model().item(idx).setForeground(QtGui.QColor("#6366f1"))
+            # 添加该分组下的预设
+            for preset in presets:
+                self.preset_combo.addItem(f"  {preset.name}", preset.id)
         self.preset_combo.currentIndexChanged.connect(self._on_preset_selected)
 
         left_layout.addWidget(list_header)
@@ -131,6 +142,13 @@ class ModelServiceMixin:
 
         self.base_url_input = QtWidgets.QLineEdit()
         self.base_url_input.setPlaceholderText("http://localhost:8000/v1")
+        self.base_url_input.textChanged.connect(self._on_base_url_changed)
+
+        # 协议选择器
+        self.protocol_combo = NoWheelComboBox()
+        self.protocol_combo.addItem("OpenAI 协议", ModelProtocol.OPENAI.value)
+        self.protocol_combo.addItem("Anthropic 协议", ModelProtocol.ANTHROPIC.value)
+        self.protocol_combo.addItem("Gemini 协议", ModelProtocol.GEMINI.value)
 
         self.model_input = QtWidgets.QLineEdit()
         self.model_input.setPlaceholderText("autoglm-phone-9b")
@@ -154,6 +172,7 @@ class ModelServiceMixin:
 
         form.addRow("服务名称", self.service_name_input)
         form.addRow("服务地址", self.base_url_input)
+        form.addRow("协议类型", self.protocol_combo)
         form.addRow("模型名称", self.model_input)
         form.addRow("API密钥", self.api_key_input)
         form.addRow("描述", self.service_desc_input)
@@ -285,6 +304,13 @@ class ModelServiceMixin:
         self.max_tokens_input.setValue(service.max_tokens)
         self.temperature_input.setValue(service.temperature)
 
+        # 设置协议类型
+        protocol = service.protocol or ModelProtocol.OPENAI.value
+        for i in range(self.protocol_combo.count()):
+            if self.protocol_combo.itemData(i) == protocol:
+                self.protocol_combo.setCurrentIndex(i)
+                break
+
         if service.is_active:
             self.service_status_label.setText("✓ 当前激活的服务")
             self.service_status_label.setStyleSheet(
@@ -307,6 +333,7 @@ class ModelServiceMixin:
         self.service_desc_input.clear()
         self.max_tokens_input.setValue(3000)
         self.temperature_input.setValue(0.0)
+        self.protocol_combo.setCurrentIndex(0)  # 默认 OpenAI 协议
         self.service_status_label.setText("未选择服务")
         self.service_status_label.setStyleSheet(
             "font-size: 12px; color: #a1a1aa; background: rgba(39, 39, 42, 0.6); "
@@ -339,6 +366,7 @@ class ModelServiceMixin:
         service.description = self.service_desc_input.text().strip()
         service.max_tokens = self.max_tokens_input.value()
         service.temperature = self.temperature_input.value()
+        service.protocol = self.protocol_combo.currentData() or ModelProtocol.OPENAI.value
 
         self.model_services_manager.update_service(service)
         self._refresh_service_list()
@@ -469,3 +497,18 @@ class ModelServiceMixin:
 
         # Reset combo
         self.preset_combo.setCurrentIndex(0)
+
+    def _on_base_url_changed(self, url: str):
+        """当服务地址改变时，自动检测并建议协议类型"""
+        if not url.strip():
+            return
+
+        # 自动检测协议
+        detected_protocol = self.model_services_manager.auto_detect_protocol(url)
+
+        # 更新协议选择器
+        for i in range(self.protocol_combo.count()):
+            if self.protocol_combo.itemData(i) == detected_protocol:
+                if self.protocol_combo.currentIndex() != i:
+                    self.protocol_combo.setCurrentIndex(i)
+                break

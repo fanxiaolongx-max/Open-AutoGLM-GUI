@@ -15,9 +15,22 @@ const app = createApp({
         const taskRunning = ref(false);
         const taskProgress = ref(0);
         const taskLogs = ref([]);
+        const schedulerLogs = ref([]);
         const scheduledTasks = ref([]);
         const modelServices = ref([]);
         const activeModel = ref(null);
+
+        // Chat State
+        const chatMessages = ref([]);
+        const chatSessions = ref([]);
+        const currentSessionId = ref(null);
+        const chatInput = ref('');
+        const chatLoading = ref(false);
+        const chatDeviceId = ref('');
+        const complexTaskMode = ref(false);
+        const chatAutoEmail = ref(false);
+        const chatRunning = ref(false);
+
         const emailConfig = ref({});
         const wsConnected = ref(false);
         const loading = ref(false);
@@ -96,22 +109,59 @@ const app = createApp({
                 case 'init':
                     if (data.task_status) {
                         taskRunning.value = data.task_status.running;
+                        chatRunning.value = data.task_status.running && data.task_status.task?.task_type === 'chat';
                         if (data.task_status.task) {
                             taskProgress.value = data.task_status.task.progress || 0;
                         }
                     }
                     break;
                 case 'task_log':
-                    taskLogs.value.push({
-                        time: new Date().toLocaleTimeString(),
-                        message: data.message,
-                    });
+                    // For chat tasks, update the last assistant message
+                    if (data.task_type === 'chat') {
+                        const lastMsg = chatMessages.value[chatMessages.value.length - 1];
+                        if (lastMsg && lastMsg.role === 'assistant') {
+                            if (!lastMsg.logs) lastMsg.logs = [];
+                            lastMsg.logs.push(data.message);
+                            // Auto-scroll
+                            setTimeout(() => {
+                                const el = document.querySelector('.chat-messages');
+                                if (el) el.scrollTop = el.scrollHeight;
+                            }, 50);
+                        }
+                    } else if (data.task_type !== 'scheduled') {
+                        // Regular task logs
+                        taskLogs.value.push({
+                            time: new Date().toLocaleTimeString(),
+                            message: data.message,
+                        });
+                    }
                     break;
                 case 'task_progress':
                     taskProgress.value = data.progress;
                     break;
                 case 'task_finished':
                     taskRunning.value = false;
+                    chatRunning.value = false;
+                    // Update last assistant message status
+                    const lastMsg = chatMessages.value[chatMessages.value.length - 1];
+                    if (lastMsg && lastMsg.role === 'assistant' && lastMsg.status === 'running') {
+                        lastMsg.status = data.success ? 'success' : 'error';
+                        lastMsg.content = data.success ? '任务完成' : '任务失败';
+                        // Add screenshot if available
+                        if (data.screenshot_id) {
+                            // Use the saved screenshot URL
+                            lastMsg.screenshots = [{
+                                image_url: `/api/chat/screenshots/${data.screenshot_id}`
+                            }];
+                        } else if (data.screenshot) {
+                            // Fallback to base64 (legacy)
+                            lastMsg.screenshots = [{
+                                image_url: `data:image/png;base64,${data.screenshot}`
+                            }];
+                        }
+                    }
+                    // Reload sessions to get updated data
+                    loadChatSessions();
                     showToast(data.message, data.success ? 'success' : 'error');
                     break;
                 case 'devices':
@@ -250,6 +300,264 @@ const app = createApp({
             }
         }
 
+        async function clearAllSchedulerLogs() {
+            if (!confirm('Are you sure you want to clear all scheduler logs?')) return;
+            try {
+                await apiCall('/api/scheduler/logs', { method: 'DELETE' });
+                schedulerLogs.value = [];
+                showToast('Logs cleared');
+            } catch (error) {
+                showToast('Failed to clear logs', 'error');
+            }
+        }
+
+        async function loadSchedulerLogs() {
+            try {
+                const data = await apiCall('/api/scheduler/logs?limit=50');
+                schedulerLogs.value = data.logs;
+            } catch (error) {
+                console.error('Failed to load scheduler logs:', error);
+            }
+        }
+
+        // Chat functions
+        async function loadChatSessions() {
+            try {
+                const data = await apiCall('/api/chat/sessions?limit=50');
+                chatSessions.value = data.map(s => ({
+                    id: s.id,
+                    title: s.title || '新会话',
+                    deviceId: s.device_id,
+                    status: s.status,
+                    updatedAt: s.updated_at,
+                    totalTokens: s.total_tokens || 0
+                }));
+            } catch (error) {
+                console.error('Failed to load chat sessions:', error);
+            }
+        }
+
+        async function loadSessionMessages(sessionId) {
+            try {
+                const data = await apiCall(`/api/chat/sessions/${sessionId}/detail`);
+                if (data && data.messages) {
+                    chatMessages.value = data.messages.map(msg => ({
+                        id: msg.id,
+                        role: msg.role,
+                        content: msg.content,
+                        timestamp: msg.created_at,
+                        logs: msg.logs ? msg.logs.map(l => l.content) : [],
+                        screenshots: msg.screenshots || [],
+                        status: msg.role === 'assistant' ? 'success' : null
+                    }));
+                    // Scroll to bottom
+                    setTimeout(() => {
+                        const el = document.querySelector('.chat-messages');
+                        if (el) el.scrollTop = el.scrollHeight;
+                    }, 100);
+                }
+            } catch (error) {
+                console.error('Failed to load session messages:', error);
+            }
+        }
+
+        async function switchSession(sessionId) {
+            currentSessionId.value = sessionId;
+            await loadSessionMessages(sessionId);
+        }
+
+        async function createNewSession() {
+            // Clear current session - will create new one on first message
+            currentSessionId.value = null;
+            chatMessages.value = [];
+        }
+
+        async function deleteSession(sessionId) {
+            if (!confirm('确定删除此会话？')) return;
+            try {
+                await apiCall(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
+                await loadChatSessions();
+                if (currentSessionId.value === sessionId) {
+                    currentSessionId.value = null;
+                    chatMessages.value = [];
+                }
+                showToast('会话已删除');
+            } catch (error) {
+                showToast('删除失败', 'error');
+            }
+        }
+
+        function formatSessionTime(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            if (diff < 86400000) { // Less than 24 hours
+                return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            } else if (diff < 604800000) { // Less than 7 days
+                const days = Math.floor(diff / 86400000);
+                return `${days}天前`;
+            } else {
+                return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+            }
+        }
+
+        async function loadChatHistory() {
+            // Load sessions list
+            await loadChatSessions();
+            // If there's a current session, load its messages
+            if (currentSessionId.value) {
+                await loadSessionMessages(currentSessionId.value);
+            } else if (chatSessions.value.length > 0) {
+                // Auto-select the most recent session
+                currentSessionId.value = chatSessions.value[0].id;
+                await loadSessionMessages(currentSessionId.value);
+            }
+        }
+
+        async function sendChatMessage() {
+            if (!chatInput.value.trim() || chatRunning.value) return;
+
+            const content = chatInput.value;
+            chatInput.value = '';
+            chatRunning.value = true;
+
+            try {
+                // 1. Add user message immediately to UI
+                const userMsg = {
+                    role: 'user',
+                    content: content,
+                    timestamp: new Date().toISOString()
+                };
+                chatMessages.value.push(userMsg);
+
+                // Add placeholder for assistant response
+                const assistantMsg = {
+                    role: 'assistant',
+                    content: '',
+                    status: 'running',
+                    logs: [],
+                    screenshots: [],
+                    timestamp: new Date().toISOString()
+                };
+                chatMessages.value.push(assistantMsg);
+
+                // Scroll
+                setTimeout(() => {
+                    const el = document.querySelector('.chat-messages');
+                    if (el) el.scrollTop = el.scrollHeight;
+                }, 100);
+
+                // 2. Run Task (Chat Mode) - backend will create session automatically
+                let targetDevice = chatDeviceId.value;
+                if (!targetDevice && selectedDevices.value.length > 0) {
+                    targetDevice = selectedDevices.value[0];
+                }
+                if (!targetDevice && devices.value.length > 0) {
+                    targetDevice = devices.value[0].id;
+                }
+
+                if (targetDevice) {
+                    await apiCall('/api/tasks/run', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            task_content: content,
+                            device_ids: [targetDevice],
+                            task_type: 'chat',
+                            send_email: chatAutoEmail.value,
+                            no_auto_lock: complexTaskMode.value
+                        }),
+                    });
+                } else {
+                    showToast('请先选择设备', 'warning');
+                    chatRunning.value = false;
+                    // Remove placeholder
+                    chatMessages.value.pop();
+                }
+
+            } catch (error) {
+                showToast('发送失败', 'error');
+                chatRunning.value = false;
+                // Remove placeholder on error
+                if (chatMessages.value.length > 0 && chatMessages.value[chatMessages.value.length - 1].status === 'running') {
+                    chatMessages.value.pop();
+                }
+            }
+        }
+
+        async function stopChatTask() {
+            try {
+                await apiCall('/api/tasks/stop', { method: 'POST' });
+                showToast('已发送停止信号');
+            } catch (error) {
+                showToast('停止失败', 'error');
+            }
+        }
+
+        function openTaskDetail(msg) {
+            // Open modal with full logs and screenshots
+            const modal = document.createElement('div');
+            modal.className = 'task-detail-modal';
+            modal.innerHTML = `
+                <div class="task-detail-content">
+                    <div class="task-detail-header">
+                        <h3>📋 执行详情</h3>
+                        <button class="close-btn" onclick="this.closest('.task-detail-modal').remove()">✕</button>
+                    </div>
+                    <div class="task-detail-body">
+                        <div class="task-detail-logs">
+                            <h4>执行日志</h4>
+                            <div class="logs-container">
+                                ${(msg.logs || []).map(log => `<div class="log-line">${log}</div>`).join('')}
+                            </div>
+                        </div>
+                        ${msg.screenshots && msg.screenshots.length > 0 ? `
+                            <div class="task-detail-screenshots">
+                                <h4>📸 截图</h4>
+                                <div class="screenshots-grid">
+                                    ${msg.screenshots.map(s => `
+                                        <img src="${s.image_url}" alt="Screenshot" class="screenshot-img"
+                                             onclick="window.open('${s.image_url}', '_blank')">
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+        }
+
+        function formatMsgTime(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function adjustChatInputHeight(event) {
+            const textarea = event.target;
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
+
+        async function clearChatHistory() {
+            if (!confirm('Clear chat history?')) return;
+            try {
+                await apiCall('/api/chat/history', { method: 'DELETE' });
+                chatMessages.value = [];
+                showToast('Chat history cleared');
+            } catch (error) {
+                showToast('Failed to clear history', 'error');
+            }
+        }
+
+        function onChatDeviceChange() {
+            // handle device change if needed
+        }
+
         // Model functions
         async function loadModels() {
             try {
@@ -327,9 +635,13 @@ const app = createApp({
 
         // Watch page changes to load data
         watch(currentPage, (page) => {
-            if (page === 'scheduler') loadScheduledTasks();
+            if (page === 'scheduler') {
+                loadScheduledTasks();
+                loadSchedulerLogs();
+            }
             if (page === 'models') loadModels();
             if (page === 'settings') loadEmailConfig();
+            if (page === 'chat') loadChatHistory();
         });
 
         return {
@@ -341,6 +653,7 @@ const app = createApp({
             taskRunning,
             taskProgress,
             taskLogs,
+            schedulerLogs,
             scheduledTasks,
             modelServices,
             activeModel,
@@ -348,6 +661,15 @@ const app = createApp({
             wsConnected,
             loading,
             toasts,
+
+            // Chat State
+            chatMessages,
+            chatSessions,
+            chatInput,
+            chatLoading,
+            chatDeviceId,
+            complexTaskMode,
+            chatAutoEmail,
 
             // Methods
             showToast,
@@ -362,12 +684,16 @@ const app = createApp({
             toggleScheduledTask,
             runScheduledTaskNow,
             deleteScheduledTask,
+            clearAllSchedulerLogs,
             loadModels,
             activateModel,
             testModel,
             loadEmailConfig,
             saveEmailConfig,
             testEmail,
+            sendChatMessage,
+            clearChatHistory,
+            onChatDeviceChange,
         };
     },
 });

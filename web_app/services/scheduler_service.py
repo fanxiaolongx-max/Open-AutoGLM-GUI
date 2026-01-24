@@ -28,13 +28,16 @@ class SchedulerService:
         self.tasks: dict[str, ScheduledTask] = {}
         self.running_tasks: set[str] = set()
         self.config_file = Path.home() / ".autoglm" / "scheduled_tasks.json"
+        self.logs_file = Path.home() / ".autoglm" / "scheduler_logs.json"
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
         self._check_task: Optional[asyncio.Task] = None
         self._callbacks: list[Callable[[str, str], None]] = []
         self._running = False
+        self._task_logs: dict[str, list[dict]] = {}  # task_id -> list of log entries
 
         self._load_tasks()
+        self._load_logs()
 
     def _load_tasks(self):
         """Load tasks from config file."""
@@ -56,6 +59,71 @@ class SchedulerService:
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8"
         )
+
+    def _load_logs(self):
+        """Load execution logs from file."""
+        if self.logs_file.exists():
+            try:
+                self._task_logs = json.loads(self.logs_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.error(f"Error loading scheduler logs: {e}")
+                self._task_logs = {}
+
+    def _save_logs(self):
+        """Save execution logs to file."""
+        self.logs_file.write_text(
+            json.dumps(self._task_logs, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+
+    def add_task_log(self, task_id: str, success: bool, message: str, details: str = ""):
+        """Add a log entry for a task execution."""
+        if task_id not in self._task_logs:
+            self._task_logs[task_id] = []
+
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "success": success,
+            "message": message,
+            "details": details[:5000] if details else "",  # Limit details size
+        }
+        self._task_logs[task_id].insert(0, log_entry)  # Newest first
+
+        # Keep only last 50 logs per task
+        self._task_logs[task_id] = self._task_logs[task_id][:50]
+        self._save_logs()
+
+    def get_task_logs(self, task_id: str, limit: int = 20) -> list[dict]:
+        """Get execution logs for a task."""
+        logs = self._task_logs.get(task_id, [])
+        return logs[:limit]
+
+    def get_all_logs(self, limit: int = 50) -> list[dict]:
+        """Get all execution logs across all tasks, sorted by time."""
+        all_logs = []
+        for task_id, logs in self._task_logs.items():
+            task = self.tasks.get(task_id)
+            task_name = task.name if task else task_id
+            for log in logs:
+                log_copy = log.copy()
+                log_copy["task_id"] = task_id
+                log_copy["task_name"] = task_name
+                all_logs.append(log_copy)
+
+        # Sort by timestamp descending
+        all_logs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return all_logs[:limit]
+
+    def clear_task_logs(self, task_id: str):
+        """Clear logs for a specific task."""
+        if task_id in self._task_logs:
+            del self._task_logs[task_id]
+            self._save_logs()
+
+    def clear_all_logs(self):
+        """Clear all execution logs."""
+        self._task_logs = {}
+        self._save_logs()
 
     def add_task_callback(self, callback: Callable[[str, str], None]):
         """Add a callback for when tasks are triggered. Receives (task_id, task_content)."""
@@ -97,10 +165,43 @@ class SchedulerService:
                 logger.error(f"Error in scheduler check loop: {e}")
             await asyncio.sleep(30)  # Check every 30 seconds
 
+    def _is_manual_task_running(self) -> tuple[bool, str]:
+        """
+        检查是否有手动任务或 Chat 任务正在运行。
+
+        Returns:
+            (is_running, task_info) 元组
+        """
+        try:
+            from web_app.services.task_service import task_service
+
+            current_task = task_service.get_current_task()
+            if current_task and current_task.status == "running":
+                # 只有手动任务和 Chat 任务才阻止定时任务
+                if current_task.task_type in ("manual", "chat"):
+                    return True, f"{current_task.get_type_display()}: {current_task.task_content[:30]}..."
+            return False, ""
+        except Exception as e:
+            logger.error(f"Error checking manual task status: {e}")
+            return False, ""
+
     async def _check_tasks(self):
         """Check and trigger tasks that should run."""
         for task in self.tasks.values():
             if task.should_run_now() and task.id not in self.running_tasks:
+                # 检查是否有手动任务或 Chat 任务正在运行
+                manual_running, task_info = self._is_manual_task_running()
+                if manual_running:
+                    logger.info(f"跳过定时任务 [{task.name}]: 当前有 {task_info} 正在运行")
+                    # 记录跳过日志
+                    self.add_task_log(
+                        task.id,
+                        success=False,
+                        message=f"跳过执行: 当前有 {task_info} 正在运行",
+                        details="定时任务被跳过，等待当前任务完成后在下次调度时间执行"
+                    )
+                    continue
+
                 # Mark as running
                 self.running_tasks.add(task.id)
 

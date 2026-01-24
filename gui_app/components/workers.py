@@ -682,6 +682,35 @@ class MultiDeviceTaskWorker(QtCore.QThread):
             except Exception:
                 pass
 
+    def _check_device_connected(self):
+        """检查设备是否连接，返回 (connected, error_message)"""
+        try:
+            if self.device_type == DeviceType.IOS:
+                from phone_agent.xctest import list_devices as list_ios_devices
+                devices = list_ios_devices()
+                for d in devices:
+                    if d.device_id == self.device_id:
+                        return True, None
+                return False, f"iOS设备 {self.device_id} 未连接或已断开"
+            else:
+                # ADB/HDC 设备
+                set_device_type(self.device_type)
+                factory = get_device_factory()
+                devices = factory.list_devices()
+                for d in devices:
+                    if d.device_id == self.device_id:
+                        if d.status == "device":
+                            return True, None
+                        elif d.status == "offline":
+                            return False, f"设备 {self.device_id} 处于离线状态(offline)"
+                        elif d.status == "unauthorized":
+                            return False, f"设备 {self.device_id} 未授权调试(unauthorized)，请在设备上确认USB调试授权"
+                        else:
+                            return False, f"设备 {self.device_id} 状态异常: {d.status}"
+                return False, f"设备 {self.device_id} 未连接或已断开"
+        except Exception as e:
+            return False, f"检查设备连接状态失败: {str(e)}"
+
     def _get_action_desc(self, result):
         """Get action description from step result."""
         if result.action:
@@ -695,6 +724,15 @@ class MultiDeviceTaskWorker(QtCore.QThread):
     def run(self):
         try:
             self.log.emit(self.device_id, f"开始执行任务: {self.task[:50]}...\n")
+
+            # 检查设备连接状态
+            self.log.emit(self.device_id, "检查设备连接状态...\n")
+            connected, error_msg = self._check_device_connected()
+            if not connected:
+                self.log.emit(self.device_id, f"❌ 设备断联: {error_msg}\n")
+                self.finished.emit(self.device_id, False, f"设备断联: {error_msg}")
+                return
+            self.log.emit(self.device_id, "✓ 设备已连接\n")
 
             if self.device_type == DeviceType.IOS:
                 from phone_agent import IOSPhoneAgent

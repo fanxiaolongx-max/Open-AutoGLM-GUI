@@ -469,27 +469,53 @@ def parse_action(response: str) -> dict[str, Any]:
             action = {"_metadata": "do", "action": "Type", "text": text}
             return action
         elif response.startswith("do"):
-            # Use AST parsing instead of eval for safety
+            # Use regex parsing to handle Chinese characters and special chars
+            # AST parser fails on full-width chars like ？ (U+FF1F)
             try:
-                # Escape special characters (newlines, tabs, etc.) for valid Python syntax
-                response = response.replace('\n', '\\n')
-                response = response.replace('\r', '\\r')
-                response = response.replace('\t', '\\t')
-
-                tree = ast.parse(response, mode="eval")
-                if not isinstance(tree.body, ast.Call):
-                    raise ValueError("Expected a function call")
-
-                call = tree.body
-                # Extract keyword arguments safely
+                import re
                 action = {"_metadata": "do"}
-                for keyword in call.keywords:
-                    key = keyword.arg
-                    value = ast.literal_eval(keyword.value)
-                    action[key] = value
+
+                # Extract action type: do(action="XXX", ...)
+                action_match = re.search(r'do\s*\(\s*action\s*=\s*"([^"]*)"', response)
+                if action_match:
+                    action["action"] = action_match.group(1)
+
+                # Extract message parameter if present
+                # Handle both simple and multiline messages
+                message_match = re.search(r',\s*message\s*=\s*"((?:[^"\\]|\\.|"(?=[^,\)]*(?:,|\))))*)"', response, re.DOTALL)
+                if message_match:
+                    msg = message_match.group(1)
+                    # Unescape common escape sequences
+                    msg = msg.replace('\\n', '\n').replace('\\r', '\r').replace('\\t', '\t').replace('\\"', '"')
+                    action["message"] = msg
+
+                # Extract other common parameters
+                for param in ["text", "index", "direction", "x", "y", "package", "app"]:
+                    param_match = re.search(rf',\s*{param}\s*=\s*"([^"]*)"', response)
+                    if param_match:
+                        action[param] = param_match.group(1)
+                    else:
+                        # Try numeric value
+                        param_match = re.search(rf',\s*{param}\s*=\s*(\d+)', response)
+                        if param_match:
+                            action[param] = int(param_match.group(1))
+
+                # Extract array parameters (element, start, end for Tap/Swipe)
+                for param in ["element", "start", "end"]:
+                    param_match = re.search(rf',\s*{param}\s*=\s*\[([^\]]+)\]', response)
+                    if param_match:
+                        # Parse array like [268, 149]
+                        try:
+                            values = [int(v.strip()) for v in param_match.group(1).split(',')]
+                            action[param] = values
+                        except ValueError:
+                            pass
+
+                if "action" not in action:
+                    raise ValueError("Could not extract action type from do()")
 
                 return action
-            except (SyntaxError, ValueError) as e:
+            except Exception as e:
                 raise ValueError(f"Failed to parse do() action: {e}")
 
         elif response.startswith("finish"):

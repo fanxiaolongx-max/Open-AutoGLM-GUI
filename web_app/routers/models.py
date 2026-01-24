@@ -23,6 +23,8 @@ class ModelServiceCreate(BaseModel):
     top_p: float = 0.85
     frequency_penalty: float = 0.2
     description: str = ""
+    protocol: str = "openai"
+    category: str = ""
 
 
 class ModelServiceUpdate(BaseModel):
@@ -37,6 +39,8 @@ class ModelServiceUpdate(BaseModel):
     frequency_penalty: float = 0.2
     description: str = ""
     is_active: bool = False
+    protocol: str = "openai"
+    category: str = ""
 
 
 class TestConfigRequest(BaseModel):

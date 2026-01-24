@@ -1,4 +1,4 @@
-"""Model client for AI inference using OpenAI-compatible API."""
+"""Model client for AI inference supporting multiple protocols."""
 
 import json
 import time
@@ -6,6 +6,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from openai import OpenAI
+
+try:
+    import anthropic
+    HAS_ANTHROPIC = True
+except ImportError:
+    HAS_ANTHROPIC = False
+    anthropic = None
+
+try:
+    import google.generativeai as genai
+    HAS_GEMINI = True
+except ImportError:
+    HAS_GEMINI = False
+    genai = None
 
 from phone_agent.config.i18n import get_message
 
@@ -23,6 +37,7 @@ class ModelConfig:
     frequency_penalty: float = 0.2
     extra_body: dict[str, Any] = field(default_factory=dict)
     lang: str = "cn"  # Language for UI messages: 'cn' or 'en'
+    protocol: str = "openai"  # Protocol type: 'openai', 'anthropic', 'gemini'
 
 
 @dataclass
@@ -36,11 +51,20 @@ class ModelResponse:
     time_to_first_token: float | None = None  # Time to first token (seconds)
     time_to_thinking_end: float | None = None  # Time to thinking end (seconds)
     total_time: float | None = None  # Total inference time (seconds)
+    # Token usage
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
 
 
 class ModelClient:
     """
-    Client for interacting with OpenAI-compatible vision-language models.
+    Client for interacting with AI models supporting multiple protocols.
+
+    Supported protocols:
+    - openai: OpenAI-compatible API
+    - anthropic: Anthropic Claude API
+    - gemini: Google Gemini API
 
     Args:
         config: Model configuration.
@@ -48,7 +72,51 @@ class ModelClient:
 
     def __init__(self, config: ModelConfig | None = None):
         self.config = config or ModelConfig()
-        self.client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
+        self._init_client()
+
+    def _init_client(self):
+        """Initialize the appropriate client based on protocol."""
+        protocol = self.config.protocol.lower()
+
+        if protocol == "anthropic":
+            if not HAS_ANTHROPIC:
+                raise ImportError("anthropic package not installed. Run: pip install anthropic")
+            # Parse base_url for Anthropic - SDK adds /v1/messages automatically
+            base_url = self.config.base_url.rstrip('/')
+            if base_url.endswith('/v1/messages'):
+                base_url = base_url[:-12]  # Remove /v1/messages
+            elif base_url.endswith('/messages'):
+                base_url = base_url[:-9]  # Remove /messages
+            elif base_url.endswith('/v1'):
+                base_url = base_url[:-3]  # Remove /v1
+            self.client = anthropic.Anthropic(
+                api_key=self.config.api_key or "EMPTY",
+                base_url=base_url,
+            )
+        elif protocol == "gemini":
+            if not HAS_GEMINI:
+                raise ImportError("google-generativeai package not installed. Run: pip install google-generativeai")
+            # Check if using a proxy/custom endpoint
+            base_url = self.config.base_url.rstrip('/') if self.config.base_url else ""
+            # Remove /v1 suffix if present
+            if base_url.endswith('/v1'):
+                base_url = base_url[:-3]
+            is_official = not base_url or "googleapis.com" in base_url or "generativelanguage.googleapis.com" in base_url
+
+            if is_official:
+                # Official Gemini API
+                genai.configure(api_key=self.config.api_key)
+            else:
+                # Proxy endpoint - need to set client_options
+                genai.configure(
+                    api_key=self.config.api_key,
+                    transport='rest',
+                    client_options={'api_endpoint': base_url}
+                )
+            self.client = genai.GenerativeModel(self.config.model_name)
+        else:
+            # Default to OpenAI protocol
+            self.client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
 
     def request(self, messages: list[dict[str, Any]]) -> ModelResponse:
         """
@@ -63,10 +131,22 @@ class ModelClient:
         Raises:
             ValueError: If the response cannot be parsed.
         """
-        # Start timing
+        protocol = self.config.protocol.lower()
+
+        if protocol == "anthropic":
+            return self._request_anthropic(messages)
+        elif protocol == "gemini":
+            return self._request_gemini(messages)
+        else:
+            return self._request_openai(messages)
+
+    def _request_openai(self, messages: list[dict[str, Any]]) -> ModelResponse:
+        """Send request using OpenAI protocol."""
         start_time = time.time()
         time_to_first_token = None
         time_to_thinking_end = None
+        input_tokens = 0
+        output_tokens = 0
 
         stream = self.client.chat.completions.create(
             messages=messages,
@@ -77,54 +157,51 @@ class ModelClient:
             frequency_penalty=self.config.frequency_penalty,
             extra_body=self.config.extra_body,
             stream=True,
+            stream_options={"include_usage": True},
         )
 
         raw_content = ""
-        buffer = ""  # Buffer to hold content that might be part of a marker
+        buffer = ""
         action_markers = ["finish(message=", "do(action="]
-        in_action_phase = False  # Track if we've entered the action phase
+        in_action_phase = False
         first_token_received = False
 
         for chunk in stream:
+            # Capture usage from final chunk
+            if hasattr(chunk, 'usage') and chunk.usage:
+                input_tokens = chunk.usage.prompt_tokens or 0
+                output_tokens = chunk.usage.completion_tokens or 0
             if len(chunk.choices) == 0:
                 continue
             if chunk.choices[0].delta.content is not None:
                 content = chunk.choices[0].delta.content
                 raw_content += content
 
-                # Record time to first token
                 if not first_token_received:
                     time_to_first_token = time.time() - start_time
                     first_token_received = True
 
                 if in_action_phase:
-                    # Already in action phase, just accumulate content without printing
                     continue
 
                 buffer += content
 
-                # Check if any marker is fully present in buffer
                 marker_found = False
                 for marker in action_markers:
                     if marker in buffer:
-                        # Marker found, print everything before it
                         thinking_part = buffer.split(marker, 1)[0]
                         print(thinking_part, end="", flush=True)
-                        print()  # Print newline after thinking is complete
+                        print()
                         in_action_phase = True
                         marker_found = True
 
-                        # Record time to thinking end
                         if time_to_thinking_end is None:
                             time_to_thinking_end = time.time() - start_time
-
                         break
 
                 if marker_found:
-                    continue  # Continue to collect remaining content
+                    continue
 
-                # Check if buffer ends with a prefix of any marker
-                # If so, don't print yet (wait for more content)
                 is_potential_marker = False
                 for marker in action_markers:
                     for i in range(1, len(marker)):
@@ -135,34 +212,12 @@ class ModelClient:
                         break
 
                 if not is_potential_marker:
-                    # Safe to print the buffer
                     print(buffer, end="", flush=True)
                     buffer = ""
 
-        # Calculate total time
         total_time = time.time() - start_time
-
-        # Parse thinking and action from response
         thinking, action = self._parse_response(raw_content)
-
-        # Print performance metrics
-        lang = self.config.lang
-        print()
-        print("=" * 50)
-        print(f"⏱️  {get_message('performance_metrics', lang)}:")
-        print("-" * 50)
-        if time_to_first_token is not None:
-            print(
-                f"{get_message('time_to_first_token', lang)}: {time_to_first_token:.3f}s"
-            )
-        if time_to_thinking_end is not None:
-            print(
-                f"{get_message('time_to_thinking_end', lang)}:        {time_to_thinking_end:.3f}s"
-            )
-        print(
-            f"{get_message('total_inference_time', lang)}:          {total_time:.3f}s"
-        )
-        print("=" * 50)
+        self._print_metrics(time_to_first_token, time_to_thinking_end, total_time, input_tokens, output_tokens)
 
         return ModelResponse(
             thinking=thinking,
@@ -171,7 +226,229 @@ class ModelClient:
             time_to_first_token=time_to_first_token,
             time_to_thinking_end=time_to_thinking_end,
             total_time=total_time,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
         )
+
+    def _request_anthropic(self, messages: list[dict[str, Any]]) -> ModelResponse:
+        """Send request using Anthropic protocol."""
+        start_time = time.time()
+        time_to_first_token = None
+        time_to_thinking_end = None
+        input_tokens = 0
+        output_tokens = 0
+
+        # Convert OpenAI format messages to Anthropic format
+        system_content = ""
+        anthropic_messages = []
+
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+
+            if role == "system":
+                if isinstance(content, str):
+                    system_content = content
+                continue
+
+            # Convert content format
+            if isinstance(content, list):
+                # Handle multi-modal content
+                converted_content = []
+                for item in content:
+                    if item.get("type") == "text":
+                        converted_content.append({"type": "text", "text": item.get("text", "")})
+                    elif item.get("type") == "image_url":
+                        image_url = item.get("image_url", {}).get("url", "")
+                        if image_url.startswith("data:image/"):
+                            # Extract base64 data
+                            parts = image_url.split(",", 1)
+                            if len(parts) == 2:
+                                media_type = parts[0].split(";")[0].replace("data:", "")
+                                converted_content.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": parts[1],
+                                    }
+                                })
+                content = converted_content
+            else:
+                content = [{"type": "text", "text": str(content)}]
+
+            anthropic_messages.append({
+                "role": "user" if role == "user" else "assistant",
+                "content": content,
+            })
+
+        # Stream response
+        raw_content = ""
+        buffer = ""
+        action_markers = ["finish(message=", "do(action="]
+        in_action_phase = False
+        first_token_received = False
+
+        with self.client.messages.stream(
+            model=self.config.model_name,
+            max_tokens=self.config.max_tokens,
+            system=system_content if system_content else anthropic.NOT_GIVEN,
+            messages=anthropic_messages,
+            temperature=self.config.temperature,
+            top_p=self.config.top_p,
+        ) as stream:
+            for text in stream.text_stream:
+                raw_content += text
+
+                if not first_token_received:
+                    time_to_first_token = time.time() - start_time
+                    first_token_received = True
+
+                if in_action_phase:
+                    continue
+
+                buffer += text
+
+                marker_found = False
+                for marker in action_markers:
+                    if marker in buffer:
+                        thinking_part = buffer.split(marker, 1)[0]
+                        print(thinking_part, end="", flush=True)
+                        print()
+                        in_action_phase = True
+                        marker_found = True
+
+                        if time_to_thinking_end is None:
+                            time_to_thinking_end = time.time() - start_time
+                        break
+
+                if marker_found:
+                    continue
+
+                is_potential_marker = False
+                for marker in action_markers:
+                    for i in range(1, len(marker)):
+                        if buffer.endswith(marker[:i]):
+                            is_potential_marker = True
+                            break
+                    if is_potential_marker:
+                        break
+
+                if not is_potential_marker:
+                    print(buffer, end="", flush=True)
+                    buffer = ""
+
+            # Get final message for usage stats
+            final_message = stream.get_final_message()
+            if final_message and final_message.usage:
+                input_tokens = final_message.usage.input_tokens or 0
+                output_tokens = final_message.usage.output_tokens or 0
+
+        total_time = time.time() - start_time
+        thinking, action = self._parse_response(raw_content)
+        self._print_metrics(time_to_first_token, time_to_thinking_end, total_time, input_tokens, output_tokens)
+
+        return ModelResponse(
+            thinking=thinking,
+            action=action,
+            raw_content=raw_content,
+            time_to_first_token=time_to_first_token,
+            time_to_thinking_end=time_to_thinking_end,
+            total_time=total_time,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+        )
+
+    def _request_gemini(self, messages: list[dict[str, Any]]) -> ModelResponse:
+        """Send request using Gemini protocol."""
+        start_time = time.time()
+        input_tokens = 0
+        output_tokens = 0
+
+        # Convert messages to Gemini format
+        gemini_contents = []
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+
+            if role == "system":
+                # Gemini handles system as user instruction
+                if isinstance(content, str):
+                    gemini_contents.append({"role": "user", "parts": [content]})
+                continue
+
+            parts = []
+            if isinstance(content, list):
+                for item in content:
+                    if item.get("type") == "text":
+                        parts.append(item.get("text", ""))
+                    elif item.get("type") == "image_url":
+                        image_url = item.get("image_url", {}).get("url", "")
+                        if image_url.startswith("data:image/"):
+                            import base64
+                            data_parts = image_url.split(",", 1)
+                            if len(data_parts) == 2:
+                                image_data = base64.b64decode(data_parts[1])
+                                parts.append({"mime_type": "image/png", "data": image_data})
+            else:
+                parts.append(str(content))
+
+            gemini_role = "user" if role == "user" else "model"
+            gemini_contents.append({"role": gemini_role, "parts": parts})
+
+        # Generate response (Gemini doesn't support streaming in the same way)
+        response = self.client.generate_content(
+            gemini_contents,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=self.config.max_tokens,
+                temperature=self.config.temperature,
+                top_p=self.config.top_p,
+            ),
+        )
+
+        total_time = time.time() - start_time
+        raw_content = response.text if response.text else ""
+
+        # Get token usage from Gemini response
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            input_tokens = response.usage_metadata.prompt_token_count or 0
+            output_tokens = response.usage_metadata.candidates_token_count or 0
+
+        # Print content
+        print(raw_content)
+
+        thinking, action = self._parse_response(raw_content)
+        self._print_metrics(None, None, total_time, input_tokens, output_tokens)
+
+        return ModelResponse(
+            thinking=thinking,
+            action=action,
+            raw_content=raw_content,
+            time_to_first_token=None,
+            time_to_thinking_end=None,
+            total_time=total_time,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+        )
+
+    def _print_metrics(self, time_to_first_token, time_to_thinking_end, total_time, input_tokens=0, output_tokens=0):
+        """Print performance metrics."""
+        lang = self.config.lang
+        print()
+        print("=" * 50)
+        print(f"⏱️  {get_message('performance_metrics', lang)}:")
+        print("-" * 50)
+        if time_to_first_token is not None:
+            print(f"{get_message('time_to_first_token', lang)}: {time_to_first_token:.3f}s")
+        if time_to_thinking_end is not None:
+            print(f"{get_message('time_to_thinking_end', lang)}:        {time_to_thinking_end:.3f}s")
+        print(f"{get_message('total_inference_time', lang)}:          {total_time:.3f}s")
+        if input_tokens > 0 or output_tokens > 0:
+            print(f"📊 Tokens: {input_tokens} in + {output_tokens} out = {input_tokens + output_tokens} total")
+        print("=" * 50)
 
     def _parse_response(self, content: str) -> tuple[str, str]:
         """

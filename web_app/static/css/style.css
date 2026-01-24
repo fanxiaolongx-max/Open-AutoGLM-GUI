@@ -422,14 +422,16 @@ tr:hover {
     z-index: 1000;
 }
 
-.modal {
-    background: var(--card-bg);
+.modal,
+.modal-content {
+    background: #ffffff;
     border-radius: 16px;
     padding: 24px;
     max-width: 500px;
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
 .modal-header {
@@ -583,4 +585,88 @@ tr:hover {
 
 .toast.warning {
     border-left: 4px solid var(--warning-color);
+}
+
+/* Todo List Styles for Complex Tasks */
+.todo-list-card {
+    margin-top: 12px;
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+}
+
+.todo-list-header {
+    font-weight: 600;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    color: var(--text-color);
+}
+
+.todo-item {
+    padding: 8px;
+    margin-bottom: 6px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    transition: all 0.2s;
+}
+
+.todo-item:last-child {
+    margin-bottom: 0;
+}
+
+.todo-item.running {
+    border-color: var(--primary-color);
+    background: #eff6ff;
+}
+
+.todo-item.completed {
+    border-color: var(--success-color);
+    background: #f0fdf4;
+}
+
+.todo-item.failed {
+    border-color: var(--danger-color);
+    background: #fef2f2;
+}
+
+.todo-item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.todo-status {
+    flex-shrink: 0;
+    font-size: 1rem;
+}
+
+.todo-content {
+    flex: 1;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--text-color);
+}
+
+.todo-logs {
+    margin-top: 8px;
+    padding: 8px;
+    background: #fafafa;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+}
+
+.todo-log-item {
+    padding: 2px 0;
+    color: #666;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.todo-log-more {
+    margin-top: 4px;
+    color: #999;
+    font-style: italic;
 }
