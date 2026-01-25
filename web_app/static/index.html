@@ -909,6 +909,17 @@
                                 <span v-else style="color: #f59e0b;">请先选择设备</span>
                             </div>
                             <div class="chat-header-right">
+                                <div class="email-toggle" v-if="complexTaskMode" style="margin-right: 12px;">
+                                    <span>⏱️ 超时</span>
+                                    <select v-model="subtaskTimeoutSeconds"
+                                        style="padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd; font-size: 12px; background: white;">
+                                        <option :value="60">1分钟</option>
+                                        <option :value="120">2分钟</option>
+                                        <option :value="180">3分钟</option>
+                                        <option :value="300">5分钟</option>
+                                        <option :value="600">10分钟</option>
+                                    </select>
+                                </div>
                                 <div class="email-toggle">
                                     <span>🧩 复杂任务</span>
                                     <div class="toggle-switch" :class="{ active: complexTaskMode }"
@@ -950,9 +961,27 @@
                                                         <span v-else-if="item.status === 'running'"
                                                             class="mini-spinner"></span>
                                                         <span v-else-if="item.status === 'failed'">❌</span>
+                                                        <span v-else-if="item.status === 'skipped'">⏭️</span>
                                                         <span v-else>⬜</span>
                                                     </span>
                                                     <span class="todo-content">{{ item.content }}</span>
+                                                    <span
+                                                        v-if="chatRunning && item.status === 'running' && subtaskCountdown > 0"
+                                                        style="margin-left: auto; padding: 2px 8px; border-radius: 4px; 
+                                                               background: rgba(59, 130, 246, 0.1); color: #3b82f6; 
+                                                               font-size: 11px; font-family: monospace;">
+                                                        ⏱️ {{ Math.floor(subtaskCountdown / 60) }}:{{
+                                                        String(subtaskCountdown % 60).padStart(2, '0') }}
+                                                    </span>
+                                                    <button v-if="chatRunning && item.status === 'running'"
+                                                        @click.stop="skipSubtask(msg)" title="跳过此步骤"
+                                                        style="margin-left: 8px; padding: 2px 8px; border-radius: 4px; 
+                                                               background: rgba(251, 191, 36, 0.1); color: #d97706; border: 1px solid rgba(251, 191, 36, 0.3);
+                                                               cursor: pointer; font-size: 11px; display: flex; align-items: center; gap: 4px; transition: all 0.2s;"
+                                                        @mouseenter="$event.target.style.background='rgba(251, 191, 36, 0.2)'"
+                                                        @mouseleave="$event.target.style.background='rgba(251, 191, 36, 0.1)'">
+                                                        ⏭️ 跳过
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -999,6 +1028,13 @@
                                     </div>
                                     <!-- 时间戳和token显示 -->
                                     <div class="chat-meta" v-if="msg.timestamp">
+                                        <button v-if="msg.role === 'user' && !chatRunning" class="retry-icon-btn"
+                                            @click.stop="retryMessage(msg.content)" title="重新发送" style="background: none; border: none; cursor: pointer; font-size: 12px; margin-right: 6px; 
+                                                   opacity: 0.6; transition: opacity 0.2s; padding: 0;"
+                                            @mouseenter="$event.target.style.opacity='1'"
+                                            @mouseleave="$event.target.style.opacity='0.6'">
+                                            🔄
+                                        </button>
                                         <span>{{ formatMsgTime(msg.timestamp) }}</span>
                                         <span v-if="msg.tokens" style="margin-left: 8px;">{{ msg.tokens }} tokens</span>
                                     </div>
@@ -1179,21 +1215,37 @@
 
                 <!-- Tasks Page -->
                 <div v-if="currentPage === 'tasks'" class="fade-in">
-                    <!-- Selected Devices -->
+                    <!-- Select Devices -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">已选设备 ({{ selectedDevices.length }})</h2>
-                            <button class="btn btn-secondary btn-sm" @click="selectAllDevices">
-                                {{ selectedDevices.length === devices.length ? '取消全选' : '全选' }}
-                            </button>
+                            <h2 class="card-title">选择设备 ({{ selectedDevices.length }}/{{ devices.length }})</h2>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-secondary btn-sm" @click="selectAllDevices">
+                                    {{ selectedDevices.length === devices.length ? '取消全选' : '全选' }}
+                                </button>
+                                <button class="btn btn-secondary btn-sm" @click="refreshDevices" :disabled="loading">
+                                    🔄 刷新
+                                </button>
+                            </div>
                         </div>
-                        <div v-if="selectedDevices.length === 0" class="empty-state" style="padding: 20px;">
-                            <p>No devices selected. Go to Devices page to select devices.</p>
+                        <div v-if="devices.length === 0" class="empty-state" style="padding: 20px;">
+                            <p>暂无已连接设备，请先连接设备</p>
                         </div>
-                        <div v-else style="display: flex; flex-wrap: wrap; gap: 8px;">
-                            <span v-for="id in selectedDevices" :key="id" class="badge badge-info">
-                                {{ getDeviceName(id) }}
-                            </span>
+                        <div v-else style="display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 0;">
+                            <label v-for="device in devices" :key="device.id" class="device-select-item"
+                                :class="{ selected: selectedDevices.includes(device.id) }" style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; 
+                                       background: var(--bg-secondary); border-radius: 8px; cursor: pointer;
+                                       border: 2px solid transparent; transition: all 0.2s;"
+                                :style="{ borderColor: selectedDevices.includes(device.id) ? 'var(--primary)' : 'transparent' }">
+                                <input type="checkbox" :value="device.id" v-model="selectedDevices"
+                                    style="width: 18px; height: 18px; cursor: pointer;">
+                                <div>
+                                    <div style="font-weight: 500;">{{ device.name || device.id.substring(0, 20) }}</div>
+                                    <div style="font-size: 12px; color: var(--text-secondary);">
+                                        {{ device.status === 'connected' ? '🟢 在线' : '🔴 离线' }}
+                                    </div>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
@@ -2516,6 +2568,9 @@
                     const chatMessagesRef = ref(null);
                     const chatAutoEmail = ref(false);  // Default: no auto email in chat mode
                     const complexTaskMode = ref(false);  // 复杂任务模式：先拆解成todolist再逐个执行
+                    const subtaskTimeoutSeconds = ref(180);  // 子任务超时时间（秒），默认3分钟
+                    const subtaskCountdown = ref(0);  // 子任务剩余秒数（用于倒计时显示）
+                    let subtaskCountdownTimer = null;  // 倒计时定时器
                     let currentChatTaskId = null;
                     let chatScrollPosition = 0;  // 保存 Chat 滚动位置
 
@@ -3301,6 +3356,40 @@
                         el.style.height = Math.min(el.scrollHeight, 100) + 'px';
                     }
 
+                    // 监听输入内容变化，自动调整高度
+                    watch(chatInput, () => {
+                        nextTick(() => {
+                            const el = document.querySelector('.chat-input');
+                            if (el) {
+                                el.style.height = 'auto';
+                                // 如果内容为空，重置为初始高度（通过 rows 属性控制）
+                                if (!chatInput.value) {
+                                    el.style.height = '';
+                                } else {
+                                    el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+                                }
+                            }
+                        });
+                    });
+
+                    // Retry a previous message
+                    function retryMessage(content) {
+                        if (chatRunning.value) return;
+                        chatInput.value = content;
+                        sendChatMessage();
+                    }
+
+                    const isSkipping = ref(false);
+
+                    async function skipSubtask(msg) {
+                        if (!chatRunning.value) return;
+                        if (confirm('确定要跳过当前子任务吗？(将停止当前操作并进入下一步)')) {
+                            isSkipping.value = true;
+                            // 强制停止当前任务
+                            await apiCall('/api/tasks/stop', { method: 'POST' });
+                        }
+                    }
+
                     async function sendChatMessage() {
                         const content = chatInput.value.trim();
                         if (!content || !chatDeviceId.value || chatRunning.value) return;
@@ -3477,9 +3566,10 @@
                                         const maxRetries = 2;  // 最多重试2次
                                         let retryCount = 0;
                                         let subtaskSuccess = false;
+                                        let skipRetry = false;  // 超时后不重试
 
-                                        // 重试循环
-                                        while (retryCount <= maxRetries && !subtaskSuccess) {
+                                        // 重试循环（超时后不重试）
+                                        while (retryCount <= maxRetries && !subtaskSuccess && !skipRetry) {
                                             if (retryCount > 0) {
                                                 console.log(`[子任务 ${i + 1}/${totalTasks}] 重试第 ${retryCount} 次...`);
                                                 assistantMsg.content = `🔄 重试子任务 (${retryCount}/${maxRetries}): ${todoItem.content} (${i + 1}/${totalTasks})`;
@@ -3495,6 +3585,15 @@
                                             }
                                             saveCurrentSession();
                                             scrollChatToBottom();
+
+                                            // 启动倒计时定时器
+                                            const countdownStartTime = Date.now();
+                                            subtaskCountdown.value = subtaskTimeoutSeconds.value;
+                                            if (subtaskCountdownTimer) clearInterval(subtaskCountdownTimer);
+                                            subtaskCountdownTimer = setInterval(() => {
+                                                const elapsed = Math.floor((Date.now() - countdownStartTime) / 1000);
+                                                subtaskCountdown.value = Math.max(0, subtaskTimeoutSeconds.value - elapsed);
+                                            }, 1000);
 
                                             try {
                                                 // 执行单个子任务
@@ -3524,13 +3623,28 @@
                                                 // 等待任务完成（通过轮询状态）
                                                 let taskCompleted = false;
                                                 let attempts = 0;
-                                                const maxAttempts = 300;  // 最多等5分钟 (300 * 1000ms)
+                                                const maxAttempts = 600;  // 最多等10分钟 (600 * 1000ms)，实际由超时设置控制
+                                                const subtaskStartTime = Date.now();  // 记录子任务开始时间
 
                                                 while (!taskCompleted && attempts < maxAttempts) {
                                                     // 每次轮询前检查用户是否停止了任务
                                                     if (!chatRunning.value) {
                                                         console.log(`[子任务 ${i + 1}] 轮询中检测到用户停止`);
                                                         todoItem.status = 'failed';
+                                                        break;
+                                                    }
+
+                                                    // 检查是否超时
+                                                    const elapsedSeconds = (Date.now() - subtaskStartTime) / 1000;
+                                                    if (elapsedSeconds > subtaskTimeoutSeconds.value) {
+                                                        console.log(`[子任务 ${i + 1}] 超时 (${elapsedSeconds.toFixed(0)}s > ${subtaskTimeoutSeconds.value}s)`);
+                                                        todoItem.status = 'failed';
+                                                        todoItem.logs.push(`⏰ 超时 (${subtaskTimeoutSeconds.value}秒)`);
+                                                        // 强制停止当前运行的任务
+                                                        await apiCall('/api/tasks/stop', { method: 'POST' });
+                                                        taskCompleted = true;
+                                                        allSuccess = false;
+                                                        skipRetry = true;  // 超时后不重试
                                                         break;
                                                     }
 
@@ -3545,9 +3659,22 @@
                                                                 todoItem.status = 'completed';
                                                                 subtaskSuccess = true;
                                                                 console.log(`[子任务 ${i + 1}] 完成 (status=completed)`);
+                                                                todoItem.status = 'completed';
+                                                                subtaskSuccess = true;
+                                                                console.log(`[子任务 ${i + 1}] 完成 (status=completed)`);
                                                             } else if (status.task.status === 'stopped') {
-                                                                todoItem.status = 'failed';
-                                                                console.log(`[子任务 ${i + 1}] 已停止`);
+                                                                // 检查是否是用户手动跳过
+                                                                if (isSkipping.value) {
+                                                                    todoItem.status = 'skipped';
+                                                                    subtaskSuccess = true; // 视为成功，继续下一个
+                                                                    console.log(`[子任务 ${i + 1}] 已跳过`);
+                                                                    isSkipping.value = false; // 重置标志
+                                                                    // 给一点时间让界面更新
+                                                                    await new Promise(resolve => setTimeout(resolve, 500));
+                                                                } else {
+                                                                    todoItem.status = 'failed';
+                                                                    console.log(`[子任务 ${i + 1}] 已停止`);
+                                                                }
                                                             } else {
                                                                 todoItem.status = 'failed';
                                                                 console.log(`[子任务 ${i + 1}] 失败 (status=${status.task.status})`);
@@ -3578,8 +3705,8 @@
                                                 console.error(`[子任务 ${i + 1}] 错误详情:`, error.message);
                                             }
 
-                                            // 如果子任务失败，增加重试计数
-                                            if (!subtaskSuccess && todoItem.status === 'failed') {
+                                            // 如果子任务失败且不是超时，增加重试计数
+                                            if (!subtaskSuccess && todoItem.status === 'failed' && !skipRetry) {
                                                 retryCount++;
                                                 if (retryCount <= maxRetries) {
                                                     todoItem.logs = todoItem.logs || [];
@@ -3588,8 +3715,16 @@
                                             }
                                         }
 
-                                        // 重试后仍然失败，中止整个任务
-                                        if (!subtaskSuccess) {
+                                        // 停止倒计时定时器
+                                        if (subtaskCountdownTimer) {
+                                            clearInterval(subtaskCountdownTimer);
+                                            subtaskCountdownTimer = null;
+                                        }
+                                        subtaskCountdown.value = 0;
+
+                                        // 重试后仍然失败（非超时情况），中止整个任务
+                                        // 超时情况下继续执行下一个子任务
+                                        if (!subtaskSuccess && !skipRetry) {
                                             allSuccess = false;
                                             todoItem.logs = todoItem.logs || [];
                                             todoItem.logs.push(`❌ 子任务在重试 ${maxRetries} 次后仍然失败，中止任务执行`);
@@ -3602,6 +3737,9 @@
                                                 }
                                             }
                                             break;  // 中止整个任务循环
+                                        } else if (skipRetry) {
+                                            // 超时情况下，继续执行下一个子任务
+                                            console.log(`[子任务 ${i + 1}] 超时失败，继续执行下一个子任务`);
                                         }
 
                                         saveCurrentSession();
@@ -4960,7 +5098,11 @@
                         chatMessagesRef,
                         chatAutoEmail,
                         complexTaskMode,
+                        subtaskTimeoutSeconds,
+                        subtaskCountdown,
                         sendChatMessage,
+                        retryMessage,
+                        skipSubtask,
                         stopChatTask,
                         onChatDeviceChange,
                         adjustChatInputHeight,

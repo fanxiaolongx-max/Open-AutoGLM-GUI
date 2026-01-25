@@ -215,13 +215,8 @@ class PhoneAgent:
         for attempt in range(max_retries + 1):
             try:
                 msgs = get_messages(self.agent_config.lang)
-                if attempt == 0:
-                    print("\n" + "=" * 50)
-                    print(f"💭 {msgs['thinking']}:")
-                    print("-" * 50)
-                else:
+                if attempt > 0:
                     print(f"\n⚠️ 模型返回空响应，正在重试 ({attempt}/{max_retries})...")
-                    print("-" * 50)
 
                 if self._stop_requested:
                     return StepResult(
@@ -266,11 +261,33 @@ class PhoneAgent:
             action = finish(message=error_msg)
 
         if self.agent_config.verbose:
-            # Print thinking process
-            print("-" * 50)
-            print(f"🎯 {msgs['action']}:")
-            print(json.dumps(action, ensure_ascii=False, indent=2))
-            print("=" * 50 + "\n")
+            # Print thinking process (simplified)
+            # Use regex to remove all XML-like tags
+            import re
+            thinking = re.sub(r'<[^>]+>', '', response.thinking).strip()
+            print(f"💭 思考过程:\n{thinking}\n")
+            
+            # Print action (simplified JSON)
+            print(f"🎯 执行动作:")
+            # Simplify JSON output
+            simple_action = action.copy()
+            if "_metadata" in simple_action:
+                del simple_action["_metadata"]
+            
+            # Format as single line summary
+            action_type = simple_action.pop("action", "Unknown")
+            params = []
+            for k, v in simple_action.items():
+                params.append(f'{k}={json.dumps(v, ensure_ascii=False)}')
+            
+            summary = f"{action_type}({', '.join(params)})"
+            # Pretty print simplified JSON
+            print(json.dumps({
+                "_metadata": action.get("_metadata", ""),
+                "action": action_type,
+                "summary": summary
+            }, ensure_ascii=False, indent=2))
+            print("")
 
         # Check for stop request before executing action
         if self._stop_requested:
@@ -310,11 +327,7 @@ class PhoneAgent:
 
         if finished and self.agent_config.verbose:
             msgs = get_messages(self.agent_config.lang)
-            print("\n" + "🎉 " + "=" * 48)
-            print(
-                f"✅ {msgs['task_completed']}: {result.message or action.get('message', msgs['done'])}"
-            )
-            print("=" * 50 + "\n")
+            print(f"🎉 ✅ {msgs['task_completed']}: {result.message or action.get('message', msgs['done'])}\n")
 
         return StepResult(
             success=result.success,
