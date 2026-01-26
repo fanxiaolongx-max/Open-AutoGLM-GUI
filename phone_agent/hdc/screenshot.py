@@ -12,6 +12,43 @@ from typing import Tuple
 from PIL import Image
 from phone_agent.hdc.connection import _run_hdc_command
 
+from phone_agent.config.screenshot import SCREENSHOT_CONFIG
+
+
+def _compress_image(img: Image.Image) -> tuple[str, int, int]:
+    """
+    Compress an image for API transmission.
+    
+    - Resizes if larger than configured max dimension
+    - Converts to JPEG with configured quality
+    - Returns base64 encoded data and dimensions
+    """
+    width, height = img.size
+    
+    # Resize if too large (use configured max dimension)
+    max_dimension = SCREENSHOT_CONFIG.max_image_dimension
+    if width > max_dimension or height > max_dimension:
+        ratio = min(max_dimension / width, max_dimension / height)
+        new_width = int(width * ratio)
+        new_height = int(height * ratio)
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        width, height = new_width, new_height
+    
+    # Convert RGBA to RGB (JPEG doesn't support alpha channel)
+    if img.mode == 'RGBA':
+        background = Image.new('RGB', img.size, (255, 255, 255))
+        background.paste(img, mask=img.split()[3])
+        img = background
+    elif img.mode != 'RGB':
+        img = img.convert('RGB')
+    
+    # Compress as JPEG (use configured quality)
+    buffered = BytesIO()
+    img.save(buffered, format="JPEG", quality=SCREENSHOT_CONFIG.jpeg_quality, optimize=True)
+    base64_data = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    
+    return base64_data, width, height
+
 
 @dataclass
 class Screenshot:
@@ -80,14 +117,9 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
         if not os.path.exists(temp_path):
             return _create_fallback_screenshot(is_sensitive=False)
 
-        # Read JPEG image and convert to PNG for model inference
-        # PIL automatically detects the image format from file content
+        # Read image and compress for API transmission
         img = Image.open(temp_path)
-        width, height = img.size
-
-        buffered = BytesIO()
-        img.save(buffered, format="PNG")
-        base64_data = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        base64_data, width, height = _compress_image(img)
 
         # Cleanup
         os.remove(temp_path)

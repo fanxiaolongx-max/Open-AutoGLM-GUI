@@ -930,6 +930,11 @@
                                     <div class="toggle-switch" :class="{ active: chatAutoEmail }"
                                         @click="chatAutoEmail = !chatAutoEmail"></div>
                                 </div>
+                                <div class="email-toggle">
+                                    <span>🐛 调试模式</span>
+                                    <div class="toggle-switch" :class="{ active: debugMode }"
+                                        @click="debugMode = !debugMode"></div>
+                                </div>
                             </div>
                         </div>
 
@@ -1963,6 +1968,54 @@
 
                     <div class="card">
                         <div class="card-header">
+                            <h2 class="card-title">📸 截图压缩设置</h2>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">最大图片尺寸</label>
+                            <div style="display: flex; align-items: center; gap: 16px;">
+                                <input type="range" v-model.number="screenshotConfig.max_dimension" min="480" max="3840"
+                                    step="120" style="flex: 1;">
+                                <span style="min-width: 100px; font-weight: 500;">{{ screenshotConfig.max_dimension
+                                    }}px</span>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                                截图会被按比例缩放到此尺寸。默认：1920px
+                            </p>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">JPEG 压缩质量</label>
+                            <div style="display: flex; align-items: center; gap: 16px;">
+                                <input type="range" v-model.number="screenshotConfig.jpeg_quality" min="10" max="100"
+                                    step="5" style="flex: 1;">
+                                <span style="min-width: 100px; font-weight: 500;">{{ screenshotConfig.jpeg_quality
+                                    }}%</span>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                                质量越高图片越清晰但文件越大。默认：70%
+                            </p>
+                        </div>
+
+                        <div style="display: flex; gap: 12px; margin-top: 24px;">
+                            <button class="btn btn-primary" @click="saveScreenshotConfig">
+                                保存设置
+                            </button>
+                            <button class="btn btn-secondary" @click="resetScreenshotConfig">
+                                恢复默认
+                            </button>
+                        </div>
+
+                        <div
+                            style="margin-top: 16px; padding: 12px; background: #f0f9ff; border-radius: 8px; border: 1px solid #bfdbfe;">
+                            <p style="font-size: 12px; color: #1e40af; margin: 0;">
+                                ℹ️ 提示：修改压缩比例<strong>不会影响点击位置准确性</strong>。坐标转换使用设备真实分辨率。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
                             <h2 class="card-title">关于</h2>
                         </div>
                         <p><strong>AutoGLM Web Server</strong> v0.1.0</p>
@@ -2206,81 +2259,6 @@
                     </div>
                 </div>
 
-                <!-- Settings Page -->
-                <div v-if="currentPage === 'settings'" class="fade-in">
-                    <div class="card">
-                        <div class="card-header">
-                            <h2 class="card-title">邮件设置</h2>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label">SMTP 服务器</label>
-                            <input type="text" v-model="emailConfig.smtp_server" class="form-input"
-                                placeholder="smtp.example.com">
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                            <div class="form-group">
-                                <label class="form-label">端口</label>
-                                <input type="number" v-model="emailConfig.smtp_port" class="form-input">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">加密</label>
-                                <select v-model="emailConfig.use_ssl" class="form-select">
-                                    <option :value="true">SSL</option>
-                                    <option :value="false">None/TLS</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label">发送邮箱</label>
-                            <input type="email" v-model="emailConfig.sender_email" class="form-input"
-                                placeholder="your@email.com">
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label">密码 / 授权码</label>
-                            <input type="password" v-model="emailConfig.sender_password" class="form-input"
-                                placeholder="••••••••">
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label">收件人（逗号分隔）</label>
-                            <input type="text" v-model="emailConfig.recipient_emails" class="form-input"
-                                placeholder="user1@email.com, user2@email.com">
-                        </div>
-
-                        <div class="form-group">
-                            <label style="display: flex; align-items: center; gap: 8px;">
-                                <input type="checkbox" v-model="emailConfig.enabled">
-                                启用自动邮件报告
-                            </label>
-                        </div>
-
-                        <div style="display: flex; gap: 12px;">
-                            <button class="btn btn-primary" @click="saveEmailConfig">
-                                保存设置
-                            </button>
-                            <button class="btn btn-secondary" @click="testEmail" :disabled="loading">
-                                发送测试邮件
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div class="card-header">
-                            <h2 class="card-title">关于</h2>
-                        </div>
-                        <p><strong>AutoGLM Web Server</strong> v0.1.0</p>
-                        <p style="margin-top: 8px; color: var(--text-secondary);">
-                            AI-powered phone automation tool. Web interface for Open-AutoGLM-GUI.
-                        </p>
-                        <p style="margin-top: 8px;">
-                            <a href="/docs" target="_blank">API Documentation</a>
-                        </p>
-                    </div>
-                </div>
             </main>
         </div>
 
@@ -2445,6 +2423,49 @@
             </div>
         </div>
 
+        <!-- Tap Preview Modal (Debug Mode) -->
+        <div v-if="showTapPreview" class="task-detail-modal" @click.self="cancelTapPreview">
+            <div class="task-detail-content" style="max-width: 420px;">
+                <div class="task-detail-header">
+                    <h3>🐛 点击预览 (Debug Mode)</h3>
+                    <button class="task-detail-close" @click="cancelTapPreview">✕</button>
+                </div>
+                <div class="task-detail-body" style="padding: 16px;">
+                    <div
+                        style="position: relative; background: #f5f5f5; border-radius: 8px; overflow: hidden; cursor: crosshair;">
+                        <img v-if="tapPreviewData.screenshot"
+                            :src="'data:image/png;base64,' + tapPreviewData.screenshot"
+                            style="width: 100%; display: block;" @click="handleTapPreviewClick">
+                        <!-- Crosshair overlay -->
+                        <div v-if="tapPreviewData.screenshot"
+                            style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none;">
+                            <svg style="width: 100%; height: 100%; position: absolute;">
+                                <!-- Calculate crosshair position based on scale -->
+                                <line :x1="(tapPreviewAdjustedX / tapPreviewData.width) * 100 + '%'" y1="0"
+                                    :x2="(tapPreviewAdjustedX / tapPreviewData.width) * 100 + '%'" y2="100%"
+                                    stroke="#ff0000" stroke-width="2" opacity="0.7" />
+                                <line x1="0" :y1="(tapPreviewAdjustedY / tapPreviewData.height) * 100 + '%'" x2="100%"
+                                    :y2="(tapPreviewAdjustedY / tapPreviewData.height) * 100 + '%'" stroke="#ff0000"
+                                    stroke-width="2" opacity="0.7" />
+                                <circle :cx="(tapPreviewAdjustedX / tapPreviewData.width) * 100 + '%'"
+                                    :cy="(tapPreviewAdjustedY / tapPreviewData.height) * 100 + '%'" r="20" fill="none"
+                                    stroke="#ff0000" stroke-width="2" opacity="0.7" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div style="margin-top: 12px; font-size: 12px; color: #666; text-align: center;">
+                        目标位置: ({{ tapPreviewAdjustedX }}, {{ tapPreviewAdjustedY }})
+                        <br>
+                        <span style="font-size: 11px; color: #999;">点击图片可调整点击位置</span>
+                    </div>
+                    <div style="display: flex; gap: 12px; margin-top: 16px;">
+                        <button class="btn btn-secondary" style="flex: 1;" @click="cancelTapPreview">取消</button>
+                        <button class="btn btn-primary" style="flex: 1;" @click="confirmTapPreview">确认点击</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Phone Preview Toggle Button -->
         <button v-if="!showPhonePreview && devices.length > 0" class="phone-preview-toggle" @click="openPhonePreview"
             title="Show Phone Preview">
@@ -2500,6 +2521,10 @@
                         };
                     }
                     const emailConfig = ref({});
+                    const screenshotConfig = ref({
+                        max_dimension: 1920,
+                        jpeg_quality: 70
+                    });
                     // Rules configuration state
                     const appMappings = ref([]);
                     const timingConfig = ref(null);
@@ -2568,11 +2593,18 @@
                     const chatMessagesRef = ref(null);
                     const chatAutoEmail = ref(false);  // Default: no auto email in chat mode
                     const complexTaskMode = ref(false);  // 复杂任务模式：先拆解成todolist再逐个执行
+                    const debugMode = ref(false);  // 调试模式：点击前显示预览
                     const subtaskTimeoutSeconds = ref(180);  // 子任务超时时间（秒），默认3分钟
                     const subtaskCountdown = ref(0);  // 子任务剩余秒数（用于倒计时显示）
                     let subtaskCountdownTimer = null;  // 倒计时定时器
                     let currentChatTaskId = null;
                     let chatScrollPosition = 0;  // 保存 Chat 滚动位置
+
+                    // Tap preview modal state (debug mode)
+                    const showTapPreview = ref(false);
+                    const tapPreviewData = ref({ requestId: '', x: 0, y: 0, width: 0, height: 0, screenshot: '' });
+                    const tapPreviewAdjustedX = ref(0);
+                    const tapPreviewAdjustedY = ref(0);
 
                     // Chat sessions state
                     const chatSessions = ref([]);
@@ -2847,6 +2879,33 @@
                             case 'ping':
                                 if (ws && ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({ type: 'pong' }));
+                                }
+                                break;
+                            case 'tap_preview_request':
+                                // Debug mode: show tap preview modal
+                                if (debugMode.value) {
+                                    tapPreviewData.value = {
+                                        requestId: data.request_id,
+                                        x: data.x,
+                                        y: data.y,
+                                        width: data.width,
+                                        height: data.height,
+                                        screenshot: data.screenshot
+                                    };
+                                    tapPreviewAdjustedX.value = data.x;
+                                    tapPreviewAdjustedY.value = data.y;
+                                    showTapPreview.value = true;
+                                } else {
+                                    // Auto-confirm if debug mode is not enabled
+                                    if (ws && ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({
+                                            type: 'tap_preview_response',
+                                            request_id: data.request_id,
+                                            proceed: true,
+                                            x: data.x,
+                                            y: data.y
+                                        }));
+                                    }
                                 }
                                 break;
                         }
@@ -3390,6 +3449,46 @@
                         }
                     }
 
+                    // Tap preview functions (debug mode)
+                    function confirmTapPreview() {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'tap_preview_response',
+                                request_id: tapPreviewData.value.requestId,
+                                proceed: true,
+                                x: tapPreviewAdjustedX.value,
+                                y: tapPreviewAdjustedY.value
+                            }));
+                        }
+                        showTapPreview.value = false;
+                    }
+
+                    function cancelTapPreview() {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'tap_preview_response',
+                                request_id: tapPreviewData.value.requestId,
+                                proceed: false,
+                                x: tapPreviewData.value.x,
+                                y: tapPreviewData.value.y
+                            }));
+                        }
+                        showTapPreview.value = false;
+                    }
+
+                    function handleTapPreviewClick(event) {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const x = event.clientX - rect.left;
+                        const y = event.clientY - rect.top;
+
+                        // Convert to device coordinates
+                        const scaleX = tapPreviewData.value.width / rect.width;
+                        const scaleY = tapPreviewData.value.height / rect.height;
+
+                        tapPreviewAdjustedX.value = Math.round(x * scaleX);
+                        tapPreviewAdjustedY.value = Math.round(y * scaleY);
+                    }
+
                     async function sendChatMessage() {
                         const content = chatInput.value.trim();
                         if (!content || !chatDeviceId.value || chatRunning.value) return;
@@ -3616,6 +3715,7 @@
                                                         task_type: "chat",  // 标记为 chat 任务，避免日志出现在 Run Task 页面
                                                         session_id: serverSessionId,  // 传递会话ID
                                                         message_id: serverMessageId,  // 传递消息ID
+                                                        debug_mode: debugMode.value,  // 调试模式
                                                     }),
                                                 });
                                                 console.log(`[子任务 ${i + 1}] run 调用成功:`, runResult);
@@ -3849,6 +3949,7 @@
                                         task_type: "chat",  // 标记为 chat 任务，避免日志出现在 Run Task 页面
                                         session_id: serverSessionId,  // 传递会话ID
                                         message_id: serverMessageId,  // 传递消息ID
+                                        debug_mode: debugMode.value,  // 调试模式
                                     }),
                                 });
                                 // 保存任务ID用于匹配WebSocket事件
@@ -4680,6 +4781,25 @@
                         }
                     }
 
+                    // Screenshot configuration
+                    async function saveScreenshotConfig() {
+                        try {
+                            // Note: Backend API not yet implemented, storing in localStorage for now
+                            localStorage.setItem('screenshot_config', JSON.stringify(screenshotConfig.value));
+                            showToast('截图压缩设置已保存（重启服务后生效）');
+                        } catch (error) {
+                            showToast('保存失败', 'error');
+                        }
+                    }
+
+                    async function resetScreenshotConfig() {
+                        screenshotConfig.value = {
+                            max_dimension: 1920,
+                            jpeg_quality: 70
+                        };
+                        showToast('已恢复默认设置');
+                    }
+
                     // Rules configuration functions
                     async function loadAppMappings() {
                         try {
@@ -5098,12 +5218,21 @@
                         chatMessagesRef,
                         chatAutoEmail,
                         complexTaskMode,
+                        debugMode,
                         subtaskTimeoutSeconds,
                         subtaskCountdown,
                         sendChatMessage,
                         retryMessage,
                         skipSubtask,
                         stopChatTask,
+                        // Tap preview (debug mode)
+                        showTapPreview,
+                        tapPreviewData,
+                        tapPreviewAdjustedX,
+                        tapPreviewAdjustedY,
+                        confirmTapPreview,
+                        cancelTapPreview,
+                        handleTapPreviewClick,
                         onChatDeviceChange,
                         adjustChatInputHeight,
                         openTaskDetail,
@@ -5193,6 +5322,10 @@
                         loadEmailConfig,
                         saveEmailConfig,
                         testEmail,
+                        // Screenshot config
+                        screenshotConfig,
+                        saveScreenshotConfig,
+                        resetScreenshotConfig,
                     };
                 },
             });

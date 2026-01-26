@@ -24,6 +24,16 @@ from .widgets import (
     CodeEditorDialog,
 )
 
+from .chat_worker import ChatTaskWorker
+
+from .chat_widgets import (
+    SessionListWidget,
+    MessageBubble,
+    MessageListWidget,
+    ChatInputWidget,
+    ScreenshotDialog,
+)
+
 __all__ = [
     # Workers
     "StreamEmitter",
@@ -44,4 +54,11 @@ __all__ = [
     "DropZoneWidget",
     "PythonHighlighter",
     "CodeEditorDialog",
+    # Chat components
+    "ChatTaskWorker",
+    "SessionListWidget",
+    "MessageBubble",
+    "MessageListWidget",
+    "ChatInputWidget",
+    "ScreenshotDialog",
 ]

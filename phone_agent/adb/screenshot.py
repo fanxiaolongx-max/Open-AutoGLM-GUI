@@ -13,6 +13,8 @@ from typing import Tuple
 
 from PIL import Image
 
+from phone_agent.config.screenshot import SCREENSHOT_CONFIG
+
 # Global lock to prevent concurrent screenshot operations
 # This avoids conflicts between preview and task execution screenshots
 _screenshot_lock = threading.Lock()
@@ -25,6 +27,49 @@ def set_screenshot_verbose(verbose: bool) -> None:
     """Enable or disable verbose logging for screenshot operations."""
     global _verbose
     _verbose = verbose
+
+
+def _compress_image(img: Image.Image) -> tuple[str, int, int]:
+    """
+    Compress an image for API transmission.
+    
+    - Resizes if larger than configured max dimension
+    - Converts to JPEG with configured quality
+    - Returns base64 encoded data and dimensions
+    """
+    width, height = img.size
+    original_size = width * height
+    
+    # Resize if too large (use configured max dimension)
+    max_dimension = SCREENSHOT_CONFIG.max_image_dimension
+    if width > max_dimension or height > max_dimension:
+        ratio = min(max_dimension / width, max_dimension / height)
+        new_width = int(width * ratio)
+        new_height = int(height * ratio)
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        width, height = new_width, new_height
+        if _verbose:
+            print(f"[Screenshot] Resized from {original_size} to {width}x{height}")
+    
+    # Convert RGBA to RGB (JPEG doesn't support alpha channel)
+    if img.mode == 'RGBA':
+        # Create white background
+        background = Image.new('RGB', img.size, (255, 255, 255))
+        background.paste(img, mask=img.split()[3])  # Use alpha channel as mask
+        img = background
+    elif img.mode != 'RGB':
+        img = img.convert('RGB')
+    
+    # Compress as JPEG (use configured quality)
+    buffered = BytesIO()
+    img.save(buffered, format="JPEG", quality=SCREENSHOT_CONFIG.jpeg_quality, optimize=True)
+    base64_data = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    
+    if _verbose:
+        compressed_size = len(buffered.getvalue())
+        print(f"[Screenshot] Compressed to JPEG: {compressed_size / 1024:.1f}KB")
+    
+    return base64_data, width, height
 
 
 @dataclass
@@ -98,16 +143,14 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
 
             # Parse the image
             img = Image.open(BytesIO(png_data))
-            width, height = img.size
+            orig_width, orig_height = img.size
 
-            # Re-encode to ensure clean PNG
-            buffered = BytesIO()
-            img.save(buffered, format="PNG")
-            base64_data = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            # Compress image for API transmission
+            base64_data, width, height = _compress_image(img)
 
             elapsed = time.time() - start_time
             if _verbose:
-                print(f"[Screenshot] Success: {width}x{height}, {len(png_data)} bytes, {elapsed:.2f}s")
+                print(f"[Screenshot] Success: {orig_width}x{orig_height} -> {width}x{height}, {elapsed:.2f}s")
 
             return Screenshot(
                 base64_data=base64_data, width=width, height=height, is_sensitive=False
@@ -187,17 +230,16 @@ def _get_screenshot_traditional(device_id: str | None = None, timeout: int = 10)
 
         # Read and encode image
         img = Image.open(temp_path)
-        width, height = img.size
+        orig_width, orig_height = img.size
 
-        buffered = BytesIO()
-        img.save(buffered, format="PNG")
-        base64_data = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        # Compress image for API transmission
+        base64_data, width, height = _compress_image(img)
 
         # Cleanup local temp
         os.remove(temp_path)
 
         if _verbose:
-            print(f"[Screenshot] Traditional method success: {width}x{height}")
+            print(f"[Screenshot] Traditional method success: {orig_width}x{orig_height} -> {width}x{height}")
 
         return Screenshot(
             base64_data=base64_data, width=width, height=height, is_sensitive=False

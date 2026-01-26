@@ -36,6 +36,7 @@ class RunTaskRequest(BaseModel):
     force_run: Optional[bool] = False  # 是否强制执行（打断当前任务）
     session_id: Optional[str] = None  # 聊天会话 ID（用于在同一会话中发送多个消息）
     message_id: Optional[str] = None  # 消息 ID（用于绑定日志和截图）
+    debug_mode: Optional[bool] = False  # 调试模式：点击前显示预览
 
 
 class DecomposeTaskRequest(BaseModel):
@@ -320,6 +321,7 @@ async def run_task(
                 task_type=task_type,
                 session_id=request.session_id,
                 message_id=request.message_id,
+                debug_mode=request.debug_mode if request.debug_mode is not None else False,
             )
             # Note: task_finished is already broadcast via _emit_finished callback in task_service
             # No need to call broadcast_task_finished here again

@@ -46,7 +46,7 @@ from gui_app.components import (
     CodeEditorDialog,
 )
 from gui_app.styles import get_dark_stylesheet, get_light_stylesheet
-from gui_app.pages import ScheduledTasksMixin, DashboardMixin, DeviceHubMixin, ModelServiceMixin, TaskRunnerMixin, ApkInstallerMixin, FileManagerMixin
+from gui_app.pages import ScheduledTasksMixin, DashboardMixin, DeviceHubMixin, ModelServiceMixin, TaskRunnerMixin, ApkInstallerMixin, FileManagerMixin, ChatMixin
 
 
 def _adb_prefix(device_id):
@@ -119,7 +119,7 @@ def ensure_adb_keyboard_installed(device_id):
         return False, False
 
 
-class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServiceMixin, DeviceHubMixin, DashboardMixin, ScheduledTasksMixin, QtWidgets.QMainWindow):
+class MainWindow(ChatMixin, FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServiceMixin, DeviceHubMixin, DashboardMixin, ScheduledTasksMixin, QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("鱼塘管理器")
@@ -221,6 +221,7 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
                 "控制台",
                 "设备中心",
                 "模型服务",
+                "AI 对话",
                 "任务执行",
                 "定时任务",
                 "应用安装",
@@ -239,6 +240,7 @@ class MainWindow(FileManagerMixin, ApkInstallerMixin, TaskRunnerMixin, ModelServ
             "控制台": self._build_dashboard(),
             "设备中心": self._build_device_hub(),
             "模型服务": self._build_model_service(),
+            "AI 对话": self._build_chat(),
             "任务执行": self._build_task_runner(),
             "定时任务": self._build_scheduled_tasks(),
             "应用安装": self._build_apk_installer(),

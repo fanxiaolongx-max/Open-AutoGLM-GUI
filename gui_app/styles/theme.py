@@ -578,6 +578,111 @@ QCheckBox::indicator:checked {{
         stop:0 #6366f1, stop:1 #8b5cf6);
     border: 1px solid rgba(99, 102, 241, 0.8);
 }}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Chat Components - Dark Theme
+═══════════════════════════════════════════════════════════════════ */
+
+#chatSidebar {{
+    background: #0a0a0a;
+    border-right: 1px solid #27272a;
+}}
+
+#chatSidebarHeader {{
+    padding: 16px 12px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #fafafa;
+    border-bottom: 1px solid #27272a;
+}}
+
+#chatInputContainer {{
+    background: #09090b;
+    border-top: 1px solid #27272a;
+}}
+
+#chatMessageList {{
+    background: transparent;
+    border: none;
+}}
+
+#chatMessageContainer {{
+    background: transparent;
+}}
+
+#userBubble {{
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 12px;
+    margin: 4px 40px 4px 80px;
+}}
+
+#assistantBubble {{
+    background: rgba(39, 39, 42, 0.8);
+    border: 1px solid #3f3f46;
+    border-radius: 12px;
+    margin: 4px 80px 4px 40px;
+}}
+
+#chatRoleLabel {{
+    font-weight: bold;
+    color: #a1a1aa;
+    font-size: 11px;
+}}
+
+#chatContentLabel {{
+    color: #fafafa;
+    font-size: 13px;
+}}
+
+#chatMutedLabel {{
+    color: #71717a;
+    font-size: 11px;
+}}
+
+#todoListFrame {{
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+}}
+
+#screenshotScroll {{
+    background: transparent;
+    border: none;
+}}
+
+#screenshotThumb {{
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+}}
+
+#screenshotThumb:hover {{
+    border: 1px solid #6366f1;
+}}
+
+#screenshotPreview {{
+    background: #09090b;
+    border-radius: 8px;
+}}
+
+#chatLogsWidget {{
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #27272a;
+    border-radius: 6px;
+    color: #a1a1aa;
+    font-family: 'Menlo', 'Monaco', monospace;
+    font-size: 11px;
+}}
+
+#subtaskItem {{
+    background: rgba(39, 39, 42, 0.5);
+    border: 1px solid #27272a;
+    border-radius: 6px;
+}}
+
+#subtaskItem:hover {{
+    border: 1px solid #3f3f46;
+}}
 """
 
 
@@ -1156,6 +1261,111 @@ QCheckBox::indicator:checked {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 #6366f1, stop:1 #8b5cf6);
     border: 1px solid rgba(99, 102, 241, 0.8);
+}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Chat Components - Light Theme
+═══════════════════════════════════════════════════════════════════ */
+
+#chatSidebar {{
+    background: #fafafa;
+    border-right: 1px solid #e4e4e7;
+}}
+
+#chatSidebarHeader {{
+    padding: 16px 12px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #18181b;
+    border-bottom: 1px solid #e4e4e7;
+}}
+
+#chatInputContainer {{
+    background: #f4f4f5;
+    border-top: 1px solid #e4e4e7;
+}}
+
+#chatMessageList {{
+    background: transparent;
+    border: none;
+}}
+
+#chatMessageContainer {{
+    background: transparent;
+}}
+
+#userBubble {{
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 12px;
+    margin: 4px 40px 4px 80px;
+}}
+
+#assistantBubble {{
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    margin: 4px 80px 4px 40px;
+}}
+
+#chatRoleLabel {{
+    font-weight: bold;
+    color: #71717a;
+    font-size: 11px;
+}}
+
+#chatContentLabel {{
+    color: #18181b;
+    font-size: 13px;
+}}
+
+#chatMutedLabel {{
+    color: #a1a1aa;
+    font-size: 11px;
+}}
+
+#todoListFrame {{
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 6px;
+}}
+
+#screenshotScroll {{
+    background: transparent;
+    border: none;
+}}
+
+#screenshotThumb {{
+    background: #f4f4f5;
+    border: 1px solid #e4e4e7;
+    border-radius: 4px;
+}}
+
+#screenshotThumb:hover {{
+    border: 1px solid #6366f1;
+}}
+
+#screenshotPreview {{
+    background: #f4f4f5;
+    border-radius: 8px;
+}}
+
+#chatLogsWidget {{
+    background: rgba(0, 0, 0, 0.05);
+    border: 1px solid #e4e4e7;
+    border-radius: 6px;
+    color: #52525b;
+    font-family: 'Menlo', 'Monaco', monospace;
+    font-size: 11px;
+}}
+
+#subtaskItem {{
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid #e4e4e7;
+    border-radius: 6px;
+}}
+
+#subtaskItem:hover {{
+    border: 1px solid #d4d4d8;
 }}
 """
 

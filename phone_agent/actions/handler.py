@@ -41,10 +41,12 @@ class ActionHandler:
         device_id: str | None = None,
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
+        tap_preview_callback: Callable[[int, int, int, int, str], tuple[bool, int, int]] | None = None,
     ):
         self.device_id = device_id
         self.confirmation_callback = confirmation_callback or self._default_confirmation
         self.takeover_callback = takeover_callback or self._default_takeover
+        self.tap_preview_callback = tap_preview_callback  # (x, y, width, height, screenshot_b64) -> (proceed, new_x, new_y)
         self._original_ime: str | None = None
         self._keyboard_set: bool = False
         self._rule_engine = get_rule_engine()
@@ -188,9 +190,9 @@ class ActionHandler:
     def _convert_relative_to_absolute(
         self, element: list[int], screen_width: int, screen_height: int
     ) -> tuple[int, int]:
-        """Convert relative coordinates (0-1000) to absolute pixels."""
-        x = int(element[0] / 1000 * screen_width)
-        y = int(element[1] / 1000 * screen_height)
+        """Convert relative coordinates (0-999) to absolute pixels."""
+        x = int(element[0] / 999 * screen_width)
+        y = int(element[1] / 999 * screen_height)
         return x, y
 
     def _handle_launch(self, action: dict, width: int, height: int) -> ActionResult:
@@ -222,6 +224,31 @@ class ActionHandler:
                     message="User cancelled sensitive operation",
                 )
 
+        # Debug mode: call tap preview callback if available
+        if self.tap_preview_callback:
+            logger.info(f"Debug mode enabled, calling tap preview callback for ({x}, {y})")
+            try:
+                # Get current screenshot for preview
+                device_factory = get_device_factory()
+                screenshot = device_factory.get_screenshot(self.device_id)
+                screenshot_b64 = screenshot.base64_data if screenshot else ""
+                
+                proceed, new_x, new_y = self.tap_preview_callback(x, y, width, height, screenshot_b64)
+                logger.info(f"Tap preview callback returned: proceed={proceed}, new_x={new_x}, new_y={new_y}")
+                if not proceed:
+                    logger.info("User cancelled tap action in debug mode")
+                    return ActionResult(
+                        success=False,
+                        should_finish=False,
+                        message="User cancelled tap action in debug mode",
+                    )
+                # Use adjusted coordinates
+                x, y = new_x, new_y
+                logger.info(f"Using adjusted coordinates: ({x}, {y})")
+            except Exception as e:
+                logger.warning(f"Tap preview callback failed: {e}")
+
+        logger.info(f"Executing tap at ({x}, {y}) on device {self.device_id}")
         device_factory = get_device_factory()
         device_factory.tap(x, y, self.device_id)
 

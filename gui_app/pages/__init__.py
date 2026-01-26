@@ -8,6 +8,7 @@ from .model_service_mixin import ModelServiceMixin
 from .task_runner_mixin import TaskRunnerMixin
 from .apk_installer_mixin import ApkInstallerMixin
 from .file_manager_mixin import FileManagerMixin
+from .chat_mixin import ChatMixin
 
 __all__ = [
     "ScheduledTasksMixin",
@@ -17,4 +18,5 @@ __all__ = [
     "TaskRunnerMixin",
     "ApkInstallerMixin",
     "FileManagerMixin",
+    "ChatMixin",
 ]

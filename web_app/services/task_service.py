@@ -258,7 +258,8 @@ class TaskService:
         no_auto_lock: bool = False,
         task_type: str = TaskType.MANUAL.value,
         session_id: Optional[str] = None,
-        message_id: Optional[str] = None
+        message_id: Optional[str] = None,
+        debug_mode: bool = False,
     ) -> TaskExecution:
         """
         Run a task on specified devices.
@@ -457,12 +458,20 @@ class TaskService:
                     device_id=device_id,
                     max_steps=50,
                     verbose=True,
+                    debug_mode=debug_mode,
                 )
+
+                # Create tap preview callback if debug mode is enabled
+                tap_preview_callback = None
+                if debug_mode:
+                    from web_app.routers.websocket import create_tap_preview_callback
+                    tap_preview_callback = create_tap_preview_callback()
 
                 # Create agent with proper config objects
                 agent = PhoneAgent(
                     model_config=model_cfg,
                     agent_config=agent_cfg,
+                    tap_preview_callback=tap_preview_callback,
                 )
 
                 # Run the agent

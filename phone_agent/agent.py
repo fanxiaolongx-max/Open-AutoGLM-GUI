@@ -1,6 +1,7 @@
 """Main PhoneAgent class for orchestrating phone automation."""
 
 import json
+import logging
 import traceback
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -12,6 +13,8 @@ from phone_agent.device_factory import get_device_factory
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.client import MessageBuilder
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class AgentConfig:
@@ -22,6 +25,7 @@ class AgentConfig:
     lang: str = "cn"
     system_prompt: str | None = None
     verbose: bool = True
+    debug_mode: bool = False  # Enable tap preview before execution
 
     def __post_init__(self):
         if self.system_prompt is None:
@@ -67,6 +71,7 @@ class PhoneAgent:
         agent_config: AgentConfig | None = None,
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
+        tap_preview_callback: Callable[[int, int, int, int, str], tuple[bool, int, int]] | None = None,
     ):
         self.model_config = model_config or ModelConfig()
         self.agent_config = agent_config or AgentConfig()
@@ -76,11 +81,16 @@ class PhoneAgent:
             device_id=self.agent_config.device_id,
             confirmation_callback=confirmation_callback,
             takeover_callback=takeover_callback,
+            tap_preview_callback=tap_preview_callback if self.agent_config.debug_mode else None,
         )
 
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
         self._stop_requested = False  # Stop flag for graceful termination
+        self._action_history: list[str] = []  # Track recent actions for loop detection
+        self._max_action_history = 10  # Keep last N actions
+        self._loop_detected_count = 0  # Count consecutive loop detections
+        self._max_loops_before_terminate = 2  # Terminate after this many loop detections
 
     def request_stop(self) -> None:
         """Request the agent to stop at the next step."""
@@ -223,6 +233,7 @@ class PhoneAgent:
                         success=False,
                         finished=True,
                         action=None,
+                        thinking="",
                         message="Task stopped by user",
                     )
 
@@ -303,16 +314,23 @@ class PhoneAgent:
         # Remove image from context to save space
         self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
 
+        # Get actual device screen resolution for coordinate conversion
+        # NOTE: screenshot.width/height may be compressed (e.g. 864x1920) 
+        # but we need real device resolution (e.g. 1080x2400) for accurate tap coordinates
+        from phone_agent.adb.unlock import get_screen_size
+        device_width, device_height = get_screen_size(self.agent_config.device_id)
+        logger.info(f"Using device resolution {device_width}x{device_height} for coordinate conversion (screenshot is {screenshot.width}x{screenshot.height})")
+
         # Execute action
         try:
             result = self.action_handler.execute(
-                action, screenshot.width, screenshot.height
+                action, device_width, device_height
             )
         except Exception as e:
             if self.agent_config.verbose:
                 traceback.print_exc()
             result = self.action_handler.execute(
-                finish(message=str(e)), screenshot.width, screenshot.height
+                finish(message=str(e)), device_width, device_height
             )
 
         # Add assistant response to context
@@ -321,6 +339,74 @@ class PhoneAgent:
                 f"<think>{response.thinking}</think><answer>{response.action}</answer>"
             )
         )
+
+        # If action failed (e.g., blocked by rules), add feedback to context
+        # This tells the model what happened so it can try a different approach
+        if not result.success and result.message:
+            feedback_msg = f"[系统反馈] 上一个动作执行失败: {result.message}。请尝试其他方法来完成任务。"
+            self._context.append(
+                {"role": "user", "content": feedback_msg}
+            )
+            if self.agent_config.verbose:
+                print(f"⚠️ {feedback_msg}\n")
+
+        # Track action history for loop detection
+        action_name = action.get("action", "unknown")
+        action_key = f"{action_name}"
+        # For Tap, include approximate position to detect position-specific loops
+        if action_name == "Tap" and action.get("element"):
+            elem = action.get("element", [0, 0])
+            # Round to nearest 50 to group similar taps
+            action_key = f"Tap({elem[0]//50*50},{elem[1]//50*50})"
+        
+        self._action_history.append(action_key)
+        if len(self._action_history) > self._max_action_history:
+            self._action_history.pop(0)
+        
+        # Detect action loops (same pattern repeated 3+ times)
+        loop_detected = False
+        if len(self._action_history) >= 6:
+            # Check for 2-action loops (A-B-A-B-A-B)
+            pattern_2 = self._action_history[-2:]
+            if (self._action_history[-4:-2] == pattern_2 and 
+                self._action_history[-6:-4] == pattern_2):
+                loop_detected = True
+        
+        # Also check for single-action loops (A-A-A-A)
+        if len(self._action_history) >= 4 and not loop_detected:
+            if (self._action_history[-1] == self._action_history[-2] == 
+                self._action_history[-3] == self._action_history[-4]):
+                loop_detected = True
+        
+        if loop_detected:
+            self._loop_detected_count += 1
+            pattern_str = ' -> '.join(self._action_history[-2:]) if len(set(self._action_history[-2:])) > 1 else self._action_history[-1]
+            
+            if self._loop_detected_count >= self._max_loops_before_terminate:
+                # Force terminate the task
+                loop_msg = f"[系统反馈] 多次检测到重复动作循环: {pattern_str}。任务无法继续，请检查任务是否可行。"
+                if self.agent_config.verbose:
+                    print(f"❌ {loop_msg}\n")
+                return StepResult(
+                    success=False,
+                    finished=True,
+                    action=action,
+                    thinking=response.thinking,
+                    message=f"任务终止: 检测到无效操作循环 ({pattern_str})，无法完成任务",
+                )
+            else:
+                loop_msg = f"[系统反馈] 检测到重复动作循环: {pattern_str}。这个操作序列没有效果，请尝试完全不同的方法来完成任务，或者报告任务无法完成。"
+                self._context.append(
+                    {"role": "user", "content": loop_msg}
+                )
+                if self.agent_config.verbose:
+                    print(f"🔄 {loop_msg}\n")
+            # Clear history to allow fresh start
+            self._action_history.clear()
+        else:
+            # Reset loop counter if no loop detected after some actions
+            if len(self._action_history) >= 4:
+                self._loop_detected_count = 0
 
         # Check if finished
         finished = action.get("_metadata") == "finish" or result.should_finish

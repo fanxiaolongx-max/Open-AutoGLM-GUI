@@ -24,6 +24,15 @@ except ImportError:
 from phone_agent.config.i18n import get_message
 
 
+class ContextTooLargeError(Exception):
+    """Raised when the context/request is too large for the API."""
+    
+    def __init__(self, original_error: Exception = None):
+        self.original_error = original_error
+        message = "上下文过长，请求体积超出 API 限制。建议：1) 减少对话历史长度；2) 使用新会话重新开始任务。"
+        super().__init__(message)
+
+
 @dataclass
 class ModelConfig:
     """Configuration for the AI model."""
@@ -141,79 +150,119 @@ class ModelClient:
             return self._request_openai(messages)
 
     def _request_openai(self, messages: list[dict[str, Any]]) -> ModelResponse:
-        """Send request using OpenAI protocol."""
+        """Send request using OpenAI protocol with retry logic."""
+        from openai import APIStatusError, APIConnectionError, APITimeoutError
+        
         start_time = time.time()
         time_to_first_token = None
         time_to_thinking_end = None
         input_tokens = 0
         output_tokens = 0
 
-        stream = self.client.chat.completions.create(
-            messages=messages,
-            model=self.config.model_name,
-            max_tokens=self.config.max_tokens,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-            frequency_penalty=self.config.frequency_penalty,
-            extra_body=self.config.extra_body,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
-
         raw_content = ""
         buffer = ""
         action_markers = ["finish(message=", "do(action="]
         in_action_phase = False
         first_token_received = False
+        
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    print(f"\n⚠️ API 请求失败，正在重试 ({attempt + 1}/{max_retries})...")
+                    time.sleep(1)  # Brief pause before retry
+                
+                stream = self.client.chat.completions.create(
+                    messages=messages,
+                    model=self.config.model_name,
+                    max_tokens=self.config.max_tokens,
+                    temperature=self.config.temperature,
+                    top_p=self.config.top_p,
+                    frequency_penalty=self.config.frequency_penalty,
+                    extra_body=self.config.extra_body,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                )
 
-        for chunk in stream:
-            # Capture usage from final chunk
-            if hasattr(chunk, 'usage') and chunk.usage:
-                input_tokens = chunk.usage.prompt_tokens or 0
-                output_tokens = chunk.usage.completion_tokens or 0
-            if len(chunk.choices) == 0:
+                # Reset for each attempt
+                raw_content = ""
+                buffer = ""
+                in_action_phase = False
+                first_token_received = False
+
+                for chunk in stream:
+                    # Capture usage from final chunk
+                    if hasattr(chunk, 'usage') and chunk.usage:
+                        input_tokens = chunk.usage.prompt_tokens or 0
+                        output_tokens = chunk.usage.completion_tokens or 0
+                    if len(chunk.choices) == 0:
+                        continue
+                    if chunk.choices[0].delta.content is not None:
+                        content = chunk.choices[0].delta.content
+                        raw_content += content
+
+                        if not first_token_received:
+                            time_to_first_token = time.time() - start_time
+                            first_token_received = True
+
+                        if in_action_phase:
+                            continue
+
+                        buffer += content
+
+                        marker_found = False
+                        for marker in action_markers:
+                            if marker in buffer:
+                                thinking_part = buffer.split(marker, 1)[0]
+                                print(thinking_part, end="", flush=True)
+                                print()
+                                in_action_phase = True
+                                marker_found = True
+
+                                if time_to_thinking_end is None:
+                                    time_to_thinking_end = time.time() - start_time
+                                break
+
+                        if marker_found:
+                            continue
+
+                        is_potential_marker = False
+                        for marker in action_markers:
+                            for i in range(1, len(marker)):
+                                if buffer.endswith(marker[:i]):
+                                    is_potential_marker = True
+                                    break
+                            if is_potential_marker:
+                                break
+
+                        if not is_potential_marker:
+                            print(buffer, end="", flush=True)
+                            buffer = ""
+
+                # Success - break out of retry loop
+                break
+                
+            except APIStatusError as e:
+                last_error = e
+                error_msg = str(e)
+                if "length limit" in error_msg.lower() or "too large" in error_msg.lower():
+                    print(f"\n❌ 请求体积过大 (尝试 {attempt + 1}/{max_retries})")
+                    if attempt == max_retries - 1:
+                        raise ContextTooLargeError(original_error=e)
+                else:
+                    print(f"\n❌ API 错误 (尝试 {attempt + 1}/{max_retries}): {error_msg[:100]}")
+                    if attempt == max_retries - 1:
+                        raise
                 continue
-            if chunk.choices[0].delta.content is not None:
-                content = chunk.choices[0].delta.content
-                raw_content += content
-
-                if not first_token_received:
-                    time_to_first_token = time.time() - start_time
-                    first_token_received = True
-
-                if in_action_phase:
-                    continue
-
-                buffer += content
-
-                marker_found = False
-                for marker in action_markers:
-                    if marker in buffer:
-                        thinking_part = buffer.split(marker, 1)[0]
-                        print(thinking_part, end="", flush=True)
-                        print()
-                        in_action_phase = True
-                        marker_found = True
-
-                        if time_to_thinking_end is None:
-                            time_to_thinking_end = time.time() - start_time
-                        break
-
-                if marker_found:
-                    continue
-
-                is_potential_marker = False
-                for marker in action_markers:
-                    for i in range(1, len(marker)):
-                        if buffer.endswith(marker[:i]):
-                            is_potential_marker = True
-                            break
-                    if is_potential_marker:
-                        break
-
-                if not is_potential_marker:
-                    print(buffer, end="", flush=True)
-                    buffer = ""
+                
+            except (APIConnectionError, APITimeoutError) as e:
+                last_error = e
+                print(f"\n❌ API 连接错误 (尝试 {attempt + 1}/{max_retries}): {type(e).__name__}")
+                if attempt == max_retries - 1:
+                    raise
+                continue
 
         total_time = time.time() - start_time
         thinking, action = self._parse_response(raw_content)
@@ -232,7 +281,7 @@ class ModelClient:
         )
 
     def _request_anthropic(self, messages: list[dict[str, Any]]) -> ModelResponse:
-        """Send request using Anthropic protocol."""
+        """Send request using Anthropic protocol with retry logic."""
         start_time = time.time()
         time_to_first_token = None
         time_to_thinking_end = None
@@ -283,67 +332,103 @@ class ModelClient:
                 "content": content,
             })
 
-        # Stream response
+        # Stream response with retry logic
         raw_content = ""
         buffer = ""
         action_markers = ["finish(message=", "do(action="]
         in_action_phase = False
         first_token_received = False
+        
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    print(f"\n⚠️ API 请求失败，正在重试 ({attempt + 1}/{max_retries})...")
+                    time.sleep(1)  # Brief pause before retry
+                
+                stream_context = self.client.messages.stream(
+                    model=self.config.model_name,
+                    max_tokens=self.config.max_tokens,
+                    system=system_content if system_content else anthropic.NOT_GIVEN,
+                    messages=anthropic_messages,
+                    temperature=self.config.temperature,
+                    top_p=self.config.top_p,
+                )
+                
+                # Reset for each attempt
+                raw_content = ""
+                buffer = ""
+                in_action_phase = False
+                first_token_received = False
 
-        with self.client.messages.stream(
-            model=self.config.model_name,
-            max_tokens=self.config.max_tokens,
-            system=system_content if system_content else anthropic.NOT_GIVEN,
-            messages=anthropic_messages,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-        ) as stream:
-            for text in stream.text_stream:
-                raw_content += text
+                with stream_context as stream:
+                    for text in stream.text_stream:
+                        raw_content += text
 
-                if not first_token_received:
-                    time_to_first_token = time.time() - start_time
-                    first_token_received = True
+                        if not first_token_received:
+                            time_to_first_token = time.time() - start_time
+                            first_token_received = True
 
-                if in_action_phase:
-                    continue
+                        if in_action_phase:
+                            continue
 
-                buffer += text
+                        buffer += text
 
-                marker_found = False
-                for marker in action_markers:
-                    if marker in buffer:
-                        thinking_part = buffer.split(marker, 1)[0]
-                        print(thinking_part, end="", flush=True)
-                        print()
-                        in_action_phase = True
-                        marker_found = True
+                        marker_found = False
+                        for marker in action_markers:
+                            if marker in buffer:
+                                thinking_part = buffer.split(marker, 1)[0]
+                                print(thinking_part, end="", flush=True)
+                                print()
+                                in_action_phase = True
+                                marker_found = True
 
-                        if time_to_thinking_end is None:
-                            time_to_thinking_end = time.time() - start_time
-                        break
+                                if time_to_thinking_end is None:
+                                    time_to_thinking_end = time.time() - start_time
+                                break
 
-                if marker_found:
-                    continue
+                        if marker_found:
+                            continue
 
-                is_potential_marker = False
-                for marker in action_markers:
-                    for i in range(1, len(marker)):
-                        if buffer.endswith(marker[:i]):
-                            is_potential_marker = True
-                            break
-                    if is_potential_marker:
-                        break
+                        is_potential_marker = False
+                        for marker in action_markers:
+                            for i in range(1, len(marker)):
+                                if buffer.endswith(marker[:i]):
+                                    is_potential_marker = True
+                                    break
+                            if is_potential_marker:
+                                break
 
-                if not is_potential_marker:
-                    print(buffer, end="", flush=True)
-                    buffer = ""
+                        if not is_potential_marker:
+                            print(buffer, end="", flush=True)
+                            buffer = ""
 
-            # Get final message for usage stats
-            final_message = stream.get_final_message()
-            if final_message and final_message.usage:
-                input_tokens = final_message.usage.input_tokens or 0
-                output_tokens = final_message.usage.output_tokens or 0
+                    # Get final message for usage stats
+                    final_message = stream.get_final_message()
+                    if final_message and final_message.usage:
+                        input_tokens = final_message.usage.input_tokens or 0
+                        output_tokens = final_message.usage.output_tokens or 0
+                
+                # Success - break out of retry loop
+                break
+                
+            except anthropic.RequestTooLargeError as e:
+                last_error = e
+                print(f"\n❌ 请求体积过大 (尝试 {attempt + 1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    # All retries exhausted, raise user-friendly error
+                    raise ContextTooLargeError(original_error=e)
+                # Continue to next retry
+                continue
+                
+            except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+                last_error = e
+                print(f"\n❌ API 连接错误 (尝试 {attempt + 1}/{max_retries}): {type(e).__name__}")
+                if attempt == max_retries - 1:
+                    raise  # Re-raise the last error
+                continue
 
         total_time = time.time() - start_time
         thinking, action = self._parse_response(raw_content)
@@ -521,7 +606,7 @@ class MessageBuilder:
             content.append(
                 {
                     "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                    "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
                 }
             )
 

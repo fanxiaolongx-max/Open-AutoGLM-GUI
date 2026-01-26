@@ -14,6 +14,12 @@ from phone_agent.config.timing import (
     get_timing_config,
     update_timing_config,
 )
+from phone_agent.config.screenshot import (
+    SCREENSHOT_CONFIG,
+    ScreenshotConfig,
+    get_screenshot_config,
+    update_screenshot_config,
+)
 
 
 def get_system_prompt(lang: str = "cn") -> str:
@@ -72,4 +78,8 @@ __all__ = [
     "ConnectionTimingConfig",
     "get_timing_config",
     "update_timing_config",
+    "SCREENSHOT_CONFIG",
+    "ScreenshotConfig",
+    "get_screenshot_config",
+    "update_screenshot_config",
 ]

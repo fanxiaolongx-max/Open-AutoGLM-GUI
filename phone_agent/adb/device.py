@@ -1,5 +1,6 @@
 """Device control utilities for Android automation."""
 
+import logging
 import os
 import subprocess
 import time
@@ -7,6 +8,8 @@ from typing import List, Optional, Tuple
 
 from phone_agent.config.apps import APP_PACKAGES
 from phone_agent.config.timing import TIMING_CONFIG
+
+logger = logging.getLogger(__name__)
 
 
 def get_current_app(device_id: str | None = None) -> str:
@@ -54,10 +57,17 @@ def tap(
         delay = TIMING_CONFIG.device.default_tap_delay
 
     adb_prefix = _get_adb_prefix(device_id)
+    
+    tap_command = adb_prefix + ["shell", "input", "tap", str(x), str(y)]
+    logger.info(f"Executing ADB tap command: {' '.join(tap_command)}")
 
-    subprocess.run(
-        adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True
-    )
+    result = subprocess.run(tap_command, capture_output=True)
+    
+    if result.returncode != 0:
+        logger.error(f"Tap command failed: {result.stderr.decode()}")
+    else:
+        logger.info(f"Tap executed successfully at ({x}, {y})")
+    
     time.sleep(delay)
 
 
