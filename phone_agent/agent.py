@@ -272,11 +272,20 @@ class PhoneAgent:
             action = finish(message=error_msg)
 
         if self.agent_config.verbose:
-            # Print thinking process (simplified)
-            # Use regex to remove all XML-like tags
+            # Print thinking process (cleaned up for readability)
             import re
-            thinking = re.sub(r'<[^>]+>', '', response.thinking).strip()
-            print(f"💭 思考过程:\n{thinking}\n")
+            
+            # Remove XML tags and clean up formatting
+            thinking = response.thinking
+            # Remove all XML-like tags (including <think>, </think>, <answer>, </answer>, etc.)
+            thinking = re.sub(r'<[^>]+>', '', thinking)
+            # Clean up multiple newlines
+            thinking = re.sub(r'\n\s*\n', '\n', thinking)
+            # Strip leading/trailing whitespace
+            thinking = thinking.strip()
+            
+            if thinking:
+                print(f"💭 思考过程:\n{thinking}\n")
             
             # Print action (simplified JSON)
             print(f"🎯 执行动作:")
@@ -339,6 +348,10 @@ class PhoneAgent:
                 f"<think>{response.thinking}</think><answer>{response.action}</answer>"
             )
         )
+
+        # Clean up old images to reduce token usage (keep recent 3 rounds)
+        # This preserves conversation continuity while saving tokens
+        self._cleanup_old_images(keep_recent=3)
 
         # If action failed (e.g., blocked by rules), add feedback to context
         # This tells the model what happened so it can try a different approach
@@ -423,6 +436,178 @@ class PhoneAgent:
             message=result.message or action.get("message"),
         )
 
+    def _cleanup_old_images(self, keep_recent: int = 3) -> None:
+        """
+        Remove images from old context messages to reduce token usage.
+        
+        This method preserves conversation continuity by keeping all text content
+        while removing image data from older messages. The model can still understand
+        the full conversation history through text, but token usage is significantly reduced.
+        
+        Args:
+            keep_recent: Number of recent user messages to keep images for (default: 3).
+                        Recent images are needed for the model to understand current screen state.
+        
+        Example:
+            After cleanup with keep_recent=3:
+            - Message 1-7: Images removed, text preserved
+            - Message 8-10: Full images kept
+            
+        Token savings:
+            - ~250 tokens per old image removed
+            - For a 10-step task: saves ~1750 tokens (7 old images × 250)
+            - For a 20-step task: saves ~4250 tokens (17 old images × 250)
+        """
+        if len(self._context) <= 1:  # Only system message or empty
+            return
+        
+        # Find all user message indices (skip system message at index 0)
+        user_message_indices = []
+        for i, msg in enumerate(self._context):
+            if i == 0:  # Skip system message
+                continue
+            if msg.get('role') == 'user':
+                user_message_indices.append(i)
+        
+        # If we have fewer user messages than keep_recent, no cleanup needed
+        if len(user_message_indices) <= keep_recent:
+            return
+        
+        # Calculate how many old messages to clean
+        messages_to_clean = user_message_indices[:-keep_recent]
+        
+        # Remove images from old user messages
+        cleaned_count = 0
+        for idx in messages_to_clean:
+            original_msg = self._context[idx]
+            # Check if this message actually has images
+            if isinstance(original_msg.get('content'), list):
+                has_image = any(item.get('type') == 'image_url' for item in original_msg['content'])
+                if has_image:
+                    self._context[idx] = MessageBuilder.remove_images_from_message(self._context[idx])
+                    cleaned_count += 1
+        
+        if cleaned_count > 0 and self.agent_config.verbose:
+            print(f"🧹 清理了 {cleaned_count} 张历史截图，保留最近 {keep_recent} 轮")
+
+    def generate_task_summary(self, task_name: str) -> str:
+        """
+        Generate a concise summary of the task execution using AI.
+        
+        This method analyzes the execution history and generates a 2-3 sentence
+        summary suitable for email reports, highlighting the main objective,
+        key actions, and final outcome.
+        
+        Args:
+            task_name: Name of the task that was executed.
+            
+        Returns:
+            A concise summary in Chinese (2-3 sentences), or a default message
+            if generation fails.
+            
+        Example:
+            >>> agent = PhoneAgent()
+            >>> agent.run("打开微信并发送消息")
+            >>> summary = agent.generate_task_summary("打开微信并发送消息")
+            >>> print(summary)
+            "成功打开微信应用，找到目标联系人并发送了指定消息。整个过程顺利完成，未出现任何错误。"
+        """
+        # Need at least some execution history
+        if len(self._context) <= 2:
+            return "任务已执行，但缺少详细执行记录。"
+        
+        # Extract execution steps from conversation context
+        steps = []
+        step_num = 1
+        
+        for msg in self._context[1:]:  # Skip system message
+            if msg.get('role') == 'assistant':
+                content = msg.get('content', '')
+                # Extract thinking and action from XML tags
+                import re
+                
+                # Try to extract thinking
+                think_match = re.search(r'<think>(.*?)</think>', content, re.DOTALL)
+                thinking = think_match.group(1).strip() if think_match else ""
+                
+                # Try to extract action
+                answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)
+                action = answer_match.group(1).strip() if answer_match else ""
+                
+                # Build step description
+                if thinking or action:
+                    step_desc = f"步骤{step_num}: "
+                    if thinking:
+                        # Take first sentence or 80 chars
+                        first_sentence = thinking.split('。')[0][:80]
+                        step_desc += first_sentence
+                    if action and len(action) < 100:
+                        step_desc += f" -> {action[:50]}"
+                    
+                    steps.append(step_desc)
+                    step_num += 1
+        
+        # Limit to recent steps to avoid token overflow
+        recent_steps = steps[-10:] if len(steps) > 10 else steps
+        history_text = "\n".join(recent_steps) if recent_steps else "执行了多个操作步骤"
+        
+        # Build summary prompt
+        prompt = f"""请用2-3句话简洁地总结以下任务的执行过程（中文）。
+
+任务要求：
+- 说明任务的主要目标
+- 概括执行了哪些关键操作
+- 说明最终结果（成功完成/遇到问题等）
+
+任务名称: {task_name}
+执行步骤:
+{history_text}
+
+请提供一个专业、简洁的任务总结（2-3句话）:"""
+        
+        # Call model for summary generation
+        try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": "你是一个专业的任务执行助手，负责为自动化任务生成简洁清晰的执行总结。总结应该专业、准确、易于理解。"
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+            
+            # Use model client to generate summary
+            response = self.model_client.request(messages)
+            
+            # Extract summary from response
+            summary_text = ""
+            if response.action and response.action.strip():
+                summary_text = response.action
+            elif response.thinking and response.thinking.strip():
+                summary_text = response.thinking
+            
+            # Clean up XML tags if present
+            import re
+            summary_text = re.sub(r'<[^>]+>', '', summary_text).strip()
+            
+            # Validate summary is not empty and reasonable length
+            if summary_text and len(summary_text) > 10:
+                # Limit to reasonable length (max 500 chars)
+                if len(summary_text) > 500:
+                    summary_text = summary_text[:497] + "..."
+                return summary_text
+            else:
+                return f"任务「{task_name}」执行完成，共执行{len(steps)}个步骤。"
+                
+        except Exception as e:
+            # Fallback to simple summary
+            if self.agent_config.verbose:
+                print(f"⚠️ 生成任务总结失败: {e}")
+            
+            return f"任务「{task_name}」执行完成，共执行{len(steps)}个步骤。"
+
     @property
     def context(self) -> list[dict[str, Any]]:
         """Get the current conversation context."""
@@ -432,3 +617,5 @@ class PhoneAgent:
     def step_count(self) -> int:
         """Get the current step count."""
         return self._step_count
+
+

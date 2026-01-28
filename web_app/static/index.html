@@ -227,15 +227,189 @@
 
         .todo-status {
             flex-shrink: 0;
-            width: 18px;
+            width: 16px;
             text-align: center;
+            font-size: 14px;
         }
 
         .todo-content {
             flex: 1;
-            word-break: break-all;
-            overflow-wrap: break-word;
+            word-break: normal;
+            overflow-wrap: normal;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             min-width: 0;
+        }
+
+        /* TodoList Confirmation Styles */
+        .todo-confirmation {
+            margin-top: 12px;
+            border-top: 2px dashed #e5e7eb;
+            padding-top: 12px;
+        }
+
+        .confirmation-banner {
+            background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+            border-left: 4px solid #f59e0b;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .confirmation-banner strong {
+            color: #92400e;
+            font-size: 15px;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .confirmation-banner p {
+            margin: 0;
+            font-size: 13px;
+            color: #78350f;
+            line-height: 1.5;
+        }
+
+        .confirmation-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .btn-confirm {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-confirm:hover {
+            background: #059669;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-cancel {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-cancel:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+        }
+
+        .todo-input {
+            flex: 1;
+            min-width: 300px;
+            padding: 4px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 13px;
+            background: white;
+            font-family: inherit;
+            resize: none;
+            overflow-x: hidden;
+            overflow-y: auto;
+            min-height: 28px;
+            max-height: 120px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+        }
+
+        .todo-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .todo-item.editable {
+            background: white;
+            border: 1px dashed #cbd5e1;
+        }
+
+        .todo-item.editable:hover {
+            border-color: #94a3b8;
+            background: #f8fafc;
+        }
+
+        .todo-item-controls {
+            display: flex;
+            gap: 3px;
+            margin-left: 6px;
+            flex-shrink: 0;
+        }
+
+        .todo-control-btn {
+            padding: 2px 4px;
+            border: 1px solid #e5e7eb;
+            border-radius: 3px;
+            background: white;
+            cursor: pointer;
+            font-size: 11px;
+            color: #6b7280;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 20px;
+            height: 20px;
+        }
+
+        .todo-control-btn:hover {
+            background: #f3f4f6;
+            border-color: #d1d5db;
+        }
+
+        .todo-control-btn.delete:hover {
+            background: #fee2e2;
+            border-color: #fca5a5;
+            color: #dc2626;
+        }
+
+        .todo-control-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* TodoList Animation Styles */
+        .todo-list-move,
+        .todo-list-enter-active,
+        .todo-list-leave-active {
+            transition: all 0.5s cubic-bezier(0.55, 0, 0.1, 1);
+        }
+
+        .todo-list-enter-from {
+            opacity: 0;
+            transform: translateY(-30px);
+        }
+
+        .todo-list-leave-to {
+            opacity: 0;
+            transform: translateX(-30px);
+        }
+
+        .todo-list-leave-active {
+            position: absolute;
+            width: 100%;
+        }
+
+        .todo-item {
+            transition: all 0.3s cubic-bezier(0.55, 0, 0.1, 1);
         }
 
         .chat-input-container {
@@ -585,6 +759,13 @@
             overflow: hidden;
             min-width: 180px;
             min-height: 200px;
+            max-width: 350px;
+            /* 限制最大宽度 */
+            max-height: 70vh;
+            /* 限制最大高度为视口的70% */
+            transform: scale(0.85);
+            /* 整体缩小15% */
+            transform-origin: center;
         }
 
         .phone-preview-header {
@@ -649,9 +830,14 @@
         }
 
         .phone-preview-image {
-            width: 100%;
-            height: 100%;
+            max-width: 280px;
+            max-height: 35vh;
+            /* 减小到视口高度的35% */
+            width: auto;
+            height: auto;
             object-fit: contain;
+            display: block;
+            margin: 0 auto;
         }
 
         .phone-preview-placeholder {
@@ -958,34 +1144,79 @@
                                         <!-- TodoList 显示 (复杂任务模式) -->
                                         <div v-if="msg.todoList && msg.todoList.length > 0" class="todo-list-card">
                                             <div class="todo-list-header">📋 任务清单</div>
-                                            <div v-for="(item, ti) in msg.todoList" :key="ti" class="todo-item"
-                                                :class="item.status">
-                                                <div class="todo-item-header">
-                                                    <span class="todo-status">
-                                                        <span v-if="item.status === 'completed'">✅</span>
-                                                        <span v-else-if="item.status === 'running'"
-                                                            class="mini-spinner"></span>
-                                                        <span v-else-if="item.status === 'failed'">❌</span>
-                                                        <span v-else-if="item.status === 'skipped'">⏭️</span>
-                                                        <span v-else>⬜</span>
-                                                    </span>
-                                                    <span class="todo-content">{{ item.content }}</span>
-                                                    <span
-                                                        v-if="chatRunning && item.status === 'running' && subtaskCountdown > 0"
-                                                        style="margin-left: auto; padding: 2px 8px; border-radius: 4px; 
+                                            <TransitionGroup name="todo-list" tag="div">
+                                                <div v-for="(item, ti) in msg.todoList" :key="`todo-${idx}-${ti}`"
+                                                    class="todo-item"
+                                                    :class="[item.status, { editable: msg.status === 'pending_confirmation' }]">
+                                                    <div class="todo-item-header">
+                                                        <span class="todo-status">
+                                                            <span v-if="item.status === 'completed'">✅</span>
+                                                            <span v-else-if="item.status === 'running'"
+                                                                class="mini-spinner"></span>
+                                                            <span v-else-if="item.status === 'failed'">❌</span>
+                                                            <span v-else-if="item.status === 'skipped'">⏭️</span>
+                                                            <span v-else>⬜</span>
+                                                        </span>
+                                                        <!-- Editable input when awaiting confirmation -->
+                                                        <textarea v-if="msg.status === 'pending_confirmation'"
+                                                            v-model="item.content" class="todo-input"
+                                                            @blur="saveCurrentSession"
+                                                            @input="autoResizeTextarea($event)" placeholder="编辑子任务内容..."
+                                                            rows="1"></textarea>
+                                                        <!-- Control buttons (only when editing) -->
+                                                        <div v-if="msg.status === 'pending_confirmation'"
+                                                            class="todo-item-controls">
+                                                            <button @click="moveTodoUp(msg, ti)" :disabled="ti === 0"
+                                                                class="todo-control-btn" title="上移">
+                                                                ▲
+                                                            </button>
+                                                            <button @click="moveTodoDown(msg, ti)"
+                                                                :disabled="ti === msg.todoList.length - 1"
+                                                                class="todo-control-btn" title="下移">
+                                                                ▼
+                                                            </button>
+                                                            <button @click="deleteTodo(msg, ti)"
+                                                                :disabled="msg.todoList.length <= 1"
+                                                                class="todo-control-btn delete" title="删除">
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+                                                        <!-- Normal display -->
+                                                        <span v-else class="todo-content">{{ item.content }}</span>
+                                                        <span
+                                                            v-if="chatRunning && item.status === 'running' && subtaskCountdown > 0"
+                                                            style="margin-left: auto; padding: 2px 8px; border-radius: 4px; 
                                                                background: rgba(59, 130, 246, 0.1); color: #3b82f6; 
                                                                font-size: 11px; font-family: monospace;">
-                                                        ⏱️ {{ Math.floor(subtaskCountdown / 60) }}:{{
-                                                        String(subtaskCountdown % 60).padStart(2, '0') }}
-                                                    </span>
-                                                    <button v-if="chatRunning && item.status === 'running'"
-                                                        @click.stop="skipSubtask(msg)" title="跳过此步骤"
-                                                        style="margin-left: 8px; padding: 2px 8px; border-radius: 4px; 
+                                                            ⏱️ {{ Math.floor(subtaskCountdown / 60) }}:{{
+                                                            String(subtaskCountdown % 60).padStart(2, '0') }}
+                                                        </span>
+                                                        <button v-if="chatRunning && item.status === 'running'"
+                                                            @click.stop="skipSubtask(msg)" title="跳过此步骤"
+                                                            style="margin-left: 8px; padding: 2px 8px; border-radius: 4px; 
                                                                background: rgba(251, 191, 36, 0.1); color: #d97706; border: 1px solid rgba(251, 191, 36, 0.3);
                                                                cursor: pointer; font-size: 11px; display: flex; align-items: center; gap: 4px; transition: all 0.2s;"
-                                                        @mouseenter="$event.target.style.background='rgba(251, 191, 36, 0.2)'"
-                                                        @mouseleave="$event.target.style.background='rgba(251, 191, 36, 0.1)'">
-                                                        ⏭️ 跳过
+                                                            @mouseenter="$event.target.style.background='rgba(251, 191, 36, 0.2)'"
+                                                            @mouseleave="$event.target.style.background='rgba(251, 191, 36, 0.1)'">
+                                                            ⏭️ 跳过
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </TransitionGroup>
+
+
+                                            <!-- Confirmation UI (only show when pending confirmation) -->
+                                            <div v-if="msg.status === 'pending_confirmation'" class="todo-confirmation">
+                                                <div class="confirmation-banner">
+                                                    <strong>⏸️ 任务已拆解，请确认清单</strong>
+                                                    <p>您可以点击上方任意子任务进行编辑。确认无误后点击继续执行。</p>
+                                                </div>
+                                                <div class="confirmation-actions">
+                                                    <button @click="cancelTodoList(msg)" class="btn-cancel">
+                                                        ❌ 取消任务
+                                                    </button>
+                                                    <button @click="confirmTodoList(msg)" class="btn-confirm">
+                                                        ✅ 确认并开始执行
                                                     </button>
                                                 </div>
                                             </div>
@@ -2594,6 +2825,7 @@
                     const chatAutoEmail = ref(false);  // Default: no auto email in chat mode
                     const complexTaskMode = ref(false);  // 复杂任务模式：先拆解成todolist再逐个执行
                     const debugMode = ref(false);  // 调试模式：点击前显示预览
+                    const awaitingTodoListConfirmation = ref(false);  // 是否正在等待用户确认todoList
                     const subtaskTimeoutSeconds = ref(180);  // 子任务超时时间（秒），默认3分钟
                     const subtaskCountdown = ref(0);  // 子任务剩余秒数（用于倒计时显示）
                     let subtaskCountdownTimer = null;  // 倒计时定时器
@@ -3005,27 +3237,50 @@
                     }
 
                     // 保存消息状态到服务器（非阻塞，不影响本地操作）
+                    // 🆕 使用防抖避免频繁请求
+                    let saveMessageTimer = null;
+                    let lastSavedMessageStates = new Map(); // 记录每条消息上次保存的状态
                     async function saveMessageStatusToServer() {
-                        if (!currentSessionId.value) return;
+                        // 清除之前的定时器
+                        if (saveMessageTimer) {
+                            clearTimeout(saveMessageTimer);
+                        }
 
-                        // 找出需要保存状态的 assistant 消息
-                        for (const msg of chatMessages.value) {
-                            if (msg.role === 'assistant' && msg.id && (msg.status || msg.todoList)) {
-                                try {
-                                    await apiCall(`/api/chat/sessions/${currentSessionId.value}/messages/${msg.id}`, {
-                                        method: 'PATCH',
-                                        body: JSON.stringify({
-                                            status: msg.status || null,
-                                            content: msg.content || null,
-                                            todo_list: msg.todoList || null
-                                        })
-                                    });
-                                } catch (error) {
-                                    // 静默失败，不影响用户体验
-                                    console.debug('Failed to save message status to server:', error);
+                        // 延迟300ms执行，如果300ms内再次调用则重新计时
+                        saveMessageTimer = setTimeout(async () => {
+                            if (!currentSessionId.value) return;
+
+                            // 找出需要保存状态的 assistant 消息
+                            for (const msg of chatMessages.value) {
+                                if (msg.role === 'assistant' && msg.id && (msg.status || msg.todoList)) {
+                                    // 计算当前消息的状态指纹
+                                    const currentState = `${msg.status || ''}-${JSON.stringify(msg.todoList || null)}`;
+                                    const lastState = lastSavedMessageStates.get(msg.id);
+
+                                    // 跳过未变化的消息
+                                    if (lastState === currentState) {
+                                        continue;
+                                    }
+
+                                    try {
+                                        await apiCall(`/api/chat/sessions/${currentSessionId.value}/messages/${msg.id}`, {
+                                            method: 'PATCH',
+                                            body: JSON.stringify({
+                                                status: msg.status || null,
+                                                content: msg.content || null,
+                                                todo_list: msg.todoList || null
+                                            })
+                                        });
+
+                                        // 记录保存成功的状态
+                                        lastSavedMessageStates.set(msg.id, currentState);
+                                    } catch (error) {
+                                        // 静默失败，不影响用户体验
+                                        console.debug('Failed to save message status to server:', error);
+                                    }
                                 }
                             }
-                        }
+                        }, 300); // 300ms防抖延迟
                     }
 
                     async function createNewSession() {
@@ -3417,7 +3672,7 @@
 
                     // 监听输入内容变化，自动调整高度
                     watch(chatInput, () => {
-                        nextTick(() => {
+                        Vue.nextTick(() => {
                             const el = document.querySelector('.chat-input');
                             if (el) {
                                 el.style.height = 'auto';
@@ -3447,6 +3702,253 @@
                             // 强制停止当前任务
                             await apiCall('/api/tasks/stop', { method: 'POST' });
                         }
+                    }
+
+                    // TodoList Confirmation Functions
+                    async function confirmTodoList(msg) {
+                        if (!msg.todoList || msg.todoList.length === 0) {
+                            showToast('任务清单为空', 'error');
+                            return;
+                        }
+
+                        // Validate all subtasks have content
+                        const emptyTask = msg.todoList.find(item => !item.content || !item.content.trim());
+                        if (emptyTask) {
+                            showToast('请填写所有子任务内容', 'error');
+                            return;
+                        }
+
+                        // Update message status
+                        msg.status = 'running';
+                        msg.content = '📋 开始执行任务清单...';
+                        awaitingTodoListConfirmation.value = false;
+                        chatRunning.value = true;
+
+                        // Save changes
+                        saveCurrentSession();
+                        scrollChatToBottom();
+
+                        // Continue with task execution
+                        try {
+                            // Execute the confirmed todoList
+                            await executeConfirmedTodoList(msg);
+                        } catch (error) {
+                            console.error('Task execution error:', error);
+                            msg.status = 'error';
+                            msg.content = `❌ 执行失败: ${error.message}`;
+                            chatRunning.value = false;
+                            saveCurrentSession();
+                        }
+                    }
+
+                    function cancelTodoList(msg) {
+                        if (!confirm('确定要取消此任务吗？')) {
+                            return;
+                        }
+
+                        msg.status = 'cancelled';
+                        msg.content = '❌ 任务已取消';
+                        awaitingTodoListConfirmation.value = false;
+                        chatRunning.value = false;
+                        saveCurrentSession();
+                        scrollChatToBottom();
+                    }
+
+                    // TodoList Management Functions
+                    function moveTodoUp(msg, index) {
+                        if (index === 0) return;
+                        const temp = msg.todoList[index];
+                        msg.todoList[index] = msg.todoList[index - 1];
+                        msg.todoList[index - 1] = temp;
+                        saveCurrentSession();
+                    }
+
+                    function moveTodoDown(msg, index) {
+                        if (index === msg.todoList.length - 1) return;
+                        const temp = msg.todoList[index];
+                        msg.todoList[index] = msg.todoList[index + 1];
+                        msg.todoList[index + 1] = temp;
+                        saveCurrentSession();
+                    }
+
+                    function deleteTodo(msg, index) {
+                        if (msg.todoList.length <= 1) {
+                            showToast('至少需要保留一个子任务', 'error');
+                            return;
+                        }
+                        if (confirm(`确定要删除子任务"${msg.todoList[index].content}"吗？`)) {
+                            msg.todoList.splice(index, 1);
+                            saveCurrentSession();
+                        }
+                    }
+
+                    function autoResizeTextarea(event) {
+                        const textarea = event.target;
+                        textarea.style.height = 'auto';
+                        textarea.style.height = textarea.scrollHeight + 'px';
+                    }
+
+                    async function executeConfirmedTodoList(msg) {
+                        // This function continues the execution flow that was paused
+                        // It should follow the same logic as the normal complex task execution
+
+                        // Check if there's a running task and handle priority
+                        const status = await apiCall('/api/tasks/status');
+                        if (status.running && status.task) {
+                            const currentTaskType = status.task.task_type || 'manual';
+                            const currentTaskContent = status.task.task_content || '未知任务';
+                            const typeNames = { 'manual': '手动任务', 'scheduled': '定时任务', 'chat': 'Chat任务' };
+                            const typeName = typeNames[currentTaskType] || '未知任务';
+
+                            if (currentTaskType !== 'chat') {
+                                msg.content = `⚠️ 正在打断${typeName}: ${currentTaskContent.substring(0, 30)}...`;
+                                saveCurrentSession();
+                                await apiCall('/api/tasks/stop', { method: 'POST' });
+                                await new Promise(resolve => setTimeout(resolve, 1500));
+                            } else {
+                                // Another chat task is running, wait for it
+                                let waitAttempts = 0;
+                                const maxWaitAttempts = 60;
+                                while (waitAttempts < maxWaitAttempts) {
+                                    const checkStatus = await apiCall('/api/tasks/status');
+                                    if (!checkStatus.running) break;
+                                    await new Promise(resolve => setTimeout(resolve, 1000));
+                                    waitAttempts++;
+                                }
+                            }
+                        }
+
+                        // Execute subtasks sequentially
+                        let initialLockState = null;  // Will be set after first subtask
+                        for (let i = 0; i < msg.todoList.length; i++) {
+                            const item = msg.todoList[i];
+                            item.status = 'running';
+                            msg.currentTodoIndex = i;
+                            saveCurrentSession();
+                            scrollChatToBottom();
+
+                            // Start countdown timer
+                            subtaskCountdown.value = subtaskTimeoutSeconds.value;
+                            subtaskCountdownTimer = setInterval(() => {
+                                if (subtaskCountdown.value > 0) {
+                                    subtaskCountdown.value--;
+                                } else {
+                                    clearInterval(subtaskCountdownTimer);
+                                }
+                            }, 1000);
+
+                            // Execute subtask via tasks/run API
+                            // Only prevent auto-lock for non-final subtasks
+                            const isLastSubtask = (i === msg.todoList.length - 1);
+                            const isFirstSubtask = (i === 0);
+
+                            console.log(`🔍 [SUBTASK ${i + 1}/${msg.todoList.length}] isFirst: ${isFirstSubtask}, isLast: ${isLastSubtask}, initialLockState: ${initialLockState}`);
+
+                            const requestBody = {
+                                device_ids: [chatDeviceId.value],
+                                task_content: item.content,
+                                task_type: 'chat',
+                                debug_mode: debugMode.value,
+                                send_email: false,
+                                no_auto_lock: !isLastSubtask,  // Only prevent lock between subtasks
+                                session_id: currentSessionId.value,
+                                message_id: msg.id
+                            };
+
+                            // For non-first subtasks, explicitly pass the initial lock state
+                            if (!isFirstSubtask && initialLockState !== null) {
+                                requestBody.restore_lock_to_state = initialLockState;
+                                console.log(`🔐 Passing initial lock state to subtask ${i + 1}: ${initialLockState}`);
+                            }
+
+                            const runResponse = await apiCall('/api/tasks/run', {
+                                method: 'POST',
+                                body: JSON.stringify(requestBody)
+                            });
+
+                            // For first subtask, immediately check status to get initial_lock_state
+                            if (isFirstSubtask) {
+                                await new Promise(resolve => setTimeout(resolve, 500)); // Short wait for task to initialize
+                                const initialStatusCheck = await apiCall('/api/tasks/status');
+                                console.log(`🔍 Initial status check:`, initialStatusCheck);
+                                if (initialStatusCheck.task && initialStatusCheck.task.initial_lock_state !== undefined) {
+                                    initialLockState = initialStatusCheck.task.initial_lock_state;
+                                    console.log(`🔐 Got initial lock state immediately after start: ${initialLockState}`);
+                                } else {
+                                    console.warn(`⚠️ initial_lock_state not found in task:`, initialStatusCheck.task);
+                                }
+                            }
+
+                            // Poll for task completion
+                            let taskSuccess = false;
+                            let pollAttempts = 0;
+                            const maxPollAttempts = subtaskTimeoutSeconds.value;
+
+                            while (pollAttempts < maxPollAttempts) {
+                                const statusCheck = await apiCall('/api/tasks/status');
+
+                                // For first subtask, try to get initial lock state from current task (while running)
+                                if (isFirstSubtask && initialLockState === null && statusCheck.task && statusCheck.task.initial_lock_state !== undefined) {
+                                    initialLockState = statusCheck.task.initial_lock_state;
+                                    console.log(`🔐 Got initial lock state from task (polling): ${initialLockState}`);
+                                }
+
+                                if (!statusCheck.running) {
+                                    // Task completed - assume success (errors would throw exceptions)
+                                    taskSuccess = true;
+                                    break;
+                                }
+
+                                // Check if skip requested
+                                if (isSkipping.value) {
+                                    await apiCall('/api/tasks/stop', { method: 'POST' });
+                                    break;
+                                }
+
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                                pollAttempts++;
+                            }
+
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            // Clear countdown timer
+                            clearInterval(subtaskCountdownTimer);
+                            subtaskCountdown.value = 0;
+
+                            // Update subtask status
+                            if (isSkipping.value) {
+                                item.status = 'skipped';
+                                isSkipping.value = false;
+                                // Skip remaining tasks
+                                for (let j = i + 1; j < msg.todoList.length; j++) {
+                                    msg.todoList[j].status = 'skipped';
+                                }
+                                break;
+                            } else if (taskSuccess) {
+                                item.status = 'completed';
+                            } else {
+                                item.status = 'failed';
+                                msg.content = `❌ 子任务失败: ${item.content}`;
+                                msg.status = 'error';
+                                chatRunning.value = false;
+                                saveCurrentSession();
+                                return;
+                            }
+
+                            saveCurrentSession();
+                        }
+
+                        // All subtasks completed
+                        const allCompleted = msg.todoList.every(t => t.status === 'completed');
+                        if (allCompleted) {
+                            msg.content = '✅ 所有子任务已完成';
+                            msg.status = 'success';
+                        } else {
+                            msg.content = '⚠️ 部分任务已跳过';
+                            msg.status = 'success';
+                        }
+                        chatRunning.value = false;
+                        saveCurrentSession();
+                        scrollChatToBottom();
                     }
 
                     // Tap preview functions (debug mode)
@@ -3599,8 +4101,22 @@
                                         logs: []  // 每个子任务独立的日志数组
                                     }));
                                     assistantMsg.tokens = decomposeResult.tokens || 0;
-                                    assistantMsg.content = '📋 任务已拆解，准备执行...';
                                     assistantMsg.currentTodoIndex = -1;  // 用于跟踪当前执行的子任务索引
+
+                                    // 🆕 NEW: Check if both debug and complex modes are enabled
+                                    if (debugMode.value) {
+                                        // Pause for user confirmation
+                                        assistantMsg.status = 'pending_confirmation';
+                                        assistantMsg.content = '📋 任务已拆解为以下清单，请确认：';
+                                        awaitingTodoListConfirmation.value = true;
+                                        chatRunning.value = false;  // Stop "running" indicator
+                                        saveCurrentSession();
+                                        scrollChatToBottom();
+                                        return;  // 🛑 PAUSE HERE - Wait for user confirmation
+                                    }
+
+                                    // Original flow (no confirmation needed)
+                                    assistantMsg.content = '📋 任务已拆解，准备执行...';
                                     saveCurrentSession();
                                     scrollChatToBottom();
 
@@ -4783,12 +5299,33 @@
 
                     // Screenshot configuration
                     async function saveScreenshotConfig() {
+                        loading.value = true;
                         try {
-                            // Note: Backend API not yet implemented, storing in localStorage for now
-                            localStorage.setItem('screenshot_config', JSON.stringify(screenshotConfig.value));
-                            showToast('截图压缩设置已保存（重启服务后生效）');
+                            await apiCall('/api/settings/screenshot', {
+                                method: 'PUT',
+                                body: JSON.stringify({
+                                    max_image_dimension: screenshotConfig.value.max_dimension,
+                                    jpeg_quality: screenshotConfig.value.jpeg_quality
+                                })
+                            });
+                            showToast('Screenshot settings saved successfully!', 'success');
                         } catch (error) {
-                            showToast('保存失败', 'error');
+                            console.error('Failed to save screenshot settings:', error);
+                            showToast('Failed to save screenshot settings', 'error');
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
+                    async function loadScreenshotConfig() {
+                        try {
+                            const data = await apiCall('/api/settings/screenshot');
+                            screenshotConfig.value = {
+                                max_dimension: data.max_image_dimension,
+                                jpeg_quality: data.jpeg_quality
+                            };
+                        } catch (error) {
+                            console.error('Failed to load screenshot settings:', error);
                         }
                     }
 
@@ -5127,6 +5664,7 @@
                         }
                         if (page === 'settings') {
                             loadEmailConfig();
+                            loadScreenshotConfig();
                         }
                         if (page === 'rules') {
                             loadAppMappings();
@@ -5224,6 +5762,13 @@
                         sendChatMessage,
                         retryMessage,
                         skipSubtask,
+                        // TodoList confirmation functions
+                        confirmTodoList,
+                        cancelTodoList,
+                        moveTodoUp,
+                        moveTodoDown,
+                        deleteTodo,
+                        autoResizeTextarea,
                         stopChatTask,
                         // Tap preview (debug mode)
                         showTapPreview,
@@ -5324,6 +5869,7 @@
                         testEmail,
                         // Screenshot config
                         screenshotConfig,
+                        loadScreenshotConfig,
                         saveScreenshotConfig,
                         resetScreenshotConfig,
                     };

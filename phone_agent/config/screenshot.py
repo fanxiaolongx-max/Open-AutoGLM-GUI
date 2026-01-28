@@ -17,7 +17,25 @@ class ScreenshotConfig:
     jpeg_quality: int = 70  # JPEG quality (0-100, higher = better quality, larger size)
 
     def __post_init__(self):
-        """Load values from environment variables if present."""
+        """Load values from config file, then environment variables if present."""
+        # Try loading from JSON file first
+        config_file_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "config",
+            "screenshot_settings.json"
+        )
+        
+        if os.path.exists(config_file_path):
+            try:
+                import json
+                with open(config_file_path, "r") as f:
+                    file_config = json.load(f)
+                    self.max_image_dimension = file_config.get("max_image_dimension", self.max_image_dimension)
+                    self.jpeg_quality = file_config.get("jpeg_quality", self.jpeg_quality)
+            except Exception:
+                pass  # Fall back to defaults if file can't be loaded
+        
+        # Environment variables override file config
         self.max_image_dimension = int(
             os.getenv("PHONE_AGENT_MAX_IMAGE_DIMENSION", self.max_image_dimension)
         )

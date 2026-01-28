@@ -32,6 +32,7 @@ class RunTaskRequest(BaseModel):
     model_settings: Optional[dict] = None
     send_email: Optional[bool] = True  # Default True for backward compatibility
     no_auto_lock: Optional[bool] = False  # 复杂任务模式下不自动锁屏
+    restore_lock_to_state: Optional[bool] = None  # 明确指定要恢复的锁屏状态（用于子任务链）
     task_type: Optional[str] = "manual"  # 任务类型: chat/scheduled/manual
     force_run: Optional[bool] = False  # 是否强制执行（打断当前任务）
     session_id: Optional[str] = None  # 聊天会话 ID（用于在同一会话中发送多个消息）
@@ -53,6 +54,7 @@ class TaskResponse(BaseModel):
     results: list = []
     logs: list = []
     progress: int = 0
+    initial_lock_state: Optional[bool] = None  # Initial lock state detected (for subtask chains)
 
 
 class TaskStatusResponse(BaseModel):
@@ -318,6 +320,7 @@ async def run_task(
                 model_config=request.model_settings,
                 send_email=request.send_email if request.send_email is not None else True,
                 no_auto_lock=request.no_auto_lock if request.no_auto_lock is not None else False,
+                restore_lock_to_state=request.restore_lock_to_state,
                 task_type=task_type,
                 session_id=request.session_id,
                 message_id=request.message_id,

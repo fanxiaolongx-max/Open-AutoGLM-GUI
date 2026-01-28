@@ -96,7 +96,8 @@ class EmailServiceWrapper:
         total_count: int,
         details: str,
         screenshot_data: Optional[bytes] = None,
-        is_scheduled: bool = False
+        is_scheduled: bool = False,
+        task_summary: Optional[str] = None
     ) -> tuple[bool, str]:
         """
         Send a task execution report email.
@@ -230,6 +231,16 @@ class EmailServiceWrapper:
             padding-bottom: 8px;
             border-bottom: 1px solid #e5e5e5;
         }}
+        .summary-box {{
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border-left: 4px solid #3b82f6;
+            padding: 16px 20px;
+            border-radius: 8px;
+            color: #1e40af;
+            font-size: 14px;
+            line-height: 1.8;
+            box-shadow: 0 1px 3px rgba(59, 130, 246, 0.1);
+        }}
         .details {{
             background: #18181b;
             color: #a1a1aa;
@@ -275,6 +286,15 @@ class EmailServiceWrapper:
             <div class="section-title">任务信息</div>
             <p><strong>任务名称:</strong> {html.escape(task_name)}</p>
         </div>
+
+        {f'''
+        <div class="section">
+            <div class="section-title">📋 任务总结</div>
+            <div class="summary-box">
+                {html.escape(task_summary)}
+            </div>
+        </div>
+        ''' if task_summary else ''}
 
         <div class="stats">
             <div class="stat">

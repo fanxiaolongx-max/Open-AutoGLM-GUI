@@ -3,12 +3,20 @@
 Settings API router.
 """
 
+import json
+import logging
+from pathlib import Path
+from typing import Dict, Any
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from web_app.auth import verify_token
 from web_app.config import config_manager
 from web_app.services.email_service import email_service
+from phone_agent.config import SCREENSHOT_CONFIG
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -96,3 +104,70 @@ async def generate_auth_token(_: bool = Depends(verify_token)):
     """Generate a new authentication token."""
     token = config_manager.generate_auth_token()
     return {"success": True, "token": token}
+
+
+# Screenshot settings
+CONFIG_FILE = Path(__file__).parent.parent.parent / "config" / "screenshot_settings.json"
+
+
+class ScreenshotSettings(BaseModel):
+    """Screenshot configuration settings."""
+    max_image_dimension: int = Field(ge=100, le=4000, description="Maximum image dimension")
+    jpeg_quality: int = Field(ge=1, le=100, description="JPEG quality (1-100)")
+
+
+def load_config_from_file() -> Dict[str, Any]:
+    """Load screenshot config from file."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load config file: {e}")
+    return {}
+
+
+def save_config_to_file(config: Dict[str, Any]) -> None:
+    """Save screenshot config to file."""
+    try:
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=2)
+        logger.info(f"Saved screenshot config to {CONFIG_FILE}")
+    except Exception as e:
+        logger.error(f"Failed to save config file: {e}")
+        raise
+
+
+@router.get("/screenshot")
+async def get_screenshot_settings(_: bool = Depends(verify_token)) -> ScreenshotSettings:
+    """Get current screenshot settings."""
+    return ScreenshotSettings(
+        max_image_dimension=SCREENSHOT_CONFIG.max_image_dimension,
+        jpeg_quality=SCREENSHOT_CONFIG.jpeg_quality
+    )
+
+
+@router.put("/screenshot")
+async def update_screenshot_settings(
+    settings: ScreenshotSettings,
+    _: bool = Depends(verify_token)
+) -> Dict[str, str]:
+    """Update screenshot settings."""
+    try:
+        # Update runtime config
+        SCREENSHOT_CONFIG.max_image_dimension = settings.max_image_dimension
+        SCREENSHOT_CONFIG.jpeg_quality = settings.jpeg_quality
+        
+        # Persist to file
+        save_config_to_file({
+            "max_image_dimension": settings.max_image_dimension,
+            "jpeg_quality": settings.jpeg_quality
+        })
+        
+        logger.info(f"Updated screenshot config: dimension={settings.max_image_dimension}, quality={settings.jpeg_quality}")
+        return {"status": "success", "message": "Screenshot settings updated"}
+    except Exception as e:
+        logger.error(f"Failed to update screenshot settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+

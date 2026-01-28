@@ -14,6 +14,8 @@ except ImportError:
     HAS_ANTHROPIC = False
     anthropic = None
 
+# TODO: Migrate from deprecated 'google.generativeai' to 'google.genai'
+# See: https://github.com/google-gemini/deprecated-generative-ai-python
 try:
     import google.generativeai as genai
     HAS_GEMINI = True

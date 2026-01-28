@@ -94,7 +94,7 @@ async def delete_session(session_id: str, _: bool = Depends(verify_token)):
 @router.patch("/sessions/{session_id}/status")
 async def update_session_status(
     session_id: str,
-    status: str = Query(..., regex="^(active|completed|failed)$"),
+    status: str = Query(..., pattern="^(active|completed|failed)$"),
     _: bool = Depends(verify_token)
 ):
     """Update session status."""

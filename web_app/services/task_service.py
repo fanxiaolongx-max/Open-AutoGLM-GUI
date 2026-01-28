@@ -91,6 +91,7 @@ class TaskExecution:
     is_scheduled: bool = False  # Whether this is a scheduled task
     send_email: bool = True  # Whether to send email after completion
     task_type: str = TaskType.MANUAL.value  # 任务类型
+    initial_lock_state: Optional[bool] = None  # Initial lock state detected (for subtask chains)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -256,6 +257,7 @@ class TaskService:
         is_scheduled: bool = False,
         send_email: bool = True,
         no_auto_lock: bool = False,
+        restore_lock_to_state: Optional[bool] = None,
         task_type: str = TaskType.MANUAL.value,
         session_id: Optional[str] = None,
         message_id: Optional[str] = None,
@@ -271,6 +273,7 @@ class TaskService:
             is_scheduled: Whether this is a scheduled task
             send_email: Whether to send email after completion
             no_auto_lock: Whether to skip auto-lock after task (for complex task mode)
+            restore_lock_to_state: Explicitly specify lock state to restore to (for subtask chains)
             task_type: Task type for priority handling (chat/scheduled/manual)
             session_id: Optional existing session ID to use (for chat tasks)
             message_id: Optional existing message ID to bind logs/screenshots to
@@ -340,6 +343,19 @@ class TaskService:
         )
         self._current_task = task
 
+        # Detect initial lock state immediately (before execution loop) so frontend can access it
+        # This is crucial for sequential subtask chains to share the original lock state
+        if device_ids:
+            first_device_id = device_ids[0]
+            try:
+                from web_app.services.device_service import device_service
+                was_locked = await device_service.is_screen_locked(first_device_id)
+                task.initial_lock_state = was_locked
+                logger.info(f"🔐 Detected initial lock state for task {task.id}: {'LOCKED' if was_locked else 'UNLOCKED'}")
+            except Exception as e:
+                logger.warning(f"Failed to detect initial lock state: {e}")
+                task.initial_lock_state = None
+
         self._emit_log(task.id, f"Starting task: {task_content}")
         self._emit_log(task.id, f"Devices: {', '.join(device_ids)}")
 
@@ -382,6 +398,10 @@ class TaskService:
             unlock_failed = False
             try:
                 was_locked = await device_service.is_screen_locked(device_id)
+                # Store initial lock state in task object for frontend to access
+                task.initial_lock_state = was_locked
+                self._emit_log(task.id, f"🔍 [LOCK_STATE] Initial lock state: {'LOCKED' if was_locked else 'UNLOCKED'}")
+                self._emit_log(task.id, f"🔍 [LOCK_STATE] no_auto_lock parameter: {no_auto_lock}")
                 if was_locked:
                     self._emit_log(task.id, f"🔒 Device is locked, attempting to unlock...")
                     pin = device_service.get_device_pin(device_id)
@@ -543,9 +563,12 @@ class TaskService:
                     self._emit_log(task.id, f"⚠️ Failed to capture screenshot: {e}")
 
             # Restore lock state if device was locked before (skip if no_auto_lock is True)
-            if was_locked and not no_auto_lock:
+            # If restore_lock_to_state is explicitly specified, use that instead of detected state
+            should_restore_lock = restore_lock_to_state if restore_lock_to_state is not None else was_locked
+            self._emit_log(task.id, f"🔍 [LOCK_STATE] End check - was_locked: {was_locked}, no_auto_lock: {no_auto_lock}, restore_lock_to_state: {restore_lock_to_state}, should_restore: {should_restore_lock}")
+            if should_restore_lock and not no_auto_lock:
                 try:
-                    self._emit_log(task.id, f"🔒 Restoring lock state...")
+                    self._emit_log(task.id, f"🔒 Restoring lock state... (should_restore={should_restore_lock}, no_auto_lock=False)")
                     lock_success = await device_service.lock_device(device_id)
                     if lock_success:
                         self._emit_log(task.id, f"🔒 Device locked")
@@ -553,8 +576,10 @@ class TaskService:
                         self._emit_log(task.id, f"⚠️ Failed to lock device")
                 except Exception as e:
                     self._emit_log(task.id, f"⚠️ Lock restore failed: {e}")
-            elif was_locked and no_auto_lock:
-                self._emit_log(task.id, f"🔓 Keeping device unlocked (complex task mode)")
+            elif should_restore_lock and no_auto_lock:
+                self._emit_log(task.id, f"🔓 Keeping device unlocked (should_restore={should_restore_lock} but no_auto_lock=True)")
+            else:
+                self._emit_log(task.id, f"📱 No lock restoration needed (should_restore={should_restore_lock}, no_auto_lock={no_auto_lock})")
 
             completed += 1
             task.progress = int((completed / total_devices) * 100)
@@ -639,7 +664,31 @@ class TaskService:
             # Use screenshot captured before locking
             screenshot_data = getattr(task, '_screenshot_data', None)
 
-            # Send report with correct is_scheduled flag
+            # Generate task summary using AI (if agent is available)
+            task_summary = None
+            try:
+                # Get agent instance from the first device (for single device tasks)
+                # or use any available agent for summary
+                agent = None
+                if self._agent_instances:
+                    # Get first available agent
+                    agent = next(iter(self._agent_instances.values()), None)
+                
+                if agent:
+                    self._emit_log(task.id, f"🤖 Generating AI task summary...")
+                    task_summary = agent.generate_task_summary(task.task_content)
+                    self._emit_log(task.id, f"✅ Task summary generated")
+                else:
+                    # Agent not available, create simple summary
+                    status_text = "成功完成" if success_count == total_count else ("部分完成" if success_count > 0 else "执行失败")
+                    task_summary = f"任务「{task.task_content[:30]}」{status_text}，共涉及{total_count}个设备。"
+            except Exception as e:
+                logger.warning(f"Failed to generate task summary: {e}")
+                # Fallback summary
+                status_text = "完成" if success_count > 0 else "失败"
+                task_summary = f"任务{status_text}，详细信息请查看执行日志。"
+
+            # Send report with correct is_scheduled flag and summary
             success, message = email_service.send_task_report(
                 task_name=task.task_content[:50],
                 success_count=success_count,
@@ -648,6 +697,7 @@ class TaskService:
                 details=details,
                 screenshot_data=screenshot_data,
                 is_scheduled=task.is_scheduled,
+                task_summary=task_summary,
             )
 
             if success:
