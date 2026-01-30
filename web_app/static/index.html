@@ -7,6 +7,54 @@
     <title>AutoGLM Web Server</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
+        /* Theme Variables */
+        :root {
+            /* Light Mode (Default) */
+            --bg-primary: #f8f9fa;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f5f5f5;
+            --bg-card: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border-color: #e2e8f0;
+            --shadow-sm: rgba(0, 0, 0, 0.05);
+            --shadow-md: rgba(0, 0, 0, 0.1);
+            --shadow-lg: rgba(0, 0, 0, 0.15);
+            --accent-primary: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        [data-theme="dark"] {
+            /* Dark Mode */
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --bg-card: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --border-color: #475569;
+            --shadow-sm: rgba(0, 0, 0, 0.3);
+            --shadow-md: rgba(0, 0, 0, 0.5);
+            --shadow-lg: rgba(0, 0, 0, 0.7);
+            --accent-primary: #60a5fa;
+            --accent-hover: #3b82f6;
+            --success: #34d399;
+            --warning: #fbbf24;
+            --error: #f87171;
+        }
+
+        /* Smooth theme transitions */
+        *,
+        *::before,
+        *::after {
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
         [v-cloak] {
             display: none;
         }
@@ -81,8 +129,8 @@
         }
 
         .chat-message.assistant .chat-bubble {
-            background: #f3f4f6;
-            color: #18181b;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
             border-bottom-left-radius: 4px;
         }
 
@@ -125,7 +173,7 @@
         .task-log-item {
             font-family: 'Monaco', 'Consolas', monospace;
             font-size: 11px;
-            color: #666;
+            color: var(--text-secondary);
             padding: 2px 0;
             border-bottom: 1px solid rgba(0, 0, 0, 0.05);
             word-break: break-all;
@@ -170,7 +218,7 @@
 
         .chat-meta {
             font-size: 10px;
-            color: #999;
+            color: var(--text-muted);
             margin-top: 4px;
             text-align: right;
         }
@@ -179,16 +227,16 @@
         .todo-list-card {
             margin-top: 10px;
             padding: 10px;
-            background: #f8fafc;
+            background: var(--bg-tertiary);
             border-radius: 8px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border-color);
         }
 
         .todo-list-header {
             font-weight: 600;
             font-size: 13px;
             margin-bottom: 8px;
-            color: #334155;
+            color: var(--text-primary);
         }
 
         .todo-item {
@@ -206,8 +254,8 @@
         }
 
         .todo-item.pending {
-            background: #fff;
-            color: #64748b;
+            background: var(--bg-card);
+            color: var(--text-secondary);
         }
 
         .todo-item.running {
@@ -240,6 +288,7 @@
             overflow: hidden;
             text-overflow: ellipsis;
             min-width: 0;
+            color: inherit;
         }
 
         /* TodoList Confirmation Styles */
@@ -320,7 +369,7 @@
             border: 1px solid #d1d5db;
             border-radius: 4px;
             font-size: 13px;
-            background: white;
+            background: var(--bg-card);
             font-family: inherit;
             resize: none;
             overflow-x: hidden;
@@ -338,13 +387,13 @@
         }
 
         .todo-item.editable {
-            background: white;
+            background: var(--bg-card);
             border: 1px dashed #cbd5e1;
         }
 
         .todo-item.editable:hover {
-            border-color: #94a3b8;
-            background: #f8fafc;
+            border-color: var(--text-muted);
+            background: var(--bg-tertiary);
         }
 
         .todo-item-controls {
@@ -356,9 +405,9 @@
 
         .todo-control-btn {
             padding: 2px 4px;
-            border: 1px solid #e5e7eb;
+            border: 1px solid var(--border-color);
             border-radius: 3px;
-            background: white;
+            background: var(--bg-card);
             cursor: pointer;
             font-size: 11px;
             color: #6b7280;
@@ -371,7 +420,7 @@
         }
 
         .todo-control-btn:hover {
-            background: #f3f4f6;
+            background: var(--bg-tertiary);
             border-color: #d1d5db;
         }
 
@@ -415,7 +464,7 @@
         .chat-input-container {
             padding: 12px 16px;
             border-top: 1px solid #e5e5e5;
-            background: white;
+            background: var(--bg-card);
             display: flex;
             gap: 10px;
             align-items: flex-end;
@@ -495,7 +544,7 @@
 
         .chat-device-selector {
             padding: 8px 16px;
-            background: #f9fafb;
+            background: var(--bg-tertiary);
             border-bottom: 1px solid #e5e5e5;
             display: flex;
             align-items: center;
@@ -525,7 +574,7 @@
         /* Chat header with email toggle */
         .chat-header {
             padding: 8px 16px;
-            background: #f9fafb;
+            background: var(--bg-tertiary);
             border-bottom: 1px solid #e5e5e5;
             display: flex;
             justify-content: space-between;
@@ -544,7 +593,7 @@
             align-items: center;
             gap: 6px;
             font-size: 12px;
-            color: #666;
+            color: var(--text-secondary);
         }
 
         .email-toggle {
@@ -574,7 +623,7 @@
             left: 2px;
             width: 16px;
             height: 16px;
-            background: white;
+            background: var(--bg-card);
             border-radius: 50%;
             transition: left 0.2s;
         }
@@ -604,7 +653,7 @@
 
         .task-result-hint {
             font-size: 10px;
-            color: #999;
+            color: var(--text-muted);
             text-align: center;
             margin-top: 4px;
         }
@@ -624,7 +673,7 @@
         }
 
         .task-detail-content {
-            background: white;
+            background: var(--bg-card);
             border-radius: 12px;
             width: 90%;
             max-width: 700px;
@@ -652,11 +701,11 @@
             border: none;
             font-size: 20px;
             cursor: pointer;
-            color: #999;
+            color: var(--text-muted);
         }
 
         .task-detail-close:hover {
-            color: #333;
+            color: var(--text-primary);
         }
 
         .task-detail-body {
@@ -672,22 +721,25 @@
         .task-detail-section h4 {
             font-size: 14px;
             margin: 0 0 10px 0;
-            color: #333;
+            color: var(--text-primary);
             display: flex;
             align-items: center;
             gap: 6px;
         }
 
         .task-detail-logs {
-            background: #18181b;
-            color: #a1a1aa;
-            padding: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
+            padding: 16px;
             font-family: 'Monaco', 'Consolas', monospace;
-            font-size: 11px;
-            max-height: 300px;
+            font-size: 13px;
+            max-height: 500px;
             overflow-y: auto;
+            line-height: 1.6;
+            color: var(--text-primary);
             white-space: pre-wrap;
+            word-wrap: break-word;
         }
 
         .task-detail-screenshot {
@@ -702,16 +754,16 @@
 
         .task-detail-screenshot-placeholder {
             padding: 40px;
-            background: #f5f5f5;
+            background: var(--bg-tertiary);
             border-radius: 8px;
-            color: #999;
+            color: var(--text-muted);
         }
 
         .task-detail-stats {
             display: flex;
             gap: 20px;
             padding: 12px;
-            background: #f9fafb;
+            background: var(--bg-tertiary);
             border-radius: 8px;
         }
 
@@ -726,7 +778,7 @@
 
         .task-detail-stat-label {
             font-size: 11px;
-            color: #666;
+            color: var(--text-secondary);
         }
 
         .loading-spinner {
@@ -752,7 +804,7 @@
         /* Phone Preview Window Styles */
         .phone-preview-window {
             position: fixed;
-            background: white;
+            background: var(--bg-card);
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
             z-index: 1000;
@@ -838,7 +890,7 @@
         }
 
         .phone-preview-placeholder {
-            color: #a1a1aa;
+            color: var(--text-muted);
             font-size: 12px;
             text-align: center;
             padding: 20px;
@@ -871,7 +923,7 @@
         /* Chat Sessions Sidebar */
         .chat-sessions-sidebar {
             width: 220px;
-            background: #f9fafb;
+            background: var(--bg-tertiary);
             border-right: 1px solid #e5e5e5;
             display: flex;
             flex-direction: column;
@@ -889,7 +941,7 @@
         .chat-sessions-header h3 {
             font-size: 13px;
             margin: 0;
-            color: #333;
+            color: var(--text-primary);
         }
 
         .chat-new-btn {
@@ -927,11 +979,16 @@
         }
 
         .chat-session-item:hover {
-            background: #e5e7eb;
+            background: var(--bg-tertiary);
         }
 
         .chat-session-item.active {
-            background: #dbeafe;
+            background: var(--accent-primary);
+        }
+
+        .chat-session-item.active .chat-session-title,
+        .chat-session-item.active .chat-session-time {
+            color: white;
         }
 
         .chat-session-info {
@@ -942,7 +999,7 @@
         .chat-session-title {
             font-size: 13px;
             font-weight: 500;
-            color: #333;
+            color: var(--text-primary);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -950,14 +1007,14 @@
 
         .chat-session-time {
             font-size: 11px;
-            color: #999;
+            color: var(--text-muted);
             margin-top: 2px;
         }
 
         .chat-session-delete {
             background: none;
             border: none;
-            color: #999;
+            color: var(--text-muted);
             cursor: pointer;
             padding: 4px;
             border-radius: 4px;
@@ -1059,7 +1116,7 @@
                         </div>
                         <div class="chat-sessions-list">
                             <div v-if="chatSessions.length === 0"
-                                style="text-align: center; color: #999; padding: 20px; font-size: 12px;">
+                                style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">
                                 暂无会话记录
                             </div>
                             <div v-for="session in chatSessions" :key="session.id" class="chat-session-item"
@@ -1095,7 +1152,7 @@
                                 <div class="email-toggle" v-if="complexTaskMode" style="margin-right: 12px;">
                                     <span>⏱️ 超时</span>
                                     <select v-model="subtaskTimeoutSeconds"
-                                        style="padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd; font-size: 12px; background: white;">
+                                        style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 12px; background: var(--bg-card); color: var(--text-primary);">
                                         <option :value="60">1分钟</option>
                                         <option :value="120">2分钟</option>
                                         <option :value="180">3分钟</option>
@@ -1118,16 +1175,22 @@
                                     <div class="toggle-switch" :class="{ active: debugMode }"
                                         @click="debugMode = !debugMode"></div>
                                 </div>
+                                <div class="email-toggle">
+                                    <span>🌙 暗黑模式</span>
+                                    <div class="toggle-switch" :class="{ active: darkMode }" @click="toggleDarkMode">
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Messages Area -->
                         <div class="chat-messages" ref="chatMessagesRef">
                             <div v-if="chatMessages.length === 0"
-                                style="text-align: center; color: #999; padding: 40px;">
+                                style="text-align: center; color: var(--text-muted); padding: 40px;">
                                 <div style="font-size: 48px; margin-bottom: 16px;">🤖</div>
                                 <div>你好！请输入任务指令，我会帮你在手机上执行。</div>
-                                <div style="font-size: 12px; margin-top: 8px; color: #bbb;">例如：打开微信，发送消息给某人...</div>
+                                <div style="font-size: 12px; margin-top: 8px; color: var(--text-muted);">
+                                    例如：打开微信，发送消息给某人...</div>
                             </div>
                             <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-message" :class="msg.role">
                                 <div class="chat-avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
@@ -1300,7 +1363,7 @@
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                             <!-- Wireless Pairing -->
-                            <div style="padding: 12px; background: #f8fafc; border-radius: 8px;">
+                            <div style="padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
                                 <h4 style="margin-bottom: 12px; font-size: 14px;">无线配对 (首次连接)</h4>
                                 <div class="form-group" style="margin-bottom: 8px;">
                                     <input type="text" v-model="pairAddress" class="form-input"
@@ -1315,7 +1378,7 @@
                                 </button>
                             </div>
                             <!-- TCP Connect -->
-                            <div style="padding: 12px; background: #f8fafc; border-radius: 8px;">
+                            <div style="padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
                                 <h4 style="margin-bottom: 12px; font-size: 14px;">TCP 连接 (已配对设备)</h4>
                                 <div class="form-group" style="margin-bottom: 8px;">
                                     <input type="text" v-model="connectAddress" class="form-input"
@@ -1330,7 +1393,7 @@
                         <div v-if="deviceLogs.length > 0" style="margin-top: 12px;">
                             <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">连接日志:</div>
                             <div
-                                style="background: #18181b; color: #a1a1aa; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 11px; max-height: 100px; overflow-y: auto;">
+                                style="background: #18181b; color: var(--text-muted); padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 11px; max-height: 100px; overflow-y: auto;">
                                 <div v-for="(log, i) in deviceLogs" :key="i">{{ log }}</div>
                             </div>
                         </div>
@@ -1351,7 +1414,7 @@
 
                         <!-- APK Install Section -->
                         <div v-if="devices.length > 0"
-                            style="margin-bottom: 16px; padding: 12px; background: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;">
+                            style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color);">
                             <h4 style="margin-bottom: 12px; font-size: 14px;">📦 APK 安装</h4>
                             <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
                                 <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
@@ -1373,13 +1436,13 @@
                                     {{ apkInstalling ? '安装中...' : '📲 安装' }}
                                 </button>
                             </div>
-                            <div v-if="apkFile" style="margin-top: 8px; font-size: 12px; color: #666;">
+                            <div v-if="apkFile" style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
                                 已选择: {{ apkFile.name }} ({{ (apkFile.size / 1024 / 1024).toFixed(2) }} MB)
                             </div>
                             <!-- APK Install Logs -->
                             <div v-if="apkLogs.length > 0" style="margin-top: 12px;">
                                 <div
-                                    style="background: #18181b; color: #a1a1aa; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 11px; max-height: 100px; overflow-y: auto;">
+                                    style="background: #18181b; color: var(--text-muted); padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 11px; max-height: 100px; overflow-y: auto;">
                                     <div v-for="(log, i) in apkLogs" :key="i">{{ log }}</div>
                                 </div>
                             </div>
@@ -1523,7 +1586,7 @@
                             </button>
                         </div>
                         <div class="log-output" ref="logContainer">
-                            <div v-if="taskLogs.length === 0" style="color: #666;">
+                            <div v-if="taskLogs.length === 0" style="color: var(--text-secondary);">
                                 Logs will appear here...
                             </div>
                             <div v-for="(log, index) in taskLogs" :key="index">
@@ -1688,7 +1751,7 @@
                                 <label class="form-label">目标设备（留空表示所有设备）</label>
                                 <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                     <label v-for="device in devices" :key="device.id"
-                                        style="display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: #f3f4f6; border-radius: 4px;">
+                                        style="display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--bg-tertiary); border-radius: 4px;">
                                         <input type="checkbox" :value="device.id" v-model="schedulerForm.devices">
                                         {{ device.name || device.id.substring(0, 15) }}
                                     </label>
@@ -1781,7 +1844,7 @@
                                     </span>
                                 </div>
                                 <div
-                                    style="background: #18181b; color: #a1a1aa; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 11px; max-height: 400px; overflow-y: auto; white-space: pre-wrap;">
+                                    style="background: #18181b; color: var(--text-muted); padding: 12px; border-radius: 8px; font-family: monospace; font-size: 11px; max-height: 400px; overflow-y: auto; white-space: pre-wrap;">
                                     {{ logDetailData.details || '无详细日志' }}</div>
                             </div>
                             <div class="modal-footer">
@@ -1807,7 +1870,7 @@
                         </div>
 
                         <div v-if="activeModel"
-                            style="margin-bottom: 16px; padding: 12px; background: #eff6ff; border-radius: 8px;">
+                            style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--accent-primary);">
                             <strong>当前激活:</strong> {{ activeModel.name }} ({{ activeModel.model_name }})
                         </div>
 
@@ -1885,7 +1948,7 @@
                             <!-- OpenAI 协议 -->
                             <div v-if="getPresetsByCategory('OpenAI 协议').length > 0" style="margin-bottom: 16px;">
                                 <div
-                                    style="font-size: 0.85rem; color: #666; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                    style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
                                     <span
                                         style="background: #10a37f; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">OpenAI</span>
                                     <span>兼容协议 (/v1/chat/completions)</span>
@@ -1902,7 +1965,7 @@
                             <!-- Anthropic 协议 -->
                             <div v-if="getPresetsByCategory('Anthropic 协议').length > 0" style="margin-bottom: 16px;">
                                 <div
-                                    style="font-size: 0.85rem; color: #666; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                    style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
                                     <span
                                         style="background: #d97706; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">Anthropic</span>
                                     <span>协议 (/v1/messages)</span>
@@ -1919,7 +1982,7 @@
                             <!-- Gemini 协议 -->
                             <div v-if="getPresetsByCategory('Gemini 协议').length > 0" style="margin-bottom: 16px;">
                                 <div
-                                    style="font-size: 0.85rem; color: #666; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                    style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
                                     <span
                                         style="background: #4285f4; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">Gemini</span>
                                     <span>协议 (Google AI)</span>
@@ -1955,7 +2018,7 @@
                                         <option value="anthropic">Anthropic 协议 (/v1/messages)</option>
                                         <option value="gemini">Gemini 协议 (Google AI)</option>
                                     </select>
-                                    <div style="font-size: 0.75rem; color: #666; margin-top: 4px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;">
                                         <span v-if="modelForm.protocol === 'openai'">适用于大多数兼容OpenAI API的服务</span>
                                         <span v-else-if="modelForm.protocol === 'anthropic'">适用于Anthropic Claude
                                             API</span>
@@ -2055,7 +2118,7 @@
 
                         <!-- Upload Section -->
                         <div
-                            style="margin-bottom: 16px; padding: 12px; background: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;">
+                            style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color);">
                             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                                 <span style="font-size: 14px;">📤 上传文件到当前目录:</span>
                                 <input type="file" ref="uploadFileInput" @change="onUploadFileSelect"
@@ -2111,7 +2174,7 @@
                                                 {{ file.name }}
                                             </span>
                                         </td>
-                                        <td style="font-size: 12px; color: #666;">
+                                        <td style="font-size: 12px; color: var(--text-secondary);">
                                             {{ file.is_dir ? '-' : formatFileSize(file.size) }}
                                         </td>
                                         <td>
@@ -2543,7 +2606,7 @@
                         <h4>📝 完整执行日志</h4>
                         <div class="task-detail-logs">
                             <div v-if="taskDetailData.logs && taskDetailData.logs.length > 0">
-                                <div v-for="(log, i) in taskDetailData.logs" :key="i">{{ log }}</div>
+                                {{ taskDetailData.logs.join('\n') }}
                             </div>
                             <div v-else>暂无日志</div>
                         </div>
@@ -2660,7 +2723,7 @@
                 </div>
                 <div class="task-detail-body" style="padding: 16px;">
                     <div
-                        style="position: relative; background: #f5f5f5; border-radius: 8px; overflow: hidden; cursor: crosshair;">
+                        style="position: relative; background: var(--bg-tertiary); border-radius: 8px; overflow: hidden; cursor: crosshair;">
                         <img v-if="tapPreviewData.screenshot"
                             :src="'data:image/png;base64,' + tapPreviewData.screenshot"
                             style="width: 100%; display: block;" @click="handleTapPreviewClick">
@@ -2681,10 +2744,10 @@
                             </svg>
                         </div>
                     </div>
-                    <div style="margin-top: 12px; font-size: 12px; color: #666; text-align: center;">
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-secondary); text-align: center;">
                         目标位置: ({{ tapPreviewAdjustedX }}, {{ tapPreviewAdjustedY }})
                         <br>
-                        <span style="font-size: 11px; color: #999;">点击图片可调整点击位置</span>
+                        <span style="font-size: 11px; color: var(--text-muted);">点击图片可调整点击位置</span>
                     </div>
                     <div style="display: flex; gap: 12px; margin-top: 16px;">
                         <button class="btn btn-secondary" style="flex: 1;" @click="cancelTapPreview">取消</button>
@@ -2822,6 +2885,7 @@
                     const chatAutoEmail = ref(false);  // Default: no auto email in chat mode
                     const complexTaskMode = ref(false);  // 复杂任务模式：先拆解成todolist再逐个执行
                     const debugMode = ref(false);  // 调试模式：点击前显示预览
+                    const darkMode = ref(false);  // 暗黑模式
                     const awaitingTodoListConfirmation = ref(false);  // 是否正在等待用户确认todoList
                     const subtaskTimeoutSeconds = ref(180);  // 子任务超时时间（秒），默认3分钟
                     const subtaskCountdown = ref(0);  // 子任务剩余秒数（用于倒计时显示）
@@ -2834,6 +2898,22 @@
                     const tapPreviewData = ref({ requestId: '', x: 0, y: 0, width: 0, height: 0, screenshot: '' });
                     const tapPreviewAdjustedX = ref(0);
                     const tapPreviewAdjustedY = ref(0);
+
+                    // Dark Mode Functions
+                    function applyTheme(theme) {
+                        if (theme === 'dark') {
+                            document.documentElement.setAttribute('data-theme', 'dark');
+                        } else {
+                            document.documentElement.removeAttribute('data-theme');
+                        }
+                    }
+
+                    function toggleDarkMode() {
+                        darkMode.value = !darkMode.value;
+                        const theme = darkMode.value ? 'dark' : 'light';
+                        applyTheme(theme);
+                        localStorage.setItem('theme', theme);
+                    }
 
                     // Chat sessions state
                     const chatSessions = ref([]);
@@ -4546,9 +4626,43 @@
                             screenshots = msg.screenshots || [];
                         }
 
+                        // Smart log processing for ZhipuAI streaming output
+                        // ZhipuAI sends each token as separate array element, causing fragmented display
+                        function processLogs(logs) {
+                            if (!logs || logs.length === 0) return [];
+
+                            const result = [];
+                            let buffer = '';  // Buffer for merging consecutive short tokens
+
+                            for (let i = 0; i < logs.length; i++) {
+                                const log = logs[i];
+
+                                // If this is a short token (likely streaming output)
+                                if (log.length <= 3) {
+                                    buffer += log;
+                                } else {
+                                    // This is a complete log entry
+                                    // First, flush any buffered content
+                                    if (buffer.trim().length > 0) {
+                                        result.push(buffer);
+                                        buffer = '';
+                                    }
+                                    // Then add this complete entry
+                                    result.push(log);
+                                }
+                            }
+
+                            // Flush any remaining buffered content
+                            if (buffer.trim().length > 0) {
+                                result.push(buffer);
+                            }
+
+                            return result;
+                        }
+
                         taskDetailData.value = {
                             status: msg.status,
-                            logs: msg.logs || [],
+                            logs: processLogs(msg.logs || []),
                             screenshots: screenshots  // 只使用 screenshots，不再使用 base64 screenshot
                         };
                         showTaskDetail.value = true;
@@ -4560,7 +4674,8 @@
                         try {
                             const data = await apiCall('/api/devices/refresh', { method: 'POST' });
                             devices.value = data;
-                            showToast(`Found ${data.length} device(s)`);
+                            showToast(`Found ${data.length
+                                } device(s)`);
                         } catch (e) {
                             console.error('Failed to refresh devices:', e);
                         } finally {
@@ -4593,7 +4708,7 @@
                     async function unlockDevice(deviceId) {
                         try {
                             const pin = pinInputValues.value[deviceId] || '';
-                            await apiCall(`/api/devices/${deviceId}/unlock`, {
+                            await apiCall(`/ api / devices / ${deviceId} / unlock`, {
                                 method: 'POST',
                                 body: JSON.stringify({ pin: pin }),
                             });
@@ -4667,7 +4782,7 @@
 
                     async function disconnectDevice(deviceId) {
                         try {
-                            const data = await apiCall(`/api/devices/disconnect/${deviceId}`, {
+                            const data = await apiCall(`/ api / devices / disconnect / ${deviceId}`, {
                                 method: 'POST',
                             });
                             if (data.success) {
@@ -4712,7 +4827,7 @@
 
                             apkLogs.value.push(`上传中: ${apkFile.value.name}`);
 
-                            const response = await fetch(`/api/devices/${apkTargetDevice.value}/install-apk`, {
+                            const response = await fetch(`/ api / devices / ${apkTargetDevice.value} / install - apk`, {
                                 method: 'POST',
                                 body: formData,
                             });
@@ -4743,7 +4858,8 @@
                         if (!fileDevice.value) return;
                         fileLoading.value = true;
                         try {
-                            const data = await apiCall(`/api/devices/${fileDevice.value}/files?path=${encodeURIComponent(filePath.value)}`);
+                            const data = await apiCall(`/ api / devices / ${fileDevice.value} / files ? path = ${encodeURIComponent(filePath.value)
+                                } `);
                             fileList.value = data.files || [];
                         } catch (error) {
                             showToast('加载文件列表失败: ' + error.message, 'error');
@@ -4796,7 +4912,7 @@
                     async function downloadFile(filename) {
                         const fullPath = filePath.value + '/' + filename;
                         try {
-                            const response = await fetch(`/api/devices/${fileDevice.value}/files/download?path=${encodeURIComponent(fullPath)}`);
+                            const response = await fetch(`/ api / devices / ${fileDevice.value} /files/download ? path = ${encodeURIComponent(fullPath)} `);
                             if (!response.ok) throw new Error('下载失败');
                             const blob = await response.blob();
                             const url = URL.createObjectURL(blob);
@@ -4825,7 +4941,7 @@
                             formData.append('file', uploadSelectedFile.value);
                             formData.append('path', filePath.value);
 
-                            const response = await fetch(`/api/devices/${fileDevice.value}/files/upload`, {
+                            const response = await fetch(`/ api / devices / ${fileDevice.value} /files/upload`, {
                                 method: 'POST',
                                 body: formData,
                             });
@@ -4852,7 +4968,7 @@
 
                         const fullPath = filePath.value + '/' + filename;
                         try {
-                            const data = await apiCall(`/api/devices/${fileDevice.value}/files?path=${encodeURIComponent(fullPath)}`, {
+                            const data = await apiCall(`/ api / devices / ${fileDevice.value}/files?path=${encodeURIComponent(fullPath)}`, {
                                 method: 'DELETE',
                             });
                             if (data.success) {
@@ -5110,7 +5226,60 @@
                     }
 
                     function showLogDetails(log) {
-                        logDetailData.value = log;
+                        // Process details if it's an array (handle ZhipuAI streaming tokens)
+                        const processedLog = { ...log };
+
+                        try {
+                            if (Array.isArray(log.details)) {
+                                // Apply same smart processing as taskDetailData
+                                const processLogs = (logs) => {
+                                    if (!logs || logs.length === 0) return '';
+
+                                    const result = [];
+                                    let buffer = '';
+
+                                    for (let i = 0; i < logs.length; i++) {
+                                        const logItem = logs[i];
+                                        // Ensure logItem is a string
+                                        const itemStr = String(logItem || '');
+
+                                        if (itemStr.length <= 3) {
+                                            buffer += itemStr;
+                                        } else {
+                                            if (buffer.trim().length > 0) {
+                                                result.push(buffer);
+                                                buffer = '';
+                                            }
+                                            result.push(itemStr);
+                                        }
+                                    }
+
+                                    if (buffer.trim().length > 0) {
+                                        result.push(buffer);
+                                    }
+
+                                    return result.join('\n');
+                                };
+
+                                processedLog.details = processLogs(log.details);
+                            } else if (typeof log.details === 'string') {
+                                // Already a string, use as-is
+                                processedLog.details = log.details;
+                            } else {
+                                // Unexpected type, convert to string
+                                processedLog.details = String(log.details || '无详细日志');
+                            }
+                        } catch (error) {
+                            console.error('Error processing log details:', error);
+                            // Fallback: use original details or JSON stringify
+                            if (Array.isArray(log.details)) {
+                                processedLog.details = log.details.join('\n');
+                            } else {
+                                processedLog.details = String(log.details || '处理日志时出错');
+                            }
+                        }
+
+                        logDetailData.value = processedLog;
                         showLogDetailModal.value = true;
                     }
 
@@ -5628,6 +5797,21 @@
                         loadModels();
                         loadDevicePins();
                         initChatSessions();  // Initialize chat sessions from localStorage
+
+                        // Initialize dark mode
+                        const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                        const savedTheme = localStorage.getItem('theme');
+                        const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
+                        darkMode.value = initialTheme === 'dark';
+                        applyTheme(initialTheme);
+
+                        // Listen for system theme changes
+                        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+                            if (!localStorage.getItem('theme')) {
+                                darkMode.value = e.matches;
+                                applyTheme(e.matches ? 'dark' : 'light');
+                            }
+                        });
                     });
 
                     onUnmounted(() => {
@@ -5754,6 +5938,8 @@
                         chatAutoEmail,
                         complexTaskMode,
                         debugMode,
+                        darkMode,
+                        toggleDarkMode,
                         subtaskTimeoutSeconds,
                         subtaskCountdown,
                         sendChatMessage,

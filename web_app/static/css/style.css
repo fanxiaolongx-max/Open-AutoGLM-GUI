@@ -1,17 +1,18 @@
 /* AutoGLM Web Interface Styles */
 
 :root {
-    --primary-color: #3b82f6;
-    --primary-hover: #2563eb;
-    --success-color: #10b981;
-    --warning-color: #f59e0b;
-    --danger-color: #ef4444;
-    --bg-color: #f5f5f5;
-    --card-bg: #ffffff;
-    --text-color: #18181b;
-    --text-secondary: #71717a;
-    --border-color: #e5e5e5;
-    --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    /* Map to dark mode variables from index.html */
+    --primary-color: var(--accent-primary, #3b82f6);
+    --primary-hover: var(--accent-hover, #2563eb);
+    --success-color: var(--success, #10b981);
+    --warning-color: var(--warning, #f59e0b);
+    --danger-color: var(--error, #ef4444);
+    --bg-color: var(--bg-primary, #f5f5f5);
+    --card-bg: var(--bg-card, #ffffff);
+    --text-color: var(--text-primary, #18181b);
+    --text-secondary: var(--text-secondary, #71717a);
+    --border-color: var(--border-color, #e5e5e5);
+    --shadow: 0 2px 8px var(--shadow-md, rgba(0, 0, 0, 0.08));
 }
 
 * {
@@ -231,8 +232,14 @@ body {
 }
 
 .device-card.selected {
-    border-color: var(--primary-color);
-    background: #eff6ff;
+    border-color: var(--accent-primary);
+    background: var(--accent-primary);
+    color: white;
+}
+
+.device-card.selected .device-name,
+.device-card.selected .device-id {
+    color: white !important;
 }
 
 .device-header {
@@ -424,7 +431,7 @@ tr:hover {
 
 .modal,
 .modal-content {
-    background: #ffffff;
+    background: var(--bg-card);
     border-radius: 16px;
     padding: 24px;
     max-width: 500px;
@@ -591,7 +598,7 @@ tr:hover {
 .todo-list-card {
     margin-top: 12px;
     padding: 12px;
-    background: #f9fafb;
+    background: var(--bg-tertiary);
     border-radius: 8px;
     border: 1px solid #e5e7eb;
 }
@@ -606,7 +613,7 @@ tr:hover {
 .todo-item {
     padding: 8px;
     margin-bottom: 6px;
-    background: white;
+    background: var(--bg-card);
     border-radius: 6px;
     border: 1px solid #e5e7eb;
     transition: all 0.2s;

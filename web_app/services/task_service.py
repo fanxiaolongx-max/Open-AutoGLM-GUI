@@ -667,6 +667,12 @@ class TaskService:
             # Generate task summary using AI (if agent is available)
             task_summary = None
             try:
+                # First, collect any finish messages from task results
+                finish_messages = []
+                for result in task.results:
+                    if result.get("success") and result.get("message"):
+                        finish_messages.append(result.get("message"))
+                
                 # Get agent instance from the first device (for single device tasks)
                 # or use any available agent for summary
                 agent = None
@@ -676,10 +682,21 @@ class TaskService:
                 
                 if agent:
                     self._emit_log(task.id, f"🤖 Generating AI task summary...")
-                    task_summary = agent.generate_task_summary(task.task_content)
+                    ai_summary = agent.generate_task_summary(task.task_content)
                     self._emit_log(task.id, f"✅ Task summary generated")
+                    
+                    # Combine AI summary with finish messages
+                    if finish_messages:
+                        # Add finish messages to provide complete context
+                        task_summary = f"{ai_summary}\n\n✅ 任务完成详情:\n" + "\n".join(f"• {msg}" for msg in finish_messages)
+                    else:
+                        task_summary = ai_summary
+                elif finish_messages:
+                    # No AI agent, but we have finish messages - use them as summary
+                    status_text = "成功完成" if success_count == total_count else ("部分完成" if success_count > 0 else "执行失败")
+                    task_summary = f"任务「{task.task_content[:30]}」{status_text}。\n\n✅ 任务完成详情:\n" + "\n".join(f"• {msg}" for msg in finish_messages)
                 else:
-                    # Agent not available, create simple summary
+                    # Agent not available and no finish messages, create simple summary
                     status_text = "成功完成" if success_count == total_count else ("部分完成" if success_count > 0 else "执行失败")
                     task_summary = f"任务「{task.task_content[:30]}」{status_text}，共涉及{total_count}个设备。"
             except Exception as e:
