@@ -12,7 +12,7 @@ env:
 
 jobs:
   # ============================================
-  # macOS 构建 (.app 和 .dmg)
+  # macOS 构建 (GUI + CLI)
   # ============================================
   build-macos:
     runs-on: macos-latest
@@ -31,41 +31,69 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller
+      # 构建 GUI 版本
+      - name: Build GUI App
         run: |
           pyinstaller --onedir --windowed \
             --name "${{ env.APP_NAME }}" \
             --add-data "phone_agent:phone_agent" \
             --add-data "gui_app:gui_app" \
+            --add-data "main.py:." \
+            --add-data "load_fonts.py:." \
             --hidden-import PySide6 \
+            --hidden-import PySide6.QtCore \
+            --hidden-import PySide6.QtGui \
+            --hidden-import PySide6.QtWidgets \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
+            --hidden-import qrcode \
+            --hidden-import zeroconf \
+            --hidden-import requests \
+            --hidden-import fastapi \
+            --hidden-import uvicorn \
+            --hidden-import websockets \
+            gui_app/app.py
+
+      # 构建 CLI/Web 版本
+      - name: Build CLI/Web Server
+        run: |
+          pyinstaller --onefile \
+            --name "${{ env.APP_NAME }}-cli" \
+            --add-data "phone_agent:phone_agent" \
+            --hidden-import openai \
+            --hidden-import anthropic \
+            --hidden-import google.generativeai \
+            --hidden-import fastapi \
+            --hidden-import uvicorn \
+            --hidden-import websockets \
             main.py
 
-      - name: Create DMG
+      - name: Create DMG for GUI
         run: |
-          # 创建 DMG 目录
           mkdir -p dmg_contents
           cp -r "dist/${{ env.APP_NAME }}.app" dmg_contents/
-
-          # 创建 Applications 链接
           ln -s /Applications dmg_contents/Applications
-
-          # 创建 DMG 文件
           hdiutil create -volname "${{ env.APP_NAME }}" \
             -srcfolder dmg_contents \
             -ov -format UDZO \
-            "dist/${{ env.APP_NAME }}-macOS.dmg"
+            "dist/${{ env.APP_NAME }}-macOS-GUI.dmg"
 
-      - name: Upload macOS artifact
+      - name: Package CLI
+        run: |
+          cd dist
+          zip "${{ env.APP_NAME }}-macOS-CLI.zip" "${{ env.APP_NAME }}-cli"
+
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
-          path: dist/*.dmg
+          name: macos-builds
+          path: |
+            dist/*.dmg
+            dist/*.zip
 
   # ============================================
-  # Windows 构建 (.exe)
+  # Windows 构建 (GUI + CLI)
   # ============================================
   build-windows:
     runs-on: windows-latest
@@ -84,30 +112,57 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller
+      # 构建 GUI 版本
+      - name: Build GUI App
         run: |
           pyinstaller --onedir --windowed `
             --name "${{ env.APP_NAME }}" `
             --add-data "phone_agent;phone_agent" `
             --add-data "gui_app;gui_app" `
+            --add-data "main.py;." `
+            --add-data "load_fonts.py;." `
             --hidden-import PySide6 `
+            --hidden-import PySide6.QtCore `
+            --hidden-import PySide6.QtGui `
+            --hidden-import PySide6.QtWidgets `
             --hidden-import openai `
             --hidden-import anthropic `
             --hidden-import google.generativeai `
+            --hidden-import qrcode `
+            --hidden-import zeroconf `
+            --hidden-import requests `
+            --hidden-import fastapi `
+            --hidden-import uvicorn `
+            --hidden-import websockets `
+            gui_app/app.py
+
+      # 构建 CLI/Web 版本
+      - name: Build CLI/Web Server
+        run: |
+          pyinstaller --onefile `
+            --name "${{ env.APP_NAME }}-cli" `
+            --add-data "phone_agent;phone_agent" `
+            --hidden-import openai `
+            --hidden-import anthropic `
+            --hidden-import google.generativeai `
+            --hidden-import fastapi `
+            --hidden-import uvicorn `
+            --hidden-import websockets `
             main.py
 
-      - name: Create ZIP archive
+      - name: Create ZIP archives
         run: |
-          Compress-Archive -Path "dist\${{ env.APP_NAME }}" -DestinationPath "dist\${{ env.APP_NAME }}-Windows.zip"
+          Compress-Archive -Path "dist\${{ env.APP_NAME }}" -DestinationPath "dist\${{ env.APP_NAME }}-Windows-GUI.zip"
+          Compress-Archive -Path "dist\${{ env.APP_NAME }}-cli.exe" -DestinationPath "dist\${{ env.APP_NAME }}-Windows-CLI.zip"
 
-      - name: Upload Windows artifact
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-exe
+          name: windows-builds
           path: dist/*.zip
 
   # ============================================
-  # Linux 构建 (.deb 和 AppImage)
+  # Linux 构建 (GUI + CLI)
   # ============================================
   build-linux:
     runs-on: ubuntu-22.04
@@ -141,16 +196,42 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller
+      # 构建 GUI 版本
+      - name: Build GUI App
         run: |
           pyinstaller --onedir \
             --name "${{ env.APP_NAME }}" \
             --add-data "phone_agent:phone_agent" \
             --add-data "gui_app:gui_app" \
+            --add-data "main.py:." \
+            --add-data "load_fonts.py:." \
             --hidden-import PySide6 \
+            --hidden-import PySide6.QtCore \
+            --hidden-import PySide6.QtGui \
+            --hidden-import PySide6.QtWidgets \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
+            --hidden-import qrcode \
+            --hidden-import zeroconf \
+            --hidden-import requests \
+            --hidden-import fastapi \
+            --hidden-import uvicorn \
+            --hidden-import websockets \
+            gui_app/app.py
+
+      # 构建 CLI/Web 版本
+      - name: Build CLI/Web Server
+        run: |
+          pyinstaller --onefile \
+            --name "${{ env.APP_NAME }}-cli" \
+            --add-data "phone_agent:phone_agent" \
+            --hidden-import openai \
+            --hidden-import anthropic \
+            --hidden-import google.generativeai \
+            --hidden-import fastapi \
+            --hidden-import uvicorn \
+            --hidden-import websockets \
             main.py
 
       - name: Get version
@@ -162,8 +243,9 @@ jobs:
             echo "VERSION=0.0.0-dev" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create DEB package
+      - name: Create DEB packages
         run: |
+          # GUI DEB
           fpm -s dir -t deb \
             -n "open-autoglm-gui" \
             -v "${{ steps.version.outputs.VERSION }}" \
@@ -173,17 +255,29 @@ jobs:
             --prefix /opt/${{ env.APP_NAME }} \
             --after-install .github/scripts/post-install.sh \
             dist/${{ env.APP_NAME }}/=${{ env.APP_NAME }}
-          mv *.deb dist/
+          mv open-autoglm-gui*.deb "dist/${{ env.APP_NAME }}-Linux-GUI.deb"
 
-      - name: Create tarball
+          # CLI DEB
+          mkdir -p cli-pkg/usr/local/bin
+          cp dist/${{ env.APP_NAME }}-cli cli-pkg/usr/local/bin/open-autoglm
+          fpm -s dir -t deb \
+            -n "open-autoglm-cli" \
+            -v "${{ steps.version.outputs.VERSION }}" \
+            --description "AI-powered phone automation CLI/Web Server" \
+            --maintainer "Zhipu AI" \
+            -C cli-pkg .
+          mv open-autoglm-cli*.deb "dist/${{ env.APP_NAME }}-Linux-CLI.deb"
+
+      - name: Create tarballs
         run: |
           cd dist
-          tar -czvf "${{ env.APP_NAME }}-Linux.tar.gz" "${{ env.APP_NAME }}"
+          tar -czvf "${{ env.APP_NAME }}-Linux-GUI.tar.gz" "${{ env.APP_NAME }}"
+          tar -czvf "${{ env.APP_NAME }}-Linux-CLI.tar.gz" "${{ env.APP_NAME }}-cli"
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-packages
+          name: linux-builds
           path: |
             dist/*.deb
             dist/*.tar.gz
@@ -209,10 +303,27 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body: |
+            ## Download Options
+
+            ### GUI 桌面版 (Desktop App)
+            双击运行，提供完整图形界面
+            - **macOS**: `*-macOS-GUI.dmg`
+            - **Windows**: `*-Windows-GUI.zip`
+            - **Linux**: `*-Linux-GUI.deb` 或 `*-Linux-GUI.tar.gz`
+
+            ### CLI/Web 版本 (Command Line / Web Server)
+            命令行工具，可启动 Web 服务
+            - **macOS**: `*-macOS-CLI.zip`
+            - **Windows**: `*-Windows-CLI.zip`
+            - **Linux**: `*-Linux-CLI.deb` 或 `*-Linux-CLI.tar.gz`
+
+            ---
+
           files: |
-            artifacts/macos-dmg/*
-            artifacts/windows-exe/*
-            artifacts/linux-packages/*
+            artifacts/macos-builds/*
+            artifacts/windows-builds/*
+            artifacts/linux-builds/*
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
