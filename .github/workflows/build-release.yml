@@ -1,0 +1,218 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 推送 tag 时触发，如 v1.0.0
+  workflow_dispatch:  # 支持手动触发
+
+env:
+  APP_NAME: Open-AutoGLM-GUI
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # ============================================
+  # macOS 构建 (.app 和 .dmg)
+  # ============================================
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onedir --windowed \
+            --name "${{ env.APP_NAME }}" \
+            --add-data "phone_agent:phone_agent" \
+            --add-data "gui_app:gui_app" \
+            --hidden-import PySide6 \
+            --hidden-import openai \
+            --hidden-import anthropic \
+            --hidden-import google.generativeai \
+            main.py
+
+      - name: Create DMG
+        run: |
+          # 创建 DMG 目录
+          mkdir -p dmg_contents
+          cp -r "dist/${{ env.APP_NAME }}.app" dmg_contents/
+
+          # 创建 Applications 链接
+          ln -s /Applications dmg_contents/Applications
+
+          # 创建 DMG 文件
+          hdiutil create -volname "${{ env.APP_NAME }}" \
+            -srcfolder dmg_contents \
+            -ov -format UDZO \
+            "dist/${{ env.APP_NAME }}-macOS.dmg"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/*.dmg
+
+  # ============================================
+  # Windows 构建 (.exe)
+  # ============================================
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onedir --windowed `
+            --name "${{ env.APP_NAME }}" `
+            --add-data "phone_agent;phone_agent" `
+            --add-data "gui_app;gui_app" `
+            --hidden-import PySide6 `
+            --hidden-import openai `
+            --hidden-import anthropic `
+            --hidden-import google.generativeai `
+            main.py
+
+      - name: Create ZIP archive
+        run: |
+          Compress-Archive -Path "dist\${{ env.APP_NAME }}" -DestinationPath "dist\${{ env.APP_NAME }}-Windows.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/*.zip
+
+  # ============================================
+  # Linux 构建 (.deb 和 AppImage)
+  # ============================================
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 \
+            libxkbcommon0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1 \
+            libxcb-shape0 \
+            ruby ruby-dev rubygems build-essential
+
+      - name: Install fpm for packaging
+        run: sudo gem install fpm
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onedir \
+            --name "${{ env.APP_NAME }}" \
+            --add-data "phone_agent:phone_agent" \
+            --add-data "gui_app:gui_app" \
+            --hidden-import PySide6 \
+            --hidden-import openai \
+            --hidden-import anthropic \
+            --hidden-import google.generativeai \
+            main.py
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=0.0.0-dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create DEB package
+        run: |
+          fpm -s dir -t deb \
+            -n "open-autoglm-gui" \
+            -v "${{ steps.version.outputs.VERSION }}" \
+            --description "AI-powered phone automation GUI" \
+            --maintainer "Zhipu AI" \
+            --url "https://github.com/OpenGLM/Open-AutoGLM-GUI" \
+            --prefix /opt/${{ env.APP_NAME }} \
+            --after-install .github/scripts/post-install.sh \
+            dist/${{ env.APP_NAME }}/=${{ env.APP_NAME }}
+          mv *.deb dist/
+
+      - name: Create tarball
+        run: |
+          cd dist
+          tar -czvf "${{ env.APP_NAME }}-Linux.tar.gz" "${{ env.APP_NAME }}"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            dist/*.deb
+            dist/*.tar.gz
+
+  # ============================================
+  # 发布到 GitHub Releases
+  # ============================================
+  release:
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/macos-dmg/*
+            artifacts/windows-exe/*
+            artifacts/linux-packages/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
