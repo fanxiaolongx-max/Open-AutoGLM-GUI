@@ -52,20 +52,28 @@ jobs:
             --hidden-import fastapi \
             --hidden-import uvicorn \
             --hidden-import websockets \
-            gui_app/app.py
+            run_gui.py
 
-      - name: Build CLI/Web Server
+      - name: Build Web Server
         run: |
           pyinstaller --onefile \
-            --name "${{ env.APP_NAME }}-cli" \
+            --name "${{ env.APP_NAME }}-web" \
             --add-data "phone_agent:phone_agent" \
+            --add-data "web_app:web_app" \
+            --add-data "gui_app:gui_app" \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
             --hidden-import fastapi \
             --hidden-import uvicorn \
             --hidden-import websockets \
-            main.py
+            --hidden-import uvicorn.logging \
+            --hidden-import uvicorn.protocols \
+            --hidden-import uvicorn.protocols.http \
+            --hidden-import uvicorn.protocols.websockets \
+            --hidden-import uvicorn.lifespan \
+            --hidden-import uvicorn.lifespan.on \
+            run_web.py
 
       - name: Create DMG for GUI
         run: |
@@ -77,10 +85,10 @@ jobs:
             -ov -format UDZO \
             "dist/${{ env.APP_NAME }}-macOS-ARM64-GUI.dmg"
 
-      - name: Package CLI
+      - name: Package Web Server
         run: |
           cd dist
-          zip "${{ env.APP_NAME }}-macOS-ARM64-CLI.zip" "${{ env.APP_NAME }}-cli"
+          zip "${{ env.APP_NAME }}-macOS-ARM64-Web.zip" "${{ env.APP_NAME }}-web"
 
       - name: Upload macOS ARM artifacts
         uses: actions/upload-artifact@v4
@@ -132,21 +140,28 @@ jobs:
             --hidden-import fastapi \
             --hidden-import uvicorn \
             --hidden-import websockets \
-            gui_app/app.py
+            run_gui.py
 
-      # 构建 CLI/Web 版本
-      - name: Build CLI/Web Server
+      - name: Build Web Server
         run: |
           pyinstaller --onefile \
-            --name "${{ env.APP_NAME }}-cli" \
+            --name "${{ env.APP_NAME }}-web" \
             --add-data "phone_agent:phone_agent" \
+            --add-data "web_app:web_app" \
+            --add-data "gui_app:gui_app" \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
             --hidden-import fastapi \
             --hidden-import uvicorn \
             --hidden-import websockets \
-            main.py
+            --hidden-import uvicorn.logging \
+            --hidden-import uvicorn.protocols \
+            --hidden-import uvicorn.protocols.http \
+            --hidden-import uvicorn.protocols.websockets \
+            --hidden-import uvicorn.lifespan \
+            --hidden-import uvicorn.lifespan.on \
+            run_web.py
 
       - name: Create DMG for GUI
         run: |
@@ -158,10 +173,10 @@ jobs:
             -ov -format UDZO \
             "dist/${{ env.APP_NAME }}-macOS-Intel-GUI.dmg"
 
-      - name: Package CLI
+      - name: Package Web Server
         run: |
           cd dist
-          zip "${{ env.APP_NAME }}-macOS-Intel-CLI.zip" "${{ env.APP_NAME }}-cli"
+          zip "${{ env.APP_NAME }}-macOS-Intel-Web.zip" "${{ env.APP_NAME }}-web"
 
       - name: Upload macOS Intel artifacts
         uses: actions/upload-artifact@v4
@@ -213,26 +228,33 @@ jobs:
             --hidden-import fastapi `
             --hidden-import uvicorn `
             --hidden-import websockets `
-            gui_app/app.py
+            run_gui.py
 
-      # 构建 CLI/Web 版本
-      - name: Build CLI/Web Server
+      - name: Build Web Server
         run: |
           pyinstaller --onefile `
-            --name "${{ env.APP_NAME }}-cli" `
+            --name "${{ env.APP_NAME }}-web" `
             --add-data "phone_agent;phone_agent" `
+            --add-data "web_app;web_app" `
+            --add-data "gui_app;gui_app" `
             --hidden-import openai `
             --hidden-import anthropic `
             --hidden-import google.generativeai `
             --hidden-import fastapi `
             --hidden-import uvicorn `
             --hidden-import websockets `
-            main.py
+            --hidden-import uvicorn.logging `
+            --hidden-import uvicorn.protocols `
+            --hidden-import uvicorn.protocols.http `
+            --hidden-import uvicorn.protocols.websockets `
+            --hidden-import uvicorn.lifespan `
+            --hidden-import uvicorn.lifespan.on `
+            run_web.py
 
       - name: Create ZIP archives
         run: |
           Compress-Archive -Path "dist\${{ env.APP_NAME }}" -DestinationPath "dist\${{ env.APP_NAME }}-Windows-GUI.zip"
-          Compress-Archive -Path "dist\${{ env.APP_NAME }}-cli.exe" -DestinationPath "dist\${{ env.APP_NAME }}-Windows-CLI.zip"
+          Compress-Archive -Path "dist\${{ env.APP_NAME }}-web.exe" -DestinationPath "dist\${{ env.APP_NAME }}-Windows-Web.zip"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -297,21 +319,28 @@ jobs:
             --hidden-import fastapi \
             --hidden-import uvicorn \
             --hidden-import websockets \
-            gui_app/app.py
+            run_gui.py
 
-      # 构建 CLI/Web 版本
-      - name: Build CLI/Web Server
+      - name: Build Web Server
         run: |
           pyinstaller --onefile \
-            --name "${{ env.APP_NAME }}-cli" \
+            --name "${{ env.APP_NAME }}-web" \
             --add-data "phone_agent:phone_agent" \
+            --add-data "web_app:web_app" \
+            --add-data "gui_app:gui_app" \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
             --hidden-import fastapi \
             --hidden-import uvicorn \
             --hidden-import websockets \
-            main.py
+            --hidden-import uvicorn.logging \
+            --hidden-import uvicorn.protocols \
+            --hidden-import uvicorn.protocols.http \
+            --hidden-import uvicorn.protocols.websockets \
+            --hidden-import uvicorn.lifespan \
+            --hidden-import uvicorn.lifespan.on \
+            run_web.py
 
       - name: Get version
         id: version
@@ -336,22 +365,22 @@ jobs:
             dist/${{ env.APP_NAME }}/=${{ env.APP_NAME }}
           mv open-autoglm-gui*.deb "dist/${{ env.APP_NAME }}-Linux-GUI.deb"
 
-          # CLI DEB
-          mkdir -p cli-pkg/usr/local/bin
-          cp dist/${{ env.APP_NAME }}-cli cli-pkg/usr/local/bin/open-autoglm
+          # Web DEB
+          mkdir -p web-pkg/usr/local/bin
+          cp dist/${{ env.APP_NAME }}-web web-pkg/usr/local/bin/open-autoglm-web
           fpm -s dir -t deb \
-            -n "open-autoglm-cli" \
+            -n "open-autoglm-web" \
             -v "${{ steps.version.outputs.VERSION }}" \
-            --description "AI-powered phone automation CLI/Web Server" \
+            --description "AI-powered phone automation Web Server" \
             --maintainer "Zhipu AI" \
-            -C cli-pkg .
-          mv open-autoglm-cli*.deb "dist/${{ env.APP_NAME }}-Linux-CLI.deb"
+            -C web-pkg .
+          mv open-autoglm-web*.deb "dist/${{ env.APP_NAME }}-Linux-Web.deb"
 
       - name: Create tarballs
         run: |
           cd dist
           tar -czvf "${{ env.APP_NAME }}-Linux-GUI.tar.gz" "${{ env.APP_NAME }}"
-          tar -czvf "${{ env.APP_NAME }}-Linux-CLI.tar.gz" "${{ env.APP_NAME }}-cli"
+          tar -czvf "${{ env.APP_NAME }}-Linux-Web.tar.gz" "${{ env.APP_NAME }}-web"
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -392,12 +421,12 @@ jobs:
             - **Windows**: `*-Windows-GUI.zip`
             - **Linux**: `*-Linux-GUI.deb` 或 `*-Linux-GUI.tar.gz`
 
-            ### CLI/Web 版本 (Command Line / Web Server)
-            命令行工具，可启动 Web 服务
-            - **macOS (Apple Silicon)**: `*-macOS-ARM64-CLI.zip`
-            - **macOS (Intel)**: `*-macOS-Intel-CLI.zip`
-            - **Windows**: `*-Windows-CLI.zip`
-            - **Linux**: `*-Linux-CLI.deb` 或 `*-Linux-CLI.tar.gz`
+            ### Web 版本 (Web Server)
+            启动 Web 服务，支持浏览器访问
+            - **macOS (Apple Silicon)**: `*-macOS-ARM64-Web.zip`
+            - **macOS (Intel)**: `*-macOS-Intel-Web.zip`
+            - **Windows**: `*-Windows-Web.zip`
+            - **Linux**: `*-Linux-Web.deb` 或 `*-Linux-Web.tar.gz`
 
             ### macOS 首次打开提示
             如果提示"无法验证开发者"，请右键点击应用 → 打开，或执行：
