@@ -12,10 +12,89 @@ env:
 
 jobs:
   # ============================================
-  # macOS 构建 (GUI + CLI)
+  # macOS 构建 (GUI + CLI) - Apple Silicon
+  # ============================================
+  build-macos-arm:
+    runs-on: macos-14  # M1 runner
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build GUI App
+        run: |
+          pyinstaller --onedir --windowed \
+            --name "${{ env.APP_NAME }}" \
+            --add-data "phone_agent:phone_agent" \
+            --add-data "gui_app:gui_app" \
+            --add-data "main.py:." \
+            --add-data "load_fonts.py:." \
+            --hidden-import PySide6 \
+            --hidden-import PySide6.QtCore \
+            --hidden-import PySide6.QtGui \
+            --hidden-import PySide6.QtWidgets \
+            --hidden-import openai \
+            --hidden-import anthropic \
+            --hidden-import google.generativeai \
+            --hidden-import qrcode \
+            --hidden-import zeroconf \
+            --hidden-import requests \
+            --hidden-import fastapi \
+            --hidden-import uvicorn \
+            --hidden-import websockets \
+            gui_app/app.py
+
+      - name: Build CLI/Web Server
+        run: |
+          pyinstaller --onefile \
+            --name "${{ env.APP_NAME }}-cli" \
+            --add-data "phone_agent:phone_agent" \
+            --hidden-import openai \
+            --hidden-import anthropic \
+            --hidden-import google.generativeai \
+            --hidden-import fastapi \
+            --hidden-import uvicorn \
+            --hidden-import websockets \
+            main.py
+
+      - name: Create DMG for GUI
+        run: |
+          mkdir -p dmg_contents
+          cp -r "dist/${{ env.APP_NAME }}.app" dmg_contents/
+          ln -s /Applications dmg_contents/Applications
+          hdiutil create -volname "${{ env.APP_NAME }}" \
+            -srcfolder dmg_contents \
+            -ov -format UDZO \
+            "dist/${{ env.APP_NAME }}-macOS-ARM64-GUI.dmg"
+
+      - name: Package CLI
+        run: |
+          cd dist
+          zip "${{ env.APP_NAME }}-macOS-ARM64-CLI.zip" "${{ env.APP_NAME }}-cli"
+
+      - name: Upload macOS ARM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-builds
+          path: |
+            dist/*.dmg
+            dist/*.zip
+
+  # ============================================
+  # macOS 构建 (GUI + CLI) - Intel
   # ============================================
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-13  # Intel runner
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -77,17 +156,17 @@ jobs:
           hdiutil create -volname "${{ env.APP_NAME }}" \
             -srcfolder dmg_contents \
             -ov -format UDZO \
-            "dist/${{ env.APP_NAME }}-macOS-GUI.dmg"
+            "dist/${{ env.APP_NAME }}-macOS-Intel-GUI.dmg"
 
       - name: Package CLI
         run: |
           cd dist
-          zip "${{ env.APP_NAME }}-macOS-CLI.zip" "${{ env.APP_NAME }}-cli"
+          zip "${{ env.APP_NAME }}-macOS-Intel-CLI.zip" "${{ env.APP_NAME }}-cli"
 
-      - name: Upload macOS artifacts
+      - name: Upload macOS Intel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-builds
+          name: macos-intel-builds
           path: |
             dist/*.dmg
             dist/*.zip
@@ -286,7 +365,7 @@ jobs:
   # 发布到 GitHub Releases
   # ============================================
   release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-macos-arm, build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -308,20 +387,29 @@ jobs:
 
             ### GUI 桌面版 (Desktop App)
             双击运行，提供完整图形界面
-            - **macOS**: `*-macOS-GUI.dmg`
+            - **macOS (Apple Silicon M1/M2/M3)**: `*-macOS-ARM64-GUI.dmg`
+            - **macOS (Intel)**: `*-macOS-Intel-GUI.dmg`
             - **Windows**: `*-Windows-GUI.zip`
             - **Linux**: `*-Linux-GUI.deb` 或 `*-Linux-GUI.tar.gz`
 
             ### CLI/Web 版本 (Command Line / Web Server)
             命令行工具，可启动 Web 服务
-            - **macOS**: `*-macOS-CLI.zip`
+            - **macOS (Apple Silicon)**: `*-macOS-ARM64-CLI.zip`
+            - **macOS (Intel)**: `*-macOS-Intel-CLI.zip`
             - **Windows**: `*-Windows-CLI.zip`
             - **Linux**: `*-Linux-CLI.deb` 或 `*-Linux-CLI.tar.gz`
+
+            ### macOS 首次打开提示
+            如果提示"无法验证开发者"，请右键点击应用 → 打开，或执行：
+            ```bash
+            xattr -cr /Applications/Open-AutoGLM-GUI.app
+            ```
 
             ---
 
           files: |
-            artifacts/macos-builds/*
+            artifacts/macos-arm-builds/*
+            artifacts/macos-intel-builds/*
             artifacts/windows-builds/*
             artifacts/linux-builds/*
           generate_release_notes: true
