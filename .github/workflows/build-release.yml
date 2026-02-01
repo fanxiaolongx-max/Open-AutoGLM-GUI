@@ -87,9 +87,17 @@ jobs:
             --hidden-import uvicorn.lifespan \
             --hidden-import uvicorn.lifespan.on \
             --hidden-import websockets \
+            --hidden-import PySide6 \
+            --hidden-import PySide6.QtCore \
+            --hidden-import qrcode \
+            --hidden-import zeroconf \
+            --hidden-import requests \
+            --hidden-import aiofiles \
+            --hidden-import python_multipart \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
+            --collect-submodules PySide6 \
             run_web.py
 
       - name: Create DMG for GUI
@@ -192,9 +200,17 @@ jobs:
             --hidden-import uvicorn.lifespan \
             --hidden-import uvicorn.lifespan.on \
             --hidden-import websockets \
+            --hidden-import PySide6 \
+            --hidden-import PySide6.QtCore \
+            --hidden-import qrcode \
+            --hidden-import zeroconf \
+            --hidden-import requests \
+            --hidden-import aiofiles \
+            --hidden-import python_multipart \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
+            --collect-submodules PySide6 \
             run_web.py
 
       - name: Create DMG for GUI
@@ -388,9 +404,17 @@ jobs:
             --hidden-import uvicorn.lifespan \
             --hidden-import uvicorn.lifespan.on \
             --hidden-import websockets \
+            --hidden-import PySide6 \
+            --hidden-import PySide6.QtCore \
+            --hidden-import qrcode \
+            --hidden-import zeroconf \
+            --hidden-import requests \
+            --hidden-import aiofiles \
+            --hidden-import python_multipart \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
+            --collect-submodules PySide6 \
             run_web.py
 
       - name: Get version
