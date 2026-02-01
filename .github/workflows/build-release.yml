@@ -94,10 +94,20 @@ jobs:
             --hidden-import requests \
             --hidden-import aiofiles \
             --hidden-import python_multipart \
+            --hidden-import email \
+            --hidden-import email.mime \
+            --hidden-import email.mime.base \
+            --hidden-import email.mime.text \
+            --hidden-import email.mime.image \
+            --hidden-import email.mime.multipart \
+            --hidden-import email.mime.application \
+            --hidden-import smtplib \
+            --hidden-import ssl \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
             --collect-submodules PySide6 \
+            --collect-submodules email \
             run_web.py
 
       - name: Create DMG for GUI
@@ -207,10 +217,20 @@ jobs:
             --hidden-import requests \
             --hidden-import aiofiles \
             --hidden-import python_multipart \
+            --hidden-import email \
+            --hidden-import email.mime \
+            --hidden-import email.mime.base \
+            --hidden-import email.mime.text \
+            --hidden-import email.mime.image \
+            --hidden-import email.mime.multipart \
+            --hidden-import email.mime.application \
+            --hidden-import smtplib \
+            --hidden-import ssl \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
             --collect-submodules PySide6 \
+            --collect-submodules email \
             run_web.py
 
       - name: Create DMG for GUI
@@ -320,10 +340,20 @@ jobs:
             --hidden-import requests `
             --hidden-import aiofiles `
             --hidden-import python_multipart `
+            --hidden-import email `
+            --hidden-import email.mime `
+            --hidden-import email.mime.base `
+            --hidden-import email.mime.text `
+            --hidden-import email.mime.image `
+            --hidden-import email.mime.multipart `
+            --hidden-import email.mime.application `
+            --hidden-import smtplib `
+            --hidden-import ssl `
             --collect-submodules fastapi `
             --collect-submodules starlette `
             --collect-submodules uvicorn `
             --collect-submodules PySide6 `
+            --collect-submodules email `
             run_web.py
 
       - name: Create ZIP archives
@@ -436,10 +466,20 @@ jobs:
             --hidden-import requests \
             --hidden-import aiofiles \
             --hidden-import python_multipart \
+            --hidden-import email \
+            --hidden-import email.mime \
+            --hidden-import email.mime.base \
+            --hidden-import email.mime.text \
+            --hidden-import email.mime.image \
+            --hidden-import email.mime.multipart \
+            --hidden-import email.mime.application \
+            --hidden-import smtplib \
+            --hidden-import ssl \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
             --collect-submodules PySide6 \
+            --collect-submodules email \
             run_web.py
 
       - name: Get version
