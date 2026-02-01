@@ -70,6 +70,7 @@ jobs:
             --hidden-import fastapi.staticfiles \
             --hidden-import fastapi.templating \
             --hidden-import fastapi.responses \
+            --hidden-import fastapi.security \
             --hidden-import starlette \
             --hidden-import starlette.middleware \
             --hidden-import starlette.middleware.cors \
@@ -89,6 +90,7 @@ jobs:
             --hidden-import websockets \
             --hidden-import PySide6 \
             --hidden-import PySide6.QtCore \
+            --hidden-import pydantic \
             --hidden-import qrcode \
             --hidden-import zeroconf \
             --hidden-import requests \
@@ -103,10 +105,21 @@ jobs:
             --hidden-import email.mime.application \
             --hidden-import smtplib \
             --hidden-import ssl \
+            --hidden-import sqlite3 \
+            --hidden-import secrets \
+            --hidden-import asyncio \
+            --hidden-import contextlib \
+            --hidden-import dataclasses \
+            --hidden-import tempfile \
+            --hidden-import uuid \
+            --hidden-import base64 \
+            --hidden-import json \
+            --hidden-import logging \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
             --collect-submodules PySide6 \
+            --collect-submodules pydantic \
             --collect-submodules email \
             run_web.py
 
@@ -193,6 +206,7 @@ jobs:
             --hidden-import fastapi.staticfiles \
             --hidden-import fastapi.templating \
             --hidden-import fastapi.responses \
+            --hidden-import fastapi.security \
             --hidden-import starlette \
             --hidden-import starlette.middleware \
             --hidden-import starlette.middleware.cors \
@@ -212,6 +226,7 @@ jobs:
             --hidden-import websockets \
             --hidden-import PySide6 \
             --hidden-import PySide6.QtCore \
+            --hidden-import pydantic \
             --hidden-import qrcode \
             --hidden-import zeroconf \
             --hidden-import requests \
@@ -226,10 +241,21 @@ jobs:
             --hidden-import email.mime.application \
             --hidden-import smtplib \
             --hidden-import ssl \
+            --hidden-import sqlite3 \
+            --hidden-import secrets \
+            --hidden-import asyncio \
+            --hidden-import contextlib \
+            --hidden-import dataclasses \
+            --hidden-import tempfile \
+            --hidden-import uuid \
+            --hidden-import base64 \
+            --hidden-import json \
+            --hidden-import logging \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
             --collect-submodules PySide6 \
+            --collect-submodules pydantic \
             --collect-submodules email \
             run_web.py
 
@@ -316,6 +342,7 @@ jobs:
             --hidden-import fastapi.staticfiles `
             --hidden-import fastapi.templating `
             --hidden-import fastapi.responses `
+            --hidden-import fastapi.security `
             --hidden-import starlette `
             --hidden-import starlette.middleware `
             --hidden-import starlette.middleware.cors `
@@ -335,6 +362,7 @@ jobs:
             --hidden-import websockets `
             --hidden-import PySide6 `
             --hidden-import PySide6.QtCore `
+            --hidden-import pydantic `
             --hidden-import qrcode `
             --hidden-import zeroconf `
             --hidden-import requests `
@@ -349,10 +377,21 @@ jobs:
             --hidden-import email.mime.application `
             --hidden-import smtplib `
             --hidden-import ssl `
+            --hidden-import sqlite3 `
+            --hidden-import secrets `
+            --hidden-import asyncio `
+            --hidden-import contextlib `
+            --hidden-import dataclasses `
+            --hidden-import tempfile `
+            --hidden-import uuid `
+            --hidden-import base64 `
+            --hidden-import json `
+            --hidden-import logging `
             --collect-submodules fastapi `
             --collect-submodules starlette `
             --collect-submodules uvicorn `
             --collect-submodules PySide6 `
+            --collect-submodules pydantic `
             --collect-submodules email `
             run_web.py
 
@@ -442,6 +481,7 @@ jobs:
             --hidden-import fastapi.staticfiles \
             --hidden-import fastapi.templating \
             --hidden-import fastapi.responses \
+            --hidden-import fastapi.security \
             --hidden-import starlette \
             --hidden-import starlette.middleware \
             --hidden-import starlette.middleware.cors \
@@ -461,6 +501,7 @@ jobs:
             --hidden-import websockets \
             --hidden-import PySide6 \
             --hidden-import PySide6.QtCore \
+            --hidden-import pydantic \
             --hidden-import qrcode \
             --hidden-import zeroconf \
             --hidden-import requests \
@@ -475,10 +516,21 @@ jobs:
             --hidden-import email.mime.application \
             --hidden-import smtplib \
             --hidden-import ssl \
+            --hidden-import sqlite3 \
+            --hidden-import secrets \
+            --hidden-import asyncio \
+            --hidden-import contextlib \
+            --hidden-import dataclasses \
+            --hidden-import tempfile \
+            --hidden-import uuid \
+            --hidden-import base64 \
+            --hidden-import json \
+            --hidden-import logging \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
             --collect-submodules PySide6 \
+            --collect-submodules pydantic \
             --collect-submodules email \
             run_web.py
 
