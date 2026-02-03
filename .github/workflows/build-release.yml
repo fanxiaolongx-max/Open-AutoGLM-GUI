@@ -43,6 +43,7 @@ jobs:
             --hidden-import PySide6.QtCore \
             --hidden-import PySide6.QtGui \
             --hidden-import PySide6.QtWidgets \
+            --hidden-import PySide6.QtNetwork \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
@@ -52,6 +53,7 @@ jobs:
             --hidden-import fastapi \
             --hidden-import uvicorn \
             --hidden-import websockets \
+            --collect-all PySide6 \
             run_gui.py
 
       - name: Build Web Server
@@ -179,6 +181,7 @@ jobs:
             --hidden-import PySide6.QtCore \
             --hidden-import PySide6.QtGui \
             --hidden-import PySide6.QtWidgets \
+            --hidden-import PySide6.QtNetwork \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
@@ -188,6 +191,7 @@ jobs:
             --hidden-import fastapi \
             --hidden-import uvicorn \
             --hidden-import websockets \
+            --collect-all PySide6 \
             run_gui.py
 
       - name: Build Web Server
@@ -315,6 +319,7 @@ jobs:
             --hidden-import PySide6.QtCore `
             --hidden-import PySide6.QtGui `
             --hidden-import PySide6.QtWidgets `
+            --hidden-import PySide6.QtNetwork `
             --hidden-import openai `
             --hidden-import anthropic `
             --hidden-import google.generativeai `
@@ -324,6 +329,7 @@ jobs:
             --hidden-import fastapi `
             --hidden-import uvicorn `
             --hidden-import websockets `
+            --collect-all PySide6 `
             run_gui.py
 
       - name: Build Web Server
