@@ -1,0 +1,13 @@
+{
+  "bot_token": "8450208684:AAFyQYpHm11XsS-dmVB8Mjii3Z8rWfyAqcs",
+  "enabled": true,
+  "allowed_users": [
+    -5256349867,
+    7293120110
+  ],
+  "send_screenshots": true,
+  "send_logs": true,
+  "complex_mode": false,
+  "email_notifications": true,
+  "debug_mode": false
+}

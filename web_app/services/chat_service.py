@@ -94,9 +94,10 @@ class ChatService:
         return [m.to_dict() for m in messages]
 
     def update_message(self, message_id: str, content: Optional[str] = None,
-                       status: Optional[str] = None, todo_list: Optional[list] = None) -> bool:
-        """Update message fields (content, status, todo_list)."""
-        return chat_storage.update_message(message_id, content, status, todo_list)
+                       status: Optional[str] = None, todo_list: Optional[list] = None,
+                       tokens: Optional[int] = None, model_name: Optional[str] = None) -> bool:
+        """Update message fields (content, status, todo_list, tokens, model_name)."""
+        return chat_storage.update_message(message_id, content, status, todo_list, tokens, model_name)
 
     # ========== Log Management ==========
 

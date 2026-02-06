@@ -29,6 +29,7 @@ from web_app.routers import (
     websocket_router,
     chat_router,
     rules_router,
+    telegram_router,
 )
 from web_app.services.scheduler_service import scheduler_service
 
@@ -108,10 +109,32 @@ async def lifespan(app: FastAPI):
     await device_service.refresh_devices()
     logger.info("Devices refreshed")
 
+    # Start Telegram bot if enabled
+    try:
+        from web_app.services.telegram_bot import telegram_bot_service
+        from web_app.routers.telegram import load_telegram_config
+        
+        telegram_config = load_telegram_config()
+        
+        if telegram_config.get("enabled") and telegram_config.get("bot_token"):
+            await telegram_bot_service.start(telegram_config)
+            logger.info("Telegram bot started")
+    except Exception as e:
+        logger.warning(f"Failed to start Telegram bot: {e}")
+
     yield
 
     # Shutdown
     logger.info("Shutting down AutoGLM Web Server...")
+    
+    # Stop Telegram bot
+    try:
+        from web_app.services.telegram_bot import telegram_bot_service
+        await telegram_bot_service.stop()
+        logger.info("Telegram bot stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping Telegram bot: {e}")
+    
     await scheduler_service.stop()
     logger.info("Scheduler stopped")
 
@@ -145,6 +168,7 @@ app.include_router(settings_router)
 app.include_router(websocket_router)
 app.include_router(chat_router)
 app.include_router(rules_router)
+app.include_router(telegram_router)
 
 # Mount static files
 if STATIC_DIR.exists():

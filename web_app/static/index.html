@@ -29,23 +29,29 @@
         }
 
         [data-theme="dark"] {
-            /* Dark Mode */
-            --bg-primary: #0f172a;
-            --bg-secondary: #1e293b;
-            --bg-tertiary: #334155;
-            --bg-card: #1e293b;
-            --text-primary: #f1f5f9;
-            --text-secondary: #cbd5e1;
+            /* Modern Dark Mode - Premium Design */
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #151b2e;
+            --bg-tertiary: #1f2937;
+            --bg-card: #1a2332;
+            --text-primary: #f8fafc;
+            --text-secondary: #e2e8f0;
             --text-muted: #94a3b8;
-            --border-color: #475569;
-            --shadow-sm: rgba(0, 0, 0, 0.3);
-            --shadow-md: rgba(0, 0, 0, 0.5);
-            --shadow-lg: rgba(0, 0, 0, 0.7);
-            --accent-primary: #60a5fa;
-            --accent-hover: #3b82f6;
-            --success: #34d399;
-            --warning: #fbbf24;
-            --error: #f87171;
+            --border-color: #2d3748;
+            --shadow-sm: rgba(0, 0, 0, 0.4);
+            --shadow-md: rgba(0, 0, 0, 0.6);
+            --shadow-lg: rgba(0, 0, 0, 0.8);
+            --accent-primary: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+
+            /* Enhanced UI Elements */
+            --card-border: rgba(99, 102, 241, 0.1);
+            --input-bg: #0f1623;
+            --hover-bg: rgba(59, 130, 246, 0.08);
+            --active-bg: rgba(59, 130, 246, 0.15);
         }
 
         /* Smooth theme transitions */
@@ -241,7 +247,8 @@
 
         .todo-item {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
+            /* 顶部对齐，文本换行时图标保持在顶部 */
             gap: 8px;
             padding: 6px 8px;
             border-radius: 4px;
@@ -282,12 +289,18 @@
 
         .todo-content {
             flex: 1;
-            word-break: normal;
-            overflow-wrap: normal;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
             min-width: 0;
+            /* 允许 flex 子元素缩小 */
+            max-width: 100%;
+            /* 限制最大宽度 */
+            word-wrap: break-word;
+            /* 长单词换行 */
+            word-break: break-word;
+            /* 强制换行 */
+            white-space: normal;
+            /* 允许换行 */
+            overflow-wrap: break-word;
+            /* 在必要时断开单词 */
             color: inherit;
         }
 
@@ -1042,6 +1055,63 @@
             display: flex;
             height: calc(100vh - 48px);
         }
+
+        /* Bottom Controls Container - Premium Design */
+        .sidebar-bottom-controls {
+            position: absolute;
+            bottom: 70px;
+            /* Above connection status */
+            left: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+        }
+
+        .control-button {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 13px;
+            color: var(--text-secondary);
+            box-shadow: 0 2px 8px var(--shadow-sm);
+        }
+
+        .control-button:hover {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+            border-color: transparent;
+        }
+
+        .control-button.active {
+            background: var(--accent-primary);
+            color: white;
+            border-color: var(--accent-primary);
+        }
+
+        .control-icon {
+            font-size: 16px;
+            transition: transform 0.3s ease;
+        }
+
+        .control-button:hover .control-icon {
+            transform: rotate(15deg) scale(1.1);
+        }
+
+        .control-label {
+            font-weight: 500;
+            font-size: 12px;
+        }
     </style>
 </head>
 
@@ -1051,53 +1121,66 @@
             <!-- Sidebar -->
             <aside class="sidebar">
                 <div class="sidebar-header">
-                    <h1>鱼塘管理器</h1>
-                    <div class="subtitle">AI 手机自动化专家</div>
+                    <h1>{{ t('appTitle') }}</h1>
+                    <div class="subtitle">{{ t('appSubtitle') }}</div>
                 </div>
 
                 <ul class="nav-menu">
                     <li class="nav-item" :class="{ active: currentPage === 'chat' }" @click="currentPage = 'chat'">
                         <span>💬</span>
-                        <span>对话</span>
+                        <span>{{ t('navChat') }}</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'devices' }"
                         @click="currentPage = 'devices'">
                         <span>📱</span>
-                        <span>设备</span>
+                        <span>{{ t('navDevices') }}</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'tasks' }" @click="currentPage = 'tasks'">
                         <span>▶️</span>
-                        <span>任务执行</span>
+                        <span>{{ t('navTasks') }}</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'scheduler' }"
                         @click="currentPage = 'scheduler'">
                         <span>⏰</span>
-                        <span>定时任务</span>
+                        <span>{{ t('navScheduler') }}</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'models' }" @click="currentPage = 'models'">
                         <span>🤖</span>
-                        <span>模型配置</span>
+                        <span>{{ t('navModels') }}</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'files' }" @click="currentPage = 'files'">
                         <span>📁</span>
-                        <span>文件管理</span>
+                        <span>{{ t('navFiles') }}</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'rules' }" @click="currentPage = 'rules'">
                         <span>📋</span>
-                        <span>规则配置</span>
+                        <span>{{ t('navRules') }}</span>
                     </li>
                     <li class="nav-item" :class="{ active: currentPage === 'settings' }"
                         @click="currentPage = 'settings'">
                         <span>⚙️</span>
-                        <span>设置</span>
+                        <span>{{ t('navSettings') }}</span>
                     </li>
                 </ul>
+
+                <!-- Bottom Controls - Theme & Language -->
+                <div class="sidebar-bottom-controls">
+                    <button class="control-button" :class="{ active: darkMode }" @click="toggleDarkMode" title="切换主题">
+                        <span class="control-icon">{{ darkMode ? '🌙' : '☀️' }}</span>
+                        <span class="control-label">{{ darkMode ? '暗黑' : '明亮' }}</span>
+                    </button>
+                    <button class="control-button" :class="{ active: currentLanguage === 'zh' }" @click="toggleLanguage"
+                        title="切换语言">
+                        <span class="control-icon">🌐</span>
+                        <span class="control-label">{{ currentLanguage === 'zh' ? '中文' : 'En' }}</span>
+                    </button>
+                </div>
 
                 <!-- Connection Status -->
                 <div style="position: absolute; bottom: 20px; left: 20px; right: 20px;">
                     <div class="connection-status" :class="wsConnected ? 'connected' : 'disconnected'">
                         <span class="status-dot"></span>
-                        <span>{{ wsConnected ? '已连接' : '未连接' }}</span>
+                        <span>{{ wsConnected ? t('statusConnected') : t('statusDisconnected') }}</span>
                     </div>
                 </div>
             </aside>
@@ -1109,15 +1192,15 @@
                     <!-- Sessions Sidebar -->
                     <div class="chat-sessions-sidebar">
                         <div class="chat-sessions-header">
-                            <h3>💬 会话历史</h3>
+                            <h3>💬 {{ t('chatHistory') }}</h3>
                             <button class="chat-new-btn" @click="createNewSession">
-                                <span>+</span> 新建
+                                <span>+</span> {{ t('chatNewSession') }}
                             </button>
                         </div>
                         <div class="chat-sessions-list">
                             <div v-if="chatSessions.length === 0"
                                 style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">
-                                暂无会话记录
+                                {{ t('chatNoSessions') }}
                             </div>
                             <div v-for="session in chatSessions" :key="session.id" class="chat-session-item"
                                 :class="{ active: currentSessionId === session.id }" @click="switchSession(session.id)">
@@ -1138,47 +1221,42 @@
                         <!-- Chat Header with Device Selector and Email Toggle -->
                         <div class="chat-header">
                             <div class="chat-header-left">
-                                <span>📱 设备:</span>
+                                <span>{{ t('chatDeviceLabel') }}</span>
                                 <select v-model="chatDeviceId" @change="onChatDeviceChange">
-                                    <option value="">选择设备</option>
+                                    <option value="">{{ t('chatSelectDevice') }}</option>
                                     <option v-for="d in devices" :key="d.id" :value="d.id">
                                         {{ d.name || d.id.substring(0, 20) }}
                                     </option>
                                 </select>
-                                <span v-if="chatDeviceId" style="color: #10b981;">✓ 已连接</span>
-                                <span v-else style="color: #f59e0b;">请先选择设备</span>
+                                <span v-if="chatDeviceId" style="color: #10b981;">✓ {{ t('chatConnected') }}</span>
+                                <span v-else style="color: #f59e0b;">{{ t('chatSelectDeviceFirst') }}</span>
                             </div>
                             <div class="chat-header-right">
                                 <div class="email-toggle" v-if="complexTaskMode" style="margin-right: 12px;">
-                                    <span>⏱️ 超时</span>
+                                    <span>⏱️ {{ t('chatTimeout') }}</span>
                                     <select v-model="subtaskTimeoutSeconds"
                                         style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 12px; background: var(--bg-card); color: var(--text-primary);">
-                                        <option :value="60">1分钟</option>
-                                        <option :value="120">2分钟</option>
-                                        <option :value="180">3分钟</option>
-                                        <option :value="300">5分钟</option>
-                                        <option :value="600">10分钟</option>
+                                        <option :value="60">{{ t('time1Min') }}</option>
+                                        <option :value="120">{{ t('time2Min') }}</option>
+                                        <option :value="180">{{ t('time3Min') }}</option>
+                                        <option :value="300">{{ t('time5Min') }}</option>
+                                        <option :value="600">{{ t('time10Min') }}</option>
                                     </select>
                                 </div>
                                 <div class="email-toggle">
-                                    <span>🧩 复杂任务</span>
+                                    <span>🧩 {{ t('chatComplexTask') }}</span>
                                     <div class="toggle-switch" :class="{ active: complexTaskMode }"
                                         @click="complexTaskMode = !complexTaskMode"></div>
                                 </div>
                                 <div class="email-toggle">
-                                    <span>📧 自动发送邮件</span>
+                                    <span>📧 {{ t('chatAutoEmail') }}</span>
                                     <div class="toggle-switch" :class="{ active: chatAutoEmail }"
                                         @click="chatAutoEmail = !chatAutoEmail"></div>
                                 </div>
                                 <div class="email-toggle">
-                                    <span>🐛 调试模式</span>
+                                    <span>🐛 {{ t('chatDebugMode') }}</span>
                                     <div class="toggle-switch" :class="{ active: debugMode }"
                                         @click="debugMode = !debugMode"></div>
-                                </div>
-                                <div class="email-toggle">
-                                    <span>🌙 暗黑模式</span>
-                                    <div class="toggle-switch" :class="{ active: darkMode }" @click="toggleDarkMode">
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1188,9 +1266,9 @@
                             <div v-if="chatMessages.length === 0"
                                 style="text-align: center; color: var(--text-muted); padding: 40px;">
                                 <div style="font-size: 48px; margin-bottom: 16px;">🤖</div>
-                                <div>你好！请输入任务指令，我会帮你在手机上执行。</div>
+                                <div>{{ t('chatWelcome') }}</div>
                                 <div style="font-size: 12px; margin-top: 8px; color: var(--text-muted);">
-                                    例如：打开微信，发送消息给某人...</div>
+                                    {{ t('chatExample') }}</div>
                             </div>
                             <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-message" :class="msg.role">
                                 <div class="chat-avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
@@ -1332,7 +1410,12 @@
                                             🔄
                                         </button>
                                         <span>{{ formatMsgTime(msg.timestamp) }}</span>
-                                        <span v-if="msg.tokens" style="margin-left: 8px;">{{ msg.tokens }} tokens</span>
+                                        <span v-if="msg.tokens || msg.model_name"
+                                            style="margin-left: 8px; font-size: 11px; color: var(--text-secondary);">
+                                            <span v-if="msg.tokens">{{ msg.tokens }} tokens</span>
+                                            <span v-if="msg.model_name" style="margin-left: 4px;">· {{ msg.model_name
+                                                }}</span>
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -1340,8 +1423,8 @@
 
                         <!-- Input Area -->
                         <div class="chat-input-container">
-                            <textarea v-model="chatInput" class="chat-input" placeholder="输入任务指令..." rows="1"
-                                @keydown.enter.exact.prevent="sendChatMessage" @input="adjustChatInputHeight"
+                            <textarea v-model="chatInput" class="chat-input" :placeholder="t('chatInputPlaceholder')"
+                                rows="1" @keydown.enter.exact.prevent="sendChatMessage" @input="adjustChatInputHeight"
                                 :disabled="chatRunning"></textarea>
                             <button v-if="chatRunning" class="chat-stop-btn" @click="stopChatTask" title="停止任务">
                                 ⏹
@@ -1359,39 +1442,40 @@
                     <!-- Wireless Pairing Card -->
                     <div class="card" style="margin-bottom: 16px;">
                         <div class="card-header">
-                            <h2 class="card-title">📶 无线连接</h2>
+                            <h2 class="card-title">📶 {{ t('devicesWireless') }}</h2>
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                             <!-- Wireless Pairing -->
                             <div style="padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
-                                <h4 style="margin-bottom: 12px; font-size: 14px;">无线配对 (首次连接)</h4>
+                                <h4 style="margin-bottom: 12px; font-size: 14px;">{{ t('devicesWirelessPairing') }}</h4>
                                 <div class="form-group" style="margin-bottom: 8px;">
                                     <input type="text" v-model="pairAddress" class="form-input"
-                                        placeholder="配对地址 (如: 192.168.1.100:37000)">
+                                        :placeholder="t('devicesPairAddress')">
                                 </div>
                                 <div class="form-group" style="margin-bottom: 8px;">
-                                    <input type="text" v-model="pairCode" class="form-input" placeholder="6位配对码"
-                                        maxlength="6">
+                                    <input type="text" v-model="pairCode" class="form-input"
+                                        :placeholder="t('devicesPairCode')" maxlength="6">
                                 </div>
                                 <button class="btn btn-primary" @click="wirelessPair" :disabled="pairingLoading">
-                                    {{ pairingLoading ? '配对中...' : '🔗 配对' }}
+                                    {{ pairingLoading ? t('devicesPairing') : '🔗 ' + t('devicesPairButton') }}
                                 </button>
                             </div>
                             <!-- TCP Connect -->
                             <div style="padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
-                                <h4 style="margin-bottom: 12px; font-size: 14px;">TCP 连接 (已配对设备)</h4>
+                                <h4 style="margin-bottom: 12px; font-size: 14px;">{{ t('devicesTcpConnect') }}</h4>
                                 <div class="form-group" style="margin-bottom: 8px;">
                                     <input type="text" v-model="connectAddress" class="form-input"
-                                        placeholder="连接地址 (如: 192.168.1.100:5555)">
+                                        :placeholder="t('devicesConnectAddress')">
                                 </div>
                                 <button class="btn btn-success" @click="tcpConnect" :disabled="connectingLoading">
-                                    {{ connectingLoading ? '连接中...' : '📱 连接' }}
+                                    {{ connectingLoading ? t('devicesConnecting') : '📱 ' + t('devicesConnectButton') }}
                                 </button>
                             </div>
                         </div>
                         <!-- Connection Logs -->
                         <div v-if="deviceLogs.length > 0" style="margin-top: 12px;">
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">连接日志:</div>
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">{{
+                                t('devicesConnectionLogs') }}</div>
                             <div
                                 style="background: #18181b; color: var(--text-muted); padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 11px; max-height: 100px; overflow-y: auto;">
                                 <div v-for="(log, i) in deviceLogs" :key="i">{{ log }}</div>
@@ -1402,12 +1486,12 @@
                     <!-- Devices List Card -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">已连接设备</h2>
+                            <h2 class="card-title">{{ t('devicesConnectedDevices') }}</h2>
                             <div style="display: flex; gap: 8px;">
                                 <button class="btn btn-primary" @click="refreshDevices" :disabled="loading">
                                     <span v-if="loading" class="loading-spinner"></span>
                                     <span v-else>🔄</span>
-                                    刷新
+                                    {{ t('devicesRefresh') }}
                                 </button>
                             </div>
                         </div>
@@ -1415,29 +1499,31 @@
                         <!-- APK Install Section -->
                         <div v-if="devices.length > 0"
                             style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color);">
-                            <h4 style="margin-bottom: 12px; font-size: 14px;">📦 APK 安装</h4>
+                            <h4 style="margin-bottom: 12px; font-size: 14px;">📦 {{ t('devicesApkInstall') }}</h4>
                             <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
                                 <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
-                                    <label class="form-label" style="font-size: 12px;">选择设备</label>
+                                    <label class="form-label" style="font-size: 12px;">{{ t('devicesSelectDevice')
+                                        }}</label>
                                     <select v-model="apkTargetDevice" class="form-select">
-                                        <option value="">请选择设备</option>
+                                        <option value="">{{ t('devicesPleaseSelect') }}</option>
                                         <option v-for="d in devices" :key="d.id" :value="d.id">
                                             {{ d.name || d.id.substring(0, 20) }}
                                         </option>
                                     </select>
                                 </div>
                                 <div class="form-group" style="margin-bottom: 0;">
-                                    <label class="form-label" style="font-size: 12px;">APK 文件</label>
+                                    <label class="form-label" style="font-size: 12px;">{{ t('devicesApkFile') }}</label>
                                     <input type="file" ref="apkFileInput" accept=".apk" @change="onApkFileSelect"
                                         style="font-size: 12px;">
                                 </div>
                                 <button class="btn btn-success" @click="installApk"
                                     :disabled="apkInstalling || !apkTargetDevice || !apkFile">
-                                    {{ apkInstalling ? '安装中...' : '📲 安装' }}
+                                    {{ apkInstalling ? t('devicesInstalling') : '📲 ' + t('devicesInstallButton') }}
                                 </button>
                             </div>
                             <div v-if="apkFile" style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
-                                已选择: {{ apkFile.name }} ({{ (apkFile.size / 1024 / 1024).toFixed(2) }} MB)
+                                {{ t('devicesSelected') }} {{ apkFile.name }} ({{ (apkFile.size / 1024 /
+                                1024).toFixed(2) }} MB)
                             </div>
                             <!-- APK Install Logs -->
                             <div v-if="apkLogs.length > 0" style="margin-top: 12px;">
@@ -1450,13 +1536,13 @@
 
                         <div v-if="loading && devices.length === 0" class="empty-state" style="padding: 40px;">
                             <div class="loading-spinner" style="width: 40px; height: 40px;"></div>
-                            <p style="margin-top: 16px;">加载设备中...</p>
+                            <p style="margin-top: 16px;">{{ t('devicesLoading') }}</p>
                         </div>
 
                         <div v-else-if="devices.length === 0" class="empty-state">
                             <div style="font-size: 3rem; margin-bottom: 16px;">📱</div>
-                            <h3>未发现设备</h3>
-                            <p>通过USB连接设备或使用上方无线配对，然后点击刷新</p>
+                            <h3>{{ t('devicesNoDevices') }}</h3>
+                            <p>{{ t('devicesNoDevicesHint') }}</p>
                         </div>
 
                         <div v-else class="device-grid">
@@ -1482,11 +1568,11 @@
                                 <div
                                     style="margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                                     <button class="btn btn-sm btn-secondary" @click.stop="unlockDevice(device.id)">
-                                        🔓 解锁
+                                        🔓 {{ t('devicesUnlock') }}
                                     </button>
                                     <button v-if="device.id.includes(':')" class="btn btn-sm btn-danger"
-                                        @click.stop="disconnectDevice(device.id)" title="断开无线连接">
-                                        ❌ 断开
+                                        @click.stop="disconnectDevice(device.id)" :title="t('devicesDisconnect')">
+                                        ❌ {{ t('devicesDisconnect') }}
                                     </button>
                                     <div style="position: relative; display: flex; align-items: center;">
                                         <input :type="showPinFor === device.id ? 'text' : 'password'" class="form-input"
@@ -1498,7 +1584,7 @@
                                         <button v-if="devicePins[device.id] || pinInputValues[device.id]"
                                             style="position: absolute; right: 4px; background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px;"
                                             @click.stop="toggleShowPin(device.id)"
-                                            :title="showPinFor === device.id ? '隐藏PIN' : '显示PIN'">
+                                            :title="showPinFor === device.id ? t('devicesHidePin') : t('devicesShowPin')">
                                             {{ showPinFor === device.id ? '🙈' : '👁️' }}
                                         </button>
                                     </div>
@@ -1514,18 +1600,20 @@
                     <!-- Select Devices -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">选择设备 ({{ selectedDevices.length }}/{{ devices.length }})</h2>
+                            <h2 class="card-title">{{ t('tasksSelectDevices') }} ({{ selectedDevices.length }}/{{
+                                devices.length }})</h2>
                             <div style="display: flex; gap: 8px;">
                                 <button class="btn btn-secondary btn-sm" @click="selectAllDevices">
-                                    {{ selectedDevices.length === devices.length ? '取消全选' : '全选' }}
+                                    {{ selectedDevices.length === devices.length ? t('tasksDeselectAll') :
+                                    t('tasksSelectAll') }}
                                 </button>
                                 <button class="btn btn-secondary btn-sm" @click="refreshDevices" :disabled="loading">
-                                    🔄 刷新
+                                    🔄 {{ t('commonRefresh') }}
                                 </button>
                             </div>
                         </div>
                         <div v-if="devices.length === 0" class="empty-state" style="padding: 20px;">
-                            <p>暂无已连接设备，请先连接设备</p>
+                            <p>{{ t('tasksNoDevices') }}</p>
                         </div>
                         <div v-else style="display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 0;">
                             <label v-for="device in devices" :key="device.id" class="device-select-item"
@@ -1538,7 +1626,8 @@
                                 <div>
                                     <div style="font-weight: 500;">{{ device.name || device.id.substring(0, 20) }}</div>
                                     <div style="font-size: 12px; color: var(--text-secondary);">
-                                        {{ device.status === 'connected' ? '🟢 在线' : '🔴 离线' }}
+                                        {{ device.status === 'connected' ? '🟢 ' + t('tasksOnline') : '🔴 ' +
+                                        t('tasksOffline') }}
                                     </div>
                                 </div>
                             </label>
@@ -1548,27 +1637,26 @@
                     <!-- Task Input -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">任务</h2>
+                            <h2 class="card-title">{{ t('tasksTask') }}</h2>
                         </div>
                         <div class="form-group">
                             <textarea v-model="taskContent" class="form-textarea"
-                                placeholder="Enter task instructions... (e.g., Open WeChat and send a message to...)"
-                                rows="4" :disabled="taskRunning"></textarea>
+                                :placeholder="t('tasksInputPlaceholder')" rows="4" :disabled="taskRunning"></textarea>
                         </div>
                         <div style="display: flex; gap: 12px;">
                             <button class="btn btn-primary" @click="runTask"
                                 :disabled="taskRunning || selectedDevices.length === 0">
-                                ▶️ 执行任务
+                                ▶️ {{ t('tasksRun') }}
                             </button>
                             <button class="btn btn-danger" @click="stopTask" :disabled="!taskRunning">
-                                ⏹️ 停止
+                                ⏹️ {{ t('tasksStop') }}
                             </button>
                         </div>
 
                         <!-- Progress -->
                         <div v-if="taskRunning" style="margin-top: 16px;">
                             <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                                <span>Progress</span>
+                                <span>{{ t('tasksProgress') }}</span>
                                 <span>{{ taskProgress }}%</span>
                             </div>
                             <div class="progress-bar">
@@ -1577,21 +1665,36 @@
                         </div>
                     </div>
 
-                    <!-- Logs -->
+                    <!-- Execution Logs -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">执行日志</h2>
-                            <button class="btn btn-secondary btn-sm" @click="taskLogs = []">
-                                清空
+                            <h2 class="card-title">{{ t('tasksExecutionLog') }}</h2>
+                            <button class="btn btn-sm btn-secondary" @click="taskLogs = []">
+                                {{ t('tasksClearLog') }}
                             </button>
                         </div>
                         <div class="log-output" ref="logContainer">
                             <div v-if="taskLogs.length === 0" style="color: var(--text-secondary);">
-                                Logs will appear here...
+                                {{ t('tasksNoLogs') }}
                             </div>
                             <div v-for="(log, index) in taskLogs" :key="index">
                                 <span style="color: #888;">[{{ log.time }}]</span> {{ log.message }}
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Current Screenshot Panel -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">{{ t('tasksScreenshot') }}</h2>
+                        </div>
+                        <div v-if="taskScreenshot" class="screenshot-container"
+                            style="max-height: 400px; overflow-y: auto;">
+                            <img :src="taskScreenshot" :alt="t('tasksCurrentScreenshot')"
+                                style="width: 100%; border-radius: 8px;">
+                        </div>
+                        <div v-else class="empty-state">
+                            <p>{{ t('tasksNoScreenshot') }}</p>
                         </div>
                     </div>
                 </div>
@@ -1600,32 +1703,32 @@
                 <div v-if="currentPage === 'scheduler'" class="fade-in">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">定时任务列表</h2>
+                            <h2 class="card-title">{{ t('schedulerTitle') }}</h2>
                             <div style="display: flex; gap: 8px;">
                                 <button class="btn btn-primary" @click="showCreateScheduledTask">
-                                    ➕ 新建任务
+                                    ➕ {{ t('schedulerNewTask') }}
                                 </button>
                                 <button class="btn btn-secondary" @click="loadScheduledTasks">
-                                    🔄 刷新
+                                    🔄 {{ t('commonRefresh') }}
                                 </button>
                             </div>
                         </div>
 
                         <div v-if="scheduledTasks.length === 0 && !showSchedulerForm" class="empty-state">
                             <div style="font-size: 3rem; margin-bottom: 16px;">⏰</div>
-                            <h3>暂无定时任务</h3>
-                            <p>点击"新建任务"创建定时任务</p>
+                            <h3>{{ t('schedulerNoTasks') }}</h3>
+                            <p>{{ t('schedulerNoTasksHint') }}</p>
                         </div>
 
                         <div v-else-if="!showSchedulerForm" class="table-container">
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>Name</th>
-                                        <th>Schedule</th>
-                                        <th>Next Run</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
+                                        <th>{{ t('schedulerTableName') }}</th>
+                                        <th>{{ t('schedulerTableSchedule') }}</th>
+                                        <th>{{ t('schedulerTableNextRun') }}</th>
+                                        <th>{{ t('schedulerTableStatus') }}</th>
+                                        <th>{{ t('schedulerTableActions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1641,12 +1744,13 @@
                                         <td>
                                             <span class="badge"
                                                 :class="task.enabled ? 'badge-success' : 'badge-warning'">
-                                                {{ task.enabled ? 'Enabled' : 'Disabled' }}
+                                                {{ task.enabled ? t('schedulerStatusEnabled') :
+                                                t('schedulerStatusDisabled') }}
                                             </span>
                                         </td>
                                         <td>
                                             <button class="btn btn-sm btn-secondary" @click="editScheduledTask(task)">
-                                                ✏️ Edit
+                                                ✏️ {{ t('commonEdit') }}
                                             </button>
                                             <button class="btn btn-sm btn-secondary"
                                                 @click="toggleScheduledTask(task.id, !task.enabled)"
@@ -1655,7 +1759,7 @@
                                             </button>
                                             <button class="btn btn-sm btn-primary" @click="runScheduledTaskNow(task.id)"
                                                 style="margin-left: 4px;">
-                                                ⚡ Run
+                                                ⚡ {{ t('schedulerRunNow') }}
                                             </button>
                                             <button class="btn btn-sm btn-danger" @click="deleteScheduledTask(task.id)"
                                                 style="margin-left: 4px;">
@@ -1669,64 +1773,67 @@
 
                         <!-- Scheduler Form -->
                         <div v-if="showSchedulerForm" style="padding: 16px;">
-                            <h3 style="margin-bottom: 16px;">{{ schedulerFormMode === 'create' ? '创建定时任务' :
-                                '编辑任务' }}</h3>
+                            <h3 style="margin-bottom: 16px;">{{ schedulerFormMode === 'create' ?
+                                t('schedulerCreateTask') :
+                                t('schedulerEditTask') }}</h3>
 
                             <div class="form-group">
-                                <label class="form-label">任务名称</label>
-                                <input type="text" v-model="schedulerForm.name" class="form-input" placeholder="我的定时任务">
+                                <label class="form-label">{{ t('schedulerFormName') }}</label>
+                                <input type="text" v-model="schedulerForm.name" class="form-input"
+                                    :placeholder="t('schedulerFormNamePlaceholder')">
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label">任务内容</label>
+                                <label class="form-label">{{ t('schedulerFormContent') }}</label>
                                 <textarea v-model="schedulerForm.task_content" class="form-textarea" rows="3"
-                                    placeholder="输入任务指令..."></textarea>
+                                    :placeholder="t('schedulerFormContentPlaceholder')"></textarea>
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label">任务类型</label>
+                                <label class="form-label">{{ t('schedulerFormType') }}</label>
                                 <select v-model="schedulerForm.schedule_type" class="form-select">
-                                    <option value="once">单次</option>
-                                    <option value="interval">间隔</option>
-                                    <option value="daily">每天</option>
-                                    <option value="weekly">每周</option>
-                                    <option value="monthly">每月</option>
+                                    <option value="once">{{ t('schedulerTypeOnce') }}</option>
+                                    <option value="interval">{{ t('schedulerTypeInterval') }}</option>
+                                    <option value="daily">{{ t('schedulerTypeDaily') }}</option>
+                                    <option value="weekly">{{ t('schedulerTypeWeekly') }}</option>
+                                    <option value="monthly">{{ t('schedulerTypeMonthly') }}</option>
                                 </select>
                             </div>
 
                             <!-- Once -->
                             <div v-if="schedulerForm.schedule_type === 'once'" class="form-group">
-                                <label class="form-label">执行时间</label>
+                                <label class="form-label">{{ t('schedulerFormRunAt') }}</label>
                                 <input type="datetime-local" v-model="schedulerForm.run_at" class="form-input">
                             </div>
 
                             <!-- Interval -->
                             <div v-if="schedulerForm.schedule_type === 'interval'" class="form-group">
-                                <label class="form-label">间隔时间（分钟）</label>
+                                <label class="form-label">{{ t('schedulerFormIntervalMinutes') }}</label>
                                 <input type="number" v-model.number="schedulerForm.interval_minutes" class="form-input"
                                     min="1">
                             </div>
 
                             <!-- Daily -->
                             <div v-if="schedulerForm.schedule_type === 'daily'" class="form-group">
-                                <label class="form-label">每天时间</label>
+                                <label class="form-label">{{ t('schedulerFormDailyTime') }}</label>
                                 <input type="time" v-model="schedulerForm.daily_time" class="form-input">
                             </div>
 
                             <!-- Weekly -->
                             <div v-if="schedulerForm.schedule_type === 'weekly'">
                                 <div class="form-group">
-                                    <label class="form-label">每周哪几天</label>
+                                    <label class="form-label">{{ t('schedulerFormWeeklyDays') }}</label>
                                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                        <label v-for="(day, index) in ['日', '一', '二', '三', '四', '五', '六']" :key="index"
-                                            style="display: flex; align-items: center; gap: 4px;">
+                                        <label
+                                            v-for="(day, index) in [t('daySun'), t('dayMon'), t('dayTue'), t('dayWed'), t('dayThu'), t('dayFri'), t('daySat')]"
+                                            :key="index" style="display: flex; align-items: center; gap: 4px;">
                                             <input type="checkbox" :value="index" v-model="schedulerForm.weekly_days">
                                             {{ day }}
                                         </label>
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">时间</label>
+                                    <label class="form-label">{{ t('schedulerFormTime') }}</label>
                                     <input type="time" v-model="schedulerForm.weekly_time" class="form-input">
                                 </div>
                             </div>
@@ -1735,12 +1842,12 @@
                             <div v-if="schedulerForm.schedule_type === 'monthly'">
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                                     <div class="form-group">
-                                        <label class="form-label">每月第几天</label>
+                                        <label class="form-label">{{ t('schedulerFormMonthlyDay') }}</label>
                                         <input type="number" v-model.number="schedulerForm.monthly_day"
                                             class="form-input" min="1" max="31">
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label">时间</label>
+                                        <label class="form-label">{{ t('schedulerFormTime') }}</label>
                                         <input type="time" v-model="schedulerForm.monthly_time" class="form-input">
                                     </div>
                                 </div>
@@ -1748,7 +1855,7 @@
 
                             <!-- Target Devices -->
                             <div class="form-group">
-                                <label class="form-label">目标设备（留空表示所有设备）</label>
+                                <label class="form-label">{{ t('schedulerFormTargetDevices') }}</label>
                                 <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                     <label v-for="device in devices" :key="device.id"
                                         style="display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--bg-tertiary); border-radius: 4px;">
@@ -1761,16 +1868,17 @@
                             <div class="form-group">
                                 <label style="display: flex; align-items: center; gap: 8px;">
                                     <input type="checkbox" v-model="schedulerForm.enabled">
-                                    立即启用任务
+                                    {{ t('schedulerFormEnableTask') }}
                                 </label>
                             </div>
 
                             <div style="display: flex; gap: 12px; margin-top: 16px;">
                                 <button class="btn btn-primary" @click="saveScheduledTask" :disabled="loading">
-                                    {{ schedulerFormMode === 'create' ? '✅ 创建' : '💾 保存' }}
+                                    {{ schedulerFormMode === 'create' ? '✅ ' + t('commonCreate') : '💾 ' +
+                                    t('commonSave') }}
                                 </button>
                                 <button class="btn btn-secondary" @click="cancelSchedulerForm">
-                                    取消
+                                    {{ t('commonCancel') }}
                                 </button>
                             </div>
                         </div>
@@ -1779,31 +1887,31 @@
                     <!-- Scheduler Logs Card -->
                     <div class="card" style="margin-top: 16px;">
                         <div class="card-header">
-                            <h2 class="card-title">📋 执行日志</h2>
+                            <h2 class="card-title">📋 {{ t('schedulerLogsTitle') }}</h2>
                             <div style="display: flex; gap: 8px;">
                                 <button class="btn btn-secondary btn-sm" @click="clearAllSchedulerLogs">
-                                    🗑️ 清空所有
+                                    🗑️ {{ t('schedulerLogsClearAll') }}
                                 </button>
                                 <button class="btn btn-secondary btn-sm" @click="loadSchedulerLogs">
-                                    🔄 刷新日志
+                                    🔄 {{ t('schedulerLogsRefresh') }}
                                 </button>
                             </div>
                         </div>
 
                         <div v-if="schedulerLogs.length === 0" class="empty-state" style="padding: 30px;">
                             <div style="font-size: 2rem; margin-bottom: 12px;">📝</div>
-                            <p>暂无执行日志</p>
+                            <p>{{ t('schedulerLogsNoLogs') }}</p>
                         </div>
 
                         <div v-else class="table-container" style="max-height: 300px; overflow-y: auto;">
                             <table>
                                 <thead>
                                     <tr>
-                                        <th style="width: 60px;">状态</th>
-                                        <th>任务名称</th>
-                                        <th>执行时间</th>
-                                        <th>结果</th>
-                                        <th style="width: 80px;">详情</th>
+                                        <th style="width: 60px;">{{ t('schedulerLogsStatus') }}</th>
+                                        <th>{{ t('schedulerLogsTaskName') }}</th>
+                                        <th>{{ t('schedulerLogsExecutionTime') }}</th>
+                                        <th>{{ t('schedulerLogsResult') }}</th>
+                                        <th style="width: 80px;">{{ t('schedulerLogsDetails') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1831,24 +1939,28 @@
                     <div v-if="showLogDetailModal" class="modal-overlay" @click.self="showLogDetailModal = false">
                         <div class="modal-content" style="max-width: 700px;">
                             <div class="modal-header">
-                                <h3>📋 执行日志详情</h3>
+                                <h3>📋 {{ t('schedulerLogDetailsTitle') }}</h3>
                                 <button class="btn btn-sm" @click="showLogDetailModal = false">✕</button>
                             </div>
                             <div class="modal-body">
                                 <div style="margin-bottom: 12px;">
-                                    <strong>任务:</strong> {{ logDetailData.task_name }}<br>
-                                    <strong>时间:</strong> {{ formatLogTime(logDetailData.timestamp) }}<br>
-                                    <strong>状态:</strong>
+                                    <strong>{{ t('schedulerLogDetailsTask') }}:</strong> {{ logDetailData.task_name
+                                    }}<br>
+                                    <strong>{{ t('schedulerLogDetailsTime') }}:</strong> {{
+                                    formatLogTime(logDetailData.timestamp) }}<br>
+                                    <strong>{{ t('schedulerLogDetailsStatus') }}:</strong>
                                     <span :style="{ color: logDetailData.success ? '#22c55e' : '#ef4444' }">
-                                        {{ logDetailData.success ? '成功' : '失败' }}
+                                        {{ logDetailData.success ? t('schedulerLogDetailsSuccess') :
+                                        t('schedulerLogDetailsFailed') }}
                                     </span>
                                 </div>
                                 <div
                                     style="background: #18181b; color: var(--text-muted); padding: 12px; border-radius: 8px; font-family: monospace; font-size: 11px; max-height: 400px; overflow-y: auto; white-space: pre-wrap;">
-                                    {{ logDetailData.details || '无详细日志' }}</div>
+                                    {{ logDetailData.details || t('schedulerLogDetailsNoDetails') }}</div>
                             </div>
                             <div class="modal-footer">
-                                <button class="btn btn-secondary" @click="showLogDetailModal = false">关闭</button>
+                                <button class="btn btn-secondary" @click="showLogDetailModal = false">{{
+                                    t('commonClose') }}</button>
                             </div>
                         </div>
                     </div>
@@ -1858,32 +1970,33 @@
                 <div v-if="currentPage === 'models'" class="fade-in">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">模型服务管理</h2>
+                            <h2 class="card-title">{{ t('modelsTitle') }}</h2>
                             <div style="display: flex; gap: 8px;">
                                 <button class="btn btn-success" @click="openModelForm('create')">
-                                    ➕ 新增模型
+                                    ➕ {{ t('commonAdd') }} {{ t('modelsModel') }}
                                 </button>
                                 <button class="btn btn-primary" @click="loadModels">
-                                    🔄 刷新
+                                    🔄 {{ t('commonRefresh') }}
                                 </button>
                             </div>
                         </div>
 
                         <div v-if="activeModel"
                             style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--accent-primary);">
-                            <strong>当前激活:</strong> {{ activeModel.name }} ({{ activeModel.model_name }})
+                            <strong>{{ t('modelsCurrentActive') }}:</strong> {{ activeModel.name }} ({{
+                            activeModel.model_name }})
                         </div>
 
                         <div class="table-container">
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>名称</th>
-                                        <th>协议</th>
-                                        <th>模型</th>
-                                        <th>Base URL</th>
-                                        <th>状态</th>
-                                        <th>操作</th>
+                                        <th>{{ t('modelsName') }}</th>
+                                        <th>{{ t('modelsProtocol') }}</th>
+                                        <th>{{ t('modelsModel') }}</th>
+                                        <th>{{ t('modelsBaseUrl') }}</th>
+                                        <th>{{ t('modelsStatus') }}</th>
+                                        <th>{{ t('modelsActions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1913,26 +2026,28 @@
                                         <td>
                                             <span class="badge"
                                                 :class="service.is_active ? 'badge-success' : 'badge-info'">
-                                                {{ service.is_active ? '已激活' : '未激活' }}
+                                                {{ service.is_active ? t('modelsActivated') : t('modelsNotActivated') }}
                                             </span>
                                         </td>
                                         <td>
                                             <button class="btn btn-sm btn-primary" @click="activateModel(service.id)"
-                                                :disabled="service.is_active" title="激活此模型">
-                                                激活
+                                                :disabled="service.is_active" :title="t('modelsActivateTitle')">
+                                                {{ t('commonActivate') }}
                                             </button>
                                             <button class="btn btn-sm btn-secondary" @click="testModel(service.id)"
-                                                :disabled="loading" style="margin-left: 4px;" title="测试连接">
-                                                测试
+                                                :disabled="loading" style="margin-left: 4px;"
+                                                :title="t('modelsTestTitle')">
+                                                {{ t('commonTest') }}
                                             </button>
                                             <button class="btn btn-sm btn-secondary"
                                                 @click="openModelForm('edit', service)" style="margin-left: 4px;"
-                                                title="编辑">
+                                                :title="t('modelsEditTitle')">
                                                 ✏️
                                             </button>
                                             <button class="btn btn-sm btn-danger"
                                                 @click="deleteModel(service.id, service.name)"
-                                                :disabled="service.is_active" style="margin-left: 4px;" title="删除">
+                                                :disabled="service.is_active" style="margin-left: 4px;"
+                                                :title="t('modelsDeleteTitle')">
                                                 🗑️
                                             </button>
                                         </td>
@@ -2074,29 +2189,29 @@
                 <div v-if="currentPage === 'files'" class="fade-in">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">📁 文件管理</h2>
+                            <h2 class="card-title">📁 {{ t('filesTitle') }}</h2>
                         </div>
 
                         <!-- Device and Path Selection -->
                         <div
                             style="display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-end; flex-wrap: wrap;">
                             <div class="form-group" style="margin-bottom: 0; min-width: 200px;">
-                                <label class="form-label">选择设备</label>
+                                <label class="form-label">{{ t('filesSelectDevice') }}</label>
                                 <select v-model="fileDevice" class="form-select" @change="loadFiles">
-                                    <option value="">请选择设备</option>
+                                    <option value="">{{ t('filesPleaseSelect') }}</option>
                                     <option v-for="d in devices" :key="d.id" :value="d.id">
                                         {{ d.name || d.id.substring(0, 20) }}
                                     </option>
                                 </select>
                             </div>
                             <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 250px;">
-                                <label class="form-label">当前路径</label>
+                                <label class="form-label">{{ t('filesCurrentPath') }}</label>
                                 <div style="display: flex; gap: 8px;">
                                     <input type="text" v-model="filePath" class="form-input" placeholder="/sdcard"
                                         @keyup.enter="loadFiles">
                                     <button class="btn btn-primary" @click="loadFiles"
                                         :disabled="!fileDevice || fileLoading">
-                                        {{ fileLoading ? '*' : 'GO' }}
+                                        {{ fileLoading ? '*' : t('filesGoButton') }}
                                     </button>
                                 </div>
                             </div>
@@ -2151,9 +2266,9 @@
                                 <thead>
                                     <tr>
                                         <th style="width: 40px;"></th>
-                                        <th>名称</th>
-                                        <th style="width: 100px;">大小</th>
-                                        <th style="width: 120px;">操作</th>
+                                        <th>{{ t('filesName') }}</th>
+                                        <th style="width: 100px;">{{ t('filesSize') }}</th>
+                                        <th style="width: 120px;">{{ t('modelsActions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2199,11 +2314,11 @@
                 <div v-if="currentPage === 'settings'" class="fade-in">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">邮件设置</h2>
+                            <h2 class="card-title">{{ t('settingsEmail') }}</h2>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">SMTP 服务器</label>
+                            <label class="form-label">{{ t('modelsBaseUrl') }}</label>
                             <input type="text" v-model="emailConfig.smtp_server" class="form-input"
                                 placeholder="smtp.example.com">
                         </div>
@@ -2223,13 +2338,13 @@
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">发送邮箱</label>
+                            <label class="form-label">{{ t('modelsProvider') }}</label>
                             <input type="email" v-model="emailConfig.sender_email" class="form-input"
                                 placeholder="your@email.com">
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">密码 / 授权码</label>
+                            <label class="form-label">{{ t('settingsSMTP') }}</label>
                             <input type="password" v-model="emailConfig.sender_password" class="form-input"
                                 placeholder="••••••••">
                         </div>
@@ -2248,11 +2363,11 @@
                         </div>
 
                         <div style="display: flex; gap: 12px;">
-                            <button class="btn btn-primary" @click="saveEmailConfig">
-                                保存设置
+                            <button class="btn btn-primary" @click="saveCustomModel" :disabled="savingCustomModel">
+                                {{ savingCustomModel ? t('commonSaving') : '💾 ' + t('modelsSave') }}
                             </button>
-                            <button class="btn btn-secondary" @click="testEmail" :disabled="loading">
-                                发送测试邮件
+                            <button class="btn btn-secondary" @click="testModelConnection" :disabled="testingModel">
+                                {{ testingModel ? t('commonTesting') : '🔌 ' + t('modelsTest') }}
                             </button>
                         </div>
                     </div>
@@ -2305,80 +2420,99 @@
                         </div>
                     </div>
 
+                    <!-- Telegram Bot Configuration -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">关于</h2>
+                            <h2 class="card-title">🤖 Telegram Bot</h2>
+                            <span v-if="telegramConfig && telegramConfig.status === 'running'"
+                                style="padding: 4px 12px; border-radius: 12px; background: #d1fae5; color: #059669; font-size: 12px; font-weight: 500;">
+                                ● 运行中
+                            </span>
+                            <span v-else-if="telegramConfig"
+                                style="padding: 4px 12px; border-radius: 12px; background: #fee2e2; color: #dc2626; font-size: 12px; font-weight: 500;">
+                                ● 已停止
+                            </span>
                         </div>
-                        <p><strong>AutoGLM Web Server</strong> v0.1.0</p>
-                        <p style="margin-top: 8px; color: var(--text-secondary);">
-                            AI-powered phone automation tool. Web interface for Open-AutoGLM-GUI.
-                        </p>
-                        <p style="margin-top: 8px;">
-                            <a href="/docs" target="_blank">API Documentation</a>
-                        </p>
-                    </div>
-                </div>
 
-                <!-- Rules Page -->
-                <div v-if="currentPage === 'rules'" class="fade-in">
-                    <!-- App Mappings Card -->
-                    <div class="card">
-                        <div class="card-header"
-                            style="display: flex; justify-content: space-between; align-items: center;">
-                            <h2 class="card-title">📱 应用映射</h2>
-                            <button class="btn btn-sm btn-primary" @click="showAddAppModal = true">+ 添加</button>
+                        <div
+                            style="padding: 12px 16px; background: var(--bg-tertiary); border-radius: 8px; margin-bottom: 16px;">
+                            <p style="font-size: 13px; color: var(--text-secondary); margin: 0;">
+                                📱 通过 Telegram Bot 远程控制 AutoGLM，执行任务、查看截图、管理设备等。
+                            </p>
                         </div>
-                        <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 14px;">
-                            配置应用名称到包名的映射，用于 Launch 动作
-                        </p>
-                        <div v-if="appMappings.length === 0" class="empty-state" style="padding: 20px;">
-                            <p>暂无应用映射配置</p>
+
+                        <div class="form-group">
+                            <label class="form-label">Bot Token</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="password" v-model="telegramConfig.bot_token" class="form-input"
+                                    placeholder="从 @BotFather 获取 Bot Token" style="flex: 1;">
+                                <button class="btn btn-secondary" @click="testTelegramConnection"
+                                    :disabled="loading || !telegramConfig || !telegramConfig.bot_token">
+                                    测试连接
+                                </button>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                                在 Telegram 搜索 @BotFather，发送 /newbot 创建新机器人并获取 Token
+                            </p>
                         </div>
-                        <div v-else style="max-height: 300px; overflow-y: auto;">
-                            <table style="width: 100%; border-collapse: collapse;">
-                                <thead>
-                                    <tr style="border-bottom: 1px solid var(--border);">
-                                        <th style="text-align: left; padding: 8px; font-weight: 500;">
-                                            应用名称</th>
-                                        <th style="text-align: left; padding: 8px; font-weight: 500;">包名
-                                        </th>
-                                        <th style="text-align: right; padding: 8px; font-weight: 500; width: 100px;">
-                                            操作
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="app in appMappings" :key="app.app_name"
-                                        style="border-bottom: 1px solid var(--border);">
-                                        <td style="padding: 8px;">
-                                            {{ app.app_name }}
-                                            <span v-if="app.is_custom"
-                                                style="font-size: 12px; color: var(--primary); margin-left: 4px;">自定义</span>
-                                        </td>
-                                        <td
-                                            style="padding: 8px; color: var(--text-secondary); font-family: monospace; font-size: 13px;">
-                                            {{ app.package_name }}
-                                        </td>
-                                        <td style="padding: 8px; text-align: right;">
-                                            <template v-if="app.is_custom">
-                                                <button class="btn btn-sm btn-secondary" @click="editAppMapping(app)"
-                                                    style="margin-right: 4px;">编辑</button>
-                                                <button class="btn btn-sm btn-danger"
-                                                    @click="deleteAppMapping(app.app_name)">删除</button>
-                                            </template>
-                                            <span v-else
-                                                style="color: var(--text-secondary); font-size: 12px;">内置</span>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+
+                        <div class="form-group">
+                            <label class="form-label">授权用户 ID（逗号分隔）</label>
+                            <input type="text" v-model="telegramAllowedUsersStr" class="form-input"
+                                placeholder="12345678, 87654321">
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                                留空表示允许所有用户。在 Bot 中发送 /start 可查看您的 User ID
+                            </p>
+                        </div>
+
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" v-model="telegramConfig.send_screenshots">
+                                发送截图
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" v-model="telegramConfig.send_logs">
+                                发送日志
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" v-model="telegramConfig.enabled">
+                                启用 Telegram Bot
+                            </label>
+                        </div>
+
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn btn-primary" @click="saveTelegramConfig">
+                                保存配置
+                            </button>
+                            <button v-if="telegramConfig && telegramConfig.status !== 'running'" class="btn btn-success"
+                                @click="startTelegramBot"
+                                :disabled="loading || !telegramConfig || !telegramConfig.bot_token">
+                                启动 Bot
+                            </button>
+                            <button v-else-if="telegramConfig && telegramConfig.status === 'running'"
+                                class="btn btn-danger" @click="stopTelegramBot" :disabled="loading">
+                                停止 Bot
+                            </button>
+                        </div>
+
+                        <div v-if="telegramBotInfo"
+                            style="margin-top: 16px; padding: 12px; background: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;">
+                            <p style="font-size: 13px; color: #15803d; margin: 0;">
+                                ✅ Bot 信息：@{{ telegramBotInfo.username }} ({{ telegramBotInfo.first_name }})
+                            </p>
                         </div>
                     </div>
 
-                    <!-- Timing Config Card -->
+                    <!-- Preset Configs Card -->
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">⏱️ 时间延迟配置</h2>
+                            <h2 class="card-title">{{ t('modelsPresets') }}</h2>
                         </div>
                         <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 14px;">
                             配置各种操作的延迟时间（单位：秒）
@@ -2437,6 +2571,78 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">关于</h2>
+                        </div>
+                        <p><strong>AutoGLM Web Server</strong> v0.1.0</p>
+                        <p style="margin-top: 8px; color: var(--text-secondary);">
+                            AI-powered phone automation tool. Web interface for Open-AutoGLM-GUI.
+                        </p>
+                        <p style="margin-top: 8px;">
+                            <a href="/docs" target="_blank">API Documentation</a>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Rules Page -->
+                <div v-if="currentPage === 'rules'" class="fade-in">
+                    <!-- App Mappings Card -->
+                    <div class="card">
+                        <div class="card-header"
+                            style="display: flex; justify-content: space-between; align-items: center;">
+                            <h2 class="card-title">📱 {{ t('rulesApp') }}</h2>
+                            <button class="btn btn-sm btn-primary" @click="showAddAppModal = true">+ {{ t('commonAdd')
+                                }}</button>
+                        </div>
+                        <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 14px;">
+                            配置应用名称到包名的映射，用于 Launch 动作
+                        </p>
+                        <div v-if="appMappings.length === 0" class="empty-state" style="padding: 20px;">
+                            <p>暂无应用映射配置</p>
+                        </div>
+                        <div v-else style="max-height: 300px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid var(--border);">
+                                        <th style="text-align: left; padding: 8px; font-weight: 500;">
+                                            应用名称</th>
+                                        <th style="text-align: left; padding: 8px; font-weight: 500;">包名
+                                        </th>
+                                        <th style="text-align: right; padding: 8px; font-weight: 500; width: 100px;">
+                                            操作
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="app in appMappings" :key="app.app_name"
+                                        style="border-bottom: 1px solid var(--border);">
+                                        <td style="padding: 8px;">
+                                            {{ app.app_name }}
+                                            <span v-if="app.is_custom"
+                                                style="font-size: 12px; color: var(--primary); margin-left: 4px;">自定义</span>
+                                        </td>
+                                        <td
+                                            style="padding: 8px; color: var(--text-secondary); font-family: monospace; font-size: 13px;">
+                                            {{ app.package_name }}
+                                        </td>
+                                        <td style="padding: 8px; text-align: right;">
+                                            <template v-if="app.is_custom">
+                                                <button class="btn btn-sm btn-secondary" @click="editAppMapping(app)"
+                                                    style="margin-right: 4px;">编辑</button>
+                                                <button class="btn btn-sm btn-danger"
+                                                    @click="deleteAppMapping(app.app_name)">删除</button>
+                                            </template>
+                                            <span v-else
+                                                style="color: var(--text-secondary); font-size: 12px;">内置</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
 
                     <!-- Action Rules Card -->
                     <div class="card">
@@ -2695,11 +2901,11 @@
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div class="form-group">
-                            <label class="form-label">优先级</label>
+                            <label class="form-label">{{ t('settingsSender') }}</label>
                             <input type="number" v-model.number="ruleForm.priority" class="form-input" min="0">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">状态</label>
+                            <label class="form-label">{{ t('settingsPort') }}</label>
                             <select v-model="ruleForm.enabled" class="form-select">
                                 <option :value="true">启用</option>
                                 <option :value="false">禁用</option>
@@ -2816,6 +3022,19 @@
                         max_dimension: 1920,
                         jpeg_quality: 70
                     });
+
+                    // Telegram Bot configuration
+                    const telegramConfig = ref({
+                        bot_token: '',
+                        enabled: false,
+                        allowed_users: [],
+                        send_screenshots: true,
+                        send_logs: true,
+                        status: 'stopped'
+                    });
+                    const telegramAllowedUsersStr = ref('');
+                    const telegramBotInfo = ref(null);
+
                     // Rules configuration state
                     const appMappings = ref([]);
                     const timingConfig = ref(null);
@@ -2886,6 +3105,7 @@
                     const complexTaskMode = ref(false);  // 复杂任务模式：先拆解成todolist再逐个执行
                     const debugMode = ref(false);  // 调试模式：点击前显示预览
                     const darkMode = ref(false);  // 暗黑模式
+                    const currentLanguage = ref('zh');  // 语言设置: 'zh' 或 'en'
                     const awaitingTodoListConfirmation = ref(false);  // 是否正在等待用户确认todoList
                     const subtaskTimeoutSeconds = ref(180);  // 子任务超时时间（秒），默认3分钟
                     const subtaskCountdown = ref(0);  // 子任务剩余秒数（用于倒计时显示）
@@ -2913,6 +3133,183 @@
                         const theme = darkMode.value ? 'dark' : 'light';
                         applyTheme(theme);
                         localStorage.setItem('theme', theme);
+                    }
+
+                    // Translations Dictionary
+                    const translations = {
+                        zh: {
+                            appTitle: '鱼塘管理器', appSubtitle: 'AI 手机自动化专家',
+                            navChat: '对话', navDevices: '设备', navTasks: '任务执行', navScheduler: '定时任务',
+                            navModels: '模型配置', navFiles: '文件管理', navRules: '规则配置', navSettings: '设置',
+                            statusConnected: '已连接', statusDisconnected: '未连接',
+                            controlThemeLight: '明亮', controlThemeDark: '暗黑', controlLanguage: '中文',
+                            chatHistory: '会话历史', chatNewSession: '新建', chatNoSessions: '暂无会话记录',
+                            chatDeviceLabel: '设备:', chatSelectDevice: '选择设备', chatConnected: '已连接',
+                            chatSelectDeviceFirst: '请先选择设备', chatComplexTask: '复杂任务',
+                            chatAutoEmail: '自动发送邮件', chatDebugMode: '调试模式', chatTimeout: '超时',
+                            chatInputPlaceholder: '输入任务指令...', chatWelcome: '你好！请输入任务指令，我会帮你在手机上执行。',
+                            chatExample: '例如：打开微信，发送消息给某人...', chatExecuting: '正在执行任务...',
+                            chatTaskList: '任务清单', chatExecutionLog: '执行日志', chatCompleted: '完成',
+                            chatFailed: '失败', chatClickForDetails: '点击查看详情和截图 →',
+                            devicesWireless: '无线连接', devicesWirelessPairing: '无线配对 (首次连接)',
+                            devicesPairAddress: '配对地址 (如: 192.168.1.100:37000)', devicesPairCode: '6位配对码',
+                            devicesPairButton: '配对', devicesPairing: '配对中...', devicesTcpConnect: 'TCP 连接 (已配对设备)',
+                            devicesConnectAddress: '连接地址 (如: 192.168.1.100:5555)', devicesConnectButton: '连接',
+                            devicesConnecting: '连接中...', devicesConnectionLogs: '连接日志:', devicesConnectedDevices: '已连接设备',
+                            devicesRefresh: '刷新', devicesApkInstall: 'APK 安装', devicesSelectDevice: '选择设备',
+                            devicesPleaseSelect: '请选择设备', devicesApkFile: 'APK 文件', devicesInstallButton: '安装',
+                            devicesInstalling: '安装中...', devicesSelected: '已选择:', devicesNoDevices: '未发现设备',
+                            devicesNoDevicesHint: '通过USB连接设备或使用上方无线配对，然后点击刷新', devicesLoading: '加载设备中...',
+                            devicesUnlock: '解锁', devicesDisconnect: '断开', devicesHidePin: '隐藏PIN', devicesShowPin: '显示PIN',
+                            time1Min: '1分钟', time2Min: '2分钟', time3Min: '3分钟', time5Min: '5分钟', time10Min: '10分钟',
+                            tasksSelectDevices: '选择设备', tasksSelectAll: '全选', tasksDeselectAll: '取消全选',
+                            tasksNoDevices: '暂无已连接设备，请先连接设备', tasksOnline: '在线', tasksOffline: '离线',
+                            tasksTask: '任务', tasksInputPlaceholder: '输入任务指令... (例如：打开微信并发送消息给...)',
+                            tasksRun: '执行任务', tasksStop: '停止', tasksRunning: '执行中...', tasksScreenshot: '当前截图',
+                            tasksNoScreenshot: '暂无截图', tasksExecutionLog: '执行日志', tasksClearLog: '清空',
+                            tasksNoLogs: '暂无日志', tasksRunLog: '执行任务日志', tasksScheduledLog: '定时任务日志', tasksProgress: '进度', tasksCurrentScreenshot: '当前截图',
+                            schedulerTitle: '定时任务列表', schedulerNewTask: '新建任务', schedulerAddTask: '添加任务', schedulerNoTasks: '暂无定时任务',
+                            schedulerNoTasksHint: '点击"新建任务"创建定时任务', schedulerTableName: '任务名称', schedulerTableSchedule: '计划',
+                            schedulerTableNextRun: '下次执行', schedulerTableStatus: '状态', schedulerTableActions: '操作',
+                            schedulerStatusEnabled: '已启用', schedulerStatusDisabled: '已禁用', schedulerRunNow: '立即执行',
+                            schedulerCreateTask: '创建定时任务', schedulerEditTask: '编辑任务', schedulerFormName: '任务名称',
+                            schedulerFormNamePlaceholder: '我的定时任务', schedulerFormContent: '任务内容', schedulerFormContentPlaceholder: '输入任务指令...',
+                            schedulerFormType: '任务类型', schedulerTypeOnce: '单次', schedulerTypeInterval: '间隔', schedulerTypeDaily: '每天',
+                            schedulerTypeWeekly: '每周', schedulerTypeMonthly: '每月', schedulerFormRunAt: '执行时间',
+                            schedulerFormIntervalMinutes: '间隔时间（分钟）', schedulerFormDailyTime: '每天时间', schedulerFormWeeklyDays: '每周哪几天',
+                            schedulerFormTime: '时间', schedulerFormMonthlyDay: '每月第几天', schedulerFormTargetDevices: '目标设备（留空表示所有设备）',
+                            schedulerFormEnableTask: '立即启用任务', schedulerLogsTitle: '执行日志', schedulerLogsClearAll: '清空所有',
+                            schedulerLogsRefresh: '刷新日志', schedulerLogsNoLogs: '暂无执行日志', schedulerLogsStatus: '状态',
+                            schedulerLogsTaskName: '任务名称', schedulerLogsExecutionTime: '执行时间', schedulerLogsResult: '结果',
+                            schedulerLogsDetails: '详情', schedulerLogDetailsTitle: '执行日志详情', schedulerLogDetailsTask: '任务',
+                            schedulerLogDetailsTime: '时间', schedulerLogDetailsStatus: '状态', schedulerLogDetailsSuccess: '成功',
+                            schedulerLogDetailsFailed: '失败', schedulerLogDetailsNoDetails: '无详细日志',
+                            daySun: '日', dayMon: '一', dayTue: '二', dayWed: '三', dayThu: '四', dayFri: '五', daySat: '六',
+                            modelsTitle: '模型配置', modelsPresets: '预设配置', modelsCustom: '自定义配置',
+                            modelsProvider: '模型提供商', modelsModel: '模型名称', modelsApiKey: 'API密钥',
+                            modelsBaseUrl: 'Base URL', modelsSave: '保存配置', modelsTest: '测试连接',
+                            filesTitle: '文件管理', filesUpload: '上传文件', filesDownload: '下载', filesDelete: '删除',
+                            filesName: '文件名', filesSize: '大小', filesTime: '时间', filesNoFiles: '暂无文件',
+                            rulesTitle: '规则配置', rulesPrompt: '提示词规则', rulesAction: '动作规则',
+                            rulesApp: '应用规则', rulesTiming: '时机规则', rulesAdd: '添加', rulesEdit: '编辑',
+                            settingsTitle: '设置', settingsEmail: '邮件设置', settingsScreenshot: '截图设置',
+                            settingsTelegram: 'Telegram设置', settingsSave: '保存', settingsTest: '测试',
+                            commonSave: '保存', commonCancel: '取消', commonConfirm: '确认', commonClose: '关闭',
+                            commonEdit: '编辑', commonDelete: '删除', commonAdd: '添加', commonRefresh: '刷新', commonCreate: '创建',
+                            commonSaving: '保存中...', commonTesting: '测试中...', commonActivate: '激活', commonTest: '测试',
+                            modelsName: '名称', modelsProtocol: '协议', modelsStatus: '状态', modelsActions: '操作',
+                            modelsCurrentActive: '当前激活', modelsActivated: '已激活', modelsNotActivated: '未激活',
+                            modelsActivateTitle: '激活此模型', modelsTestTitle: '测试连接', modelsEditTitle: '编辑',
+                            modelsDeleteTitle: '删除', modelsNewModel: '新增模型', modelsQuickTemplates: '快速添加预设模板',
+                            modelsOpenAI: 'OpenAI 协议', modelsAnthropic: 'Anthropic 协议', modelsGemini: 'Gemini 协议',
+                            modelsCreateModel: '创建模型', modelsEditModel: '编辑模型', modelsFormName: '服务名称',
+                            modelsFormProtocol: '协议类型', modelsFormDescription: '描述',
+                            filesSelectDevice: '选择设备', filesPleaseSelect: '请选择设备', filesCurrentPath: '当前路径',
+                            filesGoButton: 'GO', filesSDCard: 'SD卡', filesPhotos: '相册', filesDownloads: '下载',
+                            filesDocuments: '文件', filesUpToParent: '上级', filesUploadTo: '上传文件到当前目录',
+                            filesSelectFile: '选择文件', filesNoFileSelected: '未选择任何文件', filesUploadButton: '上传',
+                            filesNoFilesHint: '请先选择设备',
+                            rulesAppName: '应用名称', rulesPackageName: '包名', rulesDescription: '描述',
+                            rulesAddApp: '添加应用映射', rulesEditApp: '编辑应用映射', rulesAppNameLabel: '应用名称',
+                            rulesPackageLabel: '包名', rulesDescLabel: '描述（可选）',
+                            settingsSMTP: 'SMTP 服务器', settingsPort: '端口', settingsSender: '发送邮箱',
+                            settingsPassword: '密码', settingsReceiver: '接收邮箱', settingsSaveSettings: '保存设置',
+                            settingsSendTest: '发送测试邮件', settingsScreenshotTitle: '截图设置',
+                            settingsScreenshotInterval: '截图间隔（秒）', settingsTelegramTitle: 'Telegram 设置',
+                            settingsTelegramToken: 'Bot Token', settingsTelegramChatId: 'Chat ID',
+                        },
+                        en: {
+                            appTitle: 'AutoGLM Manager', appSubtitle: 'AI Phone Automation Expert',
+                            navChat: 'Chat', navDevices: 'Devices', navTasks: 'Tasks', navScheduler: 'Scheduler',
+                            navModels: 'Models', navFiles: 'Files', navRules: 'Rules', navSettings: 'Settings',
+                            statusConnected: 'Connected', statusDisconnected: 'Disconnected',
+                            controlThemeLight: 'Light', controlThemeDark: 'Dark', controlLanguage: 'En',
+                            chatHistory: 'Chat History', chatNewSession: 'New', chatNoSessions: 'No chat sessions',
+                            chatDeviceLabel: 'Device:', chatSelectDevice: 'Select Device', chatConnected: 'Connected',
+                            chatSelectDeviceFirst: 'Please select a device first', chatComplexTask: 'Complex Task',
+                            chatAutoEmail: 'Auto Email', chatDebugMode: 'Debug Mode', chatTimeout: 'Timeout',
+                            chatInputPlaceholder: 'Enter task instruction...', chatWelcome: 'Hello! Enter a task instruction and I will execute it on your phone.',
+                            chatExample: 'For example: Open WeChat, send a message...', chatExecuting: 'Executing task...',
+                            chatTaskList: 'Task List', chatExecutionLog: 'Execution Log', chatCompleted: 'Completed',
+                            chatFailed: 'Failed', chatClickForDetails: 'Click for details and screenshots →',
+                            devicesWireless: 'Wireless Connection', devicesWirelessPairing: 'Wireless Pairing (First Time)',
+                            devicesPairAddress: 'Pairing Address (e.g., 192.168.1.100:37000)', devicesPairCode: '6-digit Pairing Code',
+                            devicesPairButton: 'Pair', devicesPairing: 'Pairing...', devicesTcpConnect: 'TCP Connection (Paired Devices)',
+                            devicesConnectAddress: 'Connect Address (e.g., 192.168.1.100:5555)', devicesConnectButton: 'Connect',
+                            devicesConnecting: 'Connecting...', devicesConnectionLogs: 'Connection Logs:', devicesConnectedDevices: 'Connected Devices',
+                            devicesRefresh: 'Refresh', devicesApkInstall: 'APK Installation', devicesSelectDevice: 'Select Device',
+                            devicesPleaseSelect: 'Please select a device', devicesApkFile: 'APK File', devicesInstallButton: 'Install',
+                            devicesInstalling: 'Installing...', devicesSelected: 'Selected:', devicesNoDevices: 'No devices found',
+                            devicesNoDevicesHint: 'Connect a device via USB or use wireless pairing above, then refresh', devicesLoading: 'Loading devices...',
+                            devicesUnlock: 'Unlock', devicesDisconnect: 'Disconnect', devicesHidePin: 'Hide PIN', devicesShowPin: 'Show PIN',
+                            time1Min: '1 min', time2Min: '2 mins', time3Min: '3 mins', time5Min: '5 mins', time10Min: '10 mins',
+                            tasksSelectDevices: 'Select Devices', tasksSelectAll: 'Select All', tasksDeselectAll: 'Deselect All',
+                            tasksNoDevices: 'No connected devices, please connect first', tasksOnline: 'Online', tasksOffline: 'Offline',
+                            tasksTask: 'Task', tasksInputPlaceholder: 'Enter task instructions... (e.g., Open WeChat and send a message to...)',
+                            tasksRun: 'Run Task', tasksStop: 'Stop', tasksRunning: 'Running...', tasksScreenshot: 'Current Screenshot',
+                            tasksNoScreenshot: 'No screenshot', tasksExecutionLog: 'Execution Log', tasksClearLog: 'Clear',
+                            tasksNoLogs: 'No logs', tasksRunLog: 'Run Task Log', tasksScheduledLog: 'Scheduled Task Log', tasksProgress: 'Progress', tasksCurrentScreenshot: 'Current Screenshot',
+                            schedulerTitle: 'Scheduled Tasks List', schedulerNewTask: 'New Task', schedulerAddTask: 'Add Task', schedulerNoTasks: 'No scheduled tasks',
+                            schedulerNoTasksHint: 'Click "New Task" to create a scheduled task', schedulerTableName: 'Task Name', schedulerTableSchedule: 'Schedule',
+                            schedulerTableNextRun: 'Next Run', schedulerTableStatus: 'Status', schedulerTableActions: 'Actions',
+                            schedulerStatusEnabled: 'Enabled', schedulerStatusDisabled: 'Disabled', schedulerRunNow: 'Run Now',
+                            schedulerCreateTask: 'Create Scheduled Task', schedulerEditTask: 'Edit Task', schedulerFormName: 'Task Name',
+                            schedulerFormNamePlaceholder: 'My Scheduled Task', schedulerFormContent: 'Task Content', schedulerFormContentPlaceholder: 'Enter task instruction...',
+                            schedulerFormType: 'Task Type', schedulerTypeOnce: 'Once', schedulerTypeInterval: 'Interval', schedulerTypeDaily: 'Daily',
+                            schedulerTypeWeekly: 'Weekly', schedulerTypeMonthly: 'Monthly', schedulerFormRunAt: 'Run At',
+                            schedulerFormIntervalMinutes: 'Interval (minutes)', schedulerFormDailyTime: 'Daily Time', schedulerFormWeeklyDays: 'Days of Week',
+                            schedulerFormTime: 'Time', schedulerFormMonthlyDay: 'Day of Month', schedulerFormTargetDevices: 'Target Devices (leave empty for all)',
+                            schedulerFormEnableTask: 'Enable task immediately', schedulerLogsTitle: 'Execution Log', schedulerLogsClearAll: 'Clear All',
+                            schedulerLogsRefresh: 'Refresh Logs', schedulerLogsNoLogs: 'No execution logs', schedulerLogsStatus: 'Status',
+                            schedulerLogsTaskName: 'Task Name', schedulerLogsExecutionTime: 'Execution Time', schedulerLogsResult: 'Result',
+                            schedulerLogsDetails: 'Details', schedulerLogDetailsTitle: 'Execution Log Details', schedulerLogDetailsTask: 'Task',
+                            schedulerLogDetailsTime: 'Time', schedulerLogDetailsStatus: 'Status', schedulerLogDetailsSuccess: 'Success',
+                            schedulerLogDetailsFailed: 'Failed', schedulerLogDetailsNoDetails: 'No detailed logs',
+                            daySun: 'Sun', dayMon: 'Mon', dayTue: 'Tue', dayWed: 'Wed', dayThu: 'Thu', dayFri: 'Fri', daySat: 'Sat',
+                            modelsTitle: 'Model Configuration', modelsPresets: 'Preset Configs', modelsCustom: 'Custom Config',
+                            modelsProvider: 'Provider', modelsModel: 'Model Name', modelsApiKey: 'API Key',
+                            modelsBaseUrl: 'Base URL', modelsSave: 'Save Config', modelsTest: 'Test Connection',
+                            filesTitle: 'File Management', filesUpload: 'Upload File', filesDownload: 'Download', filesDelete: 'Delete',
+                            filesName: 'File Name', filesSize: 'Size', filesTime: 'Time', filesNoFiles: 'No files',
+                            rulesTitle: 'Rules Configuration', rulesPrompt: 'Prompt Rules', rulesAction: 'Action Rules',
+                            rulesApp: 'App Rules', rulesTiming: 'Timing Rules', rulesAdd: 'Add', rulesEdit: 'Edit',
+                            settingsTitle: 'Settings', settingsEmail: 'Email Settings', settingsScreenshot: 'Screenshot Settings',
+                            settingsTelegram: 'Telegram Settings', settingsSave: 'Save', settingsTest: 'Test',
+                            commonSave: 'Save', commonCancel: 'Cancel', commonConfirm: 'Confirm', commonClose: 'Close',
+                            commonEdit: 'Edit', commonDelete: 'Delete', commonAdd: 'Add', commonRefresh: 'Refresh', commonCreate: 'Create',
+                            commonSaving: 'Saving...', commonTesting: 'Testing...', commonActivate: 'Activate', commonTest: 'Test',
+                            modelsName: 'Name', modelsProtocol: 'Protocol', modelsStatus: 'Status', modelsActions: 'Actions',
+                            modelsCurrentActive: 'Currently Active', modelsActivated: 'Activated', modelsNotActivated: 'Not Activated',
+                            modelsActivateTitle: 'Activate this model', modelsTestTitle: 'Test connection', modelsEditTitle: 'Edit',
+                            modelsDeleteTitle: 'Delete', modelsNewModel: 'New Model', modelsQuickTemplates: 'Quick Templates',
+                            modelsOpenAI: 'OpenAI Protocol', modelsAnthropic: 'Anthropic Protocol', modelsGemini: 'Gemini Protocol',
+                            modelsCreateModel: 'Create Model', modelsEditModel: 'Edit Model', modelsFormName: 'Service Name',
+                            modelsFormProtocol: 'Protocol Type', modelsFormDescription: 'Description',
+                            filesSelectDevice: 'Select Device', filesPleaseSelect: 'Please select a device', filesCurrentPath: 'Current Path',
+                            filesGoButton: 'GO', filesSDCard: 'SD Card', filesPhotos: 'Photos', filesDownloads: 'Downloads',
+                            filesDocuments: 'Documents', filesUpToParent: 'Parent', filesUploadTo: 'Upload file to current directory',
+                            filesSelectFile: 'Select file', filesNoFileSelected: 'No file selected', filesUploadButton: 'Upload',
+                            filesNoFilesHint: 'Please select a device first',
+                            rulesAppName: 'App Name', rulesPackageName: 'Package Name', rulesDescription: 'Description',
+                            rulesAddApp: 'Add App Mapping', rulesEditApp: 'Edit App Mapping', rulesAppNameLabel: 'App Name',
+                            rulesPackageLabel: 'Package Name', rulesDescLabel: 'Description (Optional)',
+                            settingsSMTP: 'SMTP Server', settingsPort: 'Port', settingsSender: 'Sender Email',
+                            settingsPassword: 'Password', settingsReceiver: 'Receiver Email', settingsSaveSettings: 'Save Settings',
+                            settingsSendTest: 'Send Test Email', settingsScreenshotTitle: 'Screenshot Settings',
+                            settingsScreenshotInterval: 'Screenshot Interval (seconds)', settingsTelegramTitle: 'Telegram Settings',
+                            settingsTelegramToken: 'Bot Token', settingsTelegramChatId: 'Chat ID',
+                        }
+                    };
+
+                    // Translation helper - computed property
+                    const t = Vue.computed(() => {
+                        return (key) => translations[currentLanguage.value]?.[key] || key;
+                    });
+
+                    // Language Toggle Function
+                    function toggleLanguage() {
+                        currentLanguage.value = currentLanguage.value === 'zh' ? 'en' : 'zh';
+                        localStorage.setItem('language', currentLanguage.value);
                     }
 
                     // Chat sessions state
@@ -3156,16 +3553,19 @@
                             case 'task_tokens':
                                 // Update chat message tokens
                                 if (chatMessages.value.length > 0) {
-                                    // Find target message
+                                    // Find target message - also allow completed/success/error status
+                                    // because tokens may arrive after task finishes
                                     let targetMsg = null;
                                     for (let i = chatMessages.value.length - 1; i >= 0; i--) {
                                         const msg = chatMessages.value[i];
                                         if (msg.role === 'assistant') {
+                                            // Match running tasks or recently completed tasks (within same session)
                                             const isRunning = msg.status === 'running';
+                                            const isCompleted = msg.status === 'success' || msg.status === 'error' || msg.status === 'completed';
                                             const isComplexTaskRunning = msg.todoList && msg.todoList.length > 0 &&
                                                 msg.todoList.some(t => t.status === 'running' || t.status === 'pending');
 
-                                            if (isRunning || isComplexTaskRunning) {
+                                            if (isRunning || isComplexTaskRunning || isCompleted) {
                                                 if (data.task_id && msg.taskId && msg.taskId !== data.task_id) {
                                                     continue;
                                                 }
@@ -3179,6 +3579,8 @@
                                         if (!targetMsg.tokens) targetMsg.tokens = 0;
                                         // 累加 token (因为是一次次推过来的)
                                         targetMsg.tokens += data.total_tokens;
+                                        // 保存 token 到数据库
+                                        saveMessageStatusToServer();
                                     }
                                 }
                                 break;
@@ -3329,9 +3731,9 @@
 
                             // 找出需要保存状态的 assistant 消息
                             for (const msg of chatMessages.value) {
-                                if (msg.role === 'assistant' && msg.id && (msg.status || msg.todoList)) {
-                                    // 计算当前消息的状态指纹
-                                    const currentState = `${msg.status || ''}-${JSON.stringify(msg.todoList || null)}`;
+                                if (msg.role === 'assistant' && msg.id && (msg.status || msg.todoList || msg.tokens)) {
+                                    // 计算当前消息的状态指纹（包含 tokens 和 model_name）
+                                    const currentState = `${msg.status || ''}-${JSON.stringify(msg.todoList || null)}-${msg.tokens || 0}-${msg.model_name || ''}`;
                                     const lastState = lastSavedMessageStates.get(msg.id);
 
                                     // 跳过未变化的消息
@@ -3345,7 +3747,9 @@
                                             body: JSON.stringify({
                                                 status: msg.status || null,
                                                 content: msg.content || null,
-                                                todo_list: msg.todoList || null
+                                                todo_list: msg.todoList || null,
+                                                tokens: msg.tokens || 0,
+                                                model_name: msg.model_name || null
                                             })
                                         });
 
@@ -3364,44 +3768,28 @@
                         // Save current session first
                         saveCurrentSession();
 
-                        // 尝试从服务器创建会话，确保 ID 同步
-                        try {
-                            const deviceId = chatDeviceId.value || 'default';
-                            const serverSession = await apiCall('/api/chat/sessions', {
-                                method: 'POST',
-                                body: JSON.stringify({
-                                    device_id: deviceId,
-                                    title: '新会话'
-                                })
-                            });
+                        // 始终在服务器创建会话，确保 ID 同步
+                        const deviceId = chatDeviceId.value || 'default';
+                        const serverSession = await apiCall('/api/chat/sessions', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                device_id: deviceId,
+                                title: '新会话'
+                            })
+                        });
 
-                            const newSession = {
-                                id: serverSession.id,
-                                title: serverSession.title || '新会话',
-                                deviceId: serverSession.device_id,
-                                messages: [],
-                                createdAt: serverSession.created_at,
-                                updatedAt: serverSession.updated_at
-                            };
-                            chatSessions.value.unshift(newSession);
-                            currentSessionId.value = newSession.id;
-                            chatMessages.value = [];
-                            saveSessions();
-                        } catch (error) {
-                            console.error('Failed to create session on server:', error);
-                            // 降级方案：使用本地 ID
-                            const newSession = {
-                                id: Date.now().toString(),
-                                title: '新会话',
-                                messages: [],
-                                createdAt: new Date().toISOString(),
-                                updatedAt: new Date().toISOString()
-                            };
-                            chatSessions.value.unshift(newSession);
-                            currentSessionId.value = newSession.id;
-                            chatMessages.value = [];
-                            saveSessions();
-                        }
+                        const newSession = {
+                            id: serverSession.id,
+                            title: serverSession.title || '新会话',
+                            deviceId: serverSession.device_id,
+                            messages: [],
+                            createdAt: serverSession.created_at,
+                            updatedAt: serverSession.updated_at
+                        };
+                        chatSessions.value.unshift(newSession);
+                        currentSessionId.value = newSession.id;
+                        chatMessages.value = [];
+                        saveSessions();
                     }
 
                     async function switchSession(sessionId) {
@@ -3413,20 +3801,23 @@
                         const session = chatSessions.value.find(s => s.id === sessionId);
                         if (session) {
                             currentSessionId.value = session.id;
-                            chatMessages.value = session.messages || [];
 
-                            // 尝试从服务器加载完整的消息数据（包括 screenshots）
-                            // 这样可以确保服务重启后也能看到截图
+                            // 优先从服务器加载完整的消息数据（包括 screenshots, tokens, model_name）
                             try {
                                 const detailData = await apiCall(`/api/chat/sessions/${sessionId}/detail`);
                                 if (detailData && detailData.messages) {
-                                    // 更新消息数据，特别是 screenshots
-                                    detailData.messages.forEach(serverMsg => {
-                                        const localMsg = chatMessages.value.find(m => m.id === serverMsg.id);
-                                        if (localMsg && serverMsg.screenshots && serverMsg.screenshots.length > 0) {
-                                            localMsg.screenshots = serverMsg.screenshots;
-                                        }
-                                    });
+                                    // 使用服务器数据作为主要数据源，并映射字段名
+                                    chatMessages.value = detailData.messages.map(msg => ({
+                                        ...msg,
+                                        timestamp: msg.created_at || msg.timestamp,  // Map created_at to timestamp
+                                        screenshots: msg.screenshots || []
+                                    }));
+
+                                    // 更新会话对象中的消息缓存
+                                    session.messages = chatMessages.value;
+                                } else {
+                                    // 服务器没有返回消息，使用本地缓存
+                                    chatMessages.value = session.messages || [];
                                 }
                             } catch (error) {
                                 // 如果会话不存在（404），从列表中移除
@@ -3449,6 +3840,7 @@
                                 } else {
                                     console.error('Failed to load session detail from server:', error);
                                     // 其他错误继续使用本地数据
+                                    chatMessages.value = session.messages || [];
                                 }
                             }
 
@@ -3510,7 +3902,7 @@
                     }
 
                     async function initChatSessions() {
-                        // 先从服务器加载会话列表，确保数据同步
+                        // 只从服务器加载会话列表，数据库是唯一数据源
                         try {
                             const serverSessions = await apiCall('/api/chat/sessions?limit=50');
                             if (serverSessions && serverSessions.length > 0) {
@@ -3525,50 +3917,18 @@
                                     messages: []  // 消息稍后加载
                                 }));
 
-                                // 合并服务器会话和本地会话（优先使用服务器数据）
-                                const localSessions = [];
-                                try {
-                                    const stored = localStorage.getItem(SESSIONS_STORAGE_KEY);
-                                    if (stored) {
-                                        localSessions.push(...JSON.parse(stored));
-                                    }
-                                } catch (e) {
-                                    console.warn('Failed to load local sessions:', e);
-                                }
-
-                                // 合并：服务器会话优先，但保留本地会话的消息数据（如果服务器会话存在）
-                                const mergedSessions = [];
-                                const serverSessionIds = new Set(serverSessionsFormatted.map(s => s.id));
-
-                                // 先添加服务器会话
-                                for (const serverSession of serverSessionsFormatted) {
-                                    const localSession = localSessions.find(s => s.id === serverSession.id);
-                                    if (localSession && localSession.messages) {
-                                        // 保留本地消息数据
-                                        serverSession.messages = localSession.messages;
-                                    }
-                                    mergedSessions.push(serverSession);
-                                }
-
-                                // 添加本地存在但服务器不存在的会话（可能是未同步的）
-                                for (const localSession of localSessions) {
-                                    if (!serverSessionIds.has(localSession.id)) {
-                                        mergedSessions.push(localSession);
-                                    }
-                                }
-
                                 // 按更新时间排序
-                                mergedSessions.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-                                chatSessions.value = mergedSessions;
+                                serverSessionsFormatted.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                                chatSessions.value = serverSessionsFormatted;
                                 saveSessions();
                             } else {
-                                // 服务器没有会话，使用本地会话
-                                loadSessions();
+                                // 服务器没有会话
+                                chatSessions.value = [];
                             }
                         } catch (error) {
                             console.error('Failed to load sessions from server:', error);
-                            // 服务器加载失败，使用本地会话
-                            loadSessions();
+                            // 服务器加载失败，显示空列表
+                            chatSessions.value = [];
                         }
 
                         // Auto-enter most recent session or create new one
@@ -3634,7 +3994,9 @@
                                             status: status,
                                             // 优先使用服务器的 todoList，其次是本地数据
                                             todoList: todoList,
-                                            currentTodoIndex: localData.currentTodoIndex
+                                            currentTodoIndex: localData.currentTodoIndex,
+                                            tokens: msg.tokens || 0,
+                                            model_name: msg.model_name || null
                                         };
                                     });
 
@@ -4077,38 +4439,14 @@
                             await createNewSession();
                         }
 
-                        // 同步会话到服务器（如果会话ID是本地生成的，需要在服务器创建）
-                        let serverSessionId = currentSessionId.value;
+                        // 会话已存在于服务器，直接保存消息
+                        const serverSessionId = currentSessionId.value;
                         let serverMessageId = null;
 
-                        // 尝试将消息保存到服务器
+                        // 在服务器添加用户和助手消息
                         try {
-                            // 检查会话是否存在于服务器
-                            const sessionCheck = await apiCall(`/api/chat/sessions/${currentSessionId.value}`).catch(() => null);
-
-                            if (!sessionCheck) {
-                                // 会话不存在，在服务器创建
-                                const newSession = await apiCall('/api/chat/sessions', {
-                                    method: 'POST',
-                                    body: JSON.stringify({
-                                        device_id: chatDeviceId.value,
-                                        title: content.substring(0, 30) + (content.length > 30 ? '...' : '')
-                                    })
-                                });
-                                serverSessionId = newSession.id;
-
-                                // 更新本地会话ID
-                                const oldSessionId = currentSessionId.value;
-                                currentSessionId.value = serverSessionId;
-                                const localSession = chatSessions.value.find(s => s.id === oldSessionId);
-                                if (localSession) {
-                                    localSession.id = serverSessionId;
-                                }
-                                saveSessions();
-                            }
-
                             // 在服务器添加用户消息
-                            const userMsgResult = await apiCall(`/api/chat/sessions/${serverSessionId}/messages`, {
+                            await apiCall(`/api/chat/sessions/${serverSessionId}/messages`, {
                                 method: 'POST',
                                 body: JSON.stringify({
                                     role: 'user',
@@ -4140,6 +4478,18 @@
                         // Clear input
                         chatInput.value = '';
 
+                        // Get current active model name
+                        let currentModelName = null;
+                        try {
+                            const modelsData = await apiCall('/api/models');
+                            const activeModel = modelsData.services?.find(s => s.is_active);
+                            if (activeModel) {
+                                currentModelName = activeModel.model_name;
+                            }
+                        } catch (err) {
+                            console.warn('Failed to get active model:', err);
+                        }
+
                         // Add assistant message (running state)
                         const assistantMsg = {
                             id: serverMessageId,  // 服务器消息ID，用于绑定截图
@@ -4151,6 +4501,7 @@
                             timestamp: new Date().toISOString(),
                             todoList: null,  // 复杂任务模式下的todoList
                             tokens: 0,
+                            model_name: currentModelName,  // 保存使用的模型名称
                             taskId: null  // 关联的任务ID，用于匹配WebSocket事件
                         };
                         chatMessages.value.push(assistantMsg);
@@ -4602,12 +4953,14 @@
 
                     // Open task detail modal
                     async function openTaskDetail(msg) {
-                        // 始终从服务器获取完整的截图列表（WebSocket 可能只推送了部分截图）
+                        // 始终从服务器获取完整的截图和日志列表（WebSocket 可能只推送了部分数据，LocalStorage 可能有旧缓存）
                         let screenshots = [];
+                        let logs = [];
 
-                        // 如果存在 session_id 和 message_id，则从服务器获取完整截图列表
+                        // 如果存在 session_id 和 message_id，则从服务器获取完整数据
                         if (currentSessionId.value && msg.id) {
                             try {
+                                // 获取截图
                                 const screenshotData = await apiCall(
                                     `/api/chat/sessions/${currentSessionId.value}/screenshots?message_id=${msg.id}`
                                 );
@@ -4621,9 +4974,27 @@
                                 // 获取失败时使用本地缓存的数据
                                 screenshots = msg.screenshots || [];
                             }
+
+                            try {
+                                // 获取日志
+                                const logData = await apiCall(
+                                    `/api/chat/sessions/${currentSessionId.value}/logs?message_id=${msg.id}`
+                                );
+                                if (logData && logData.length > 0) {
+                                    // 提取日志内容
+                                    logs = logData.map(log => log.content || log);
+                                    // 更新消息对象中的 logs
+                                    msg.logs = logs;
+                                }
+                            } catch (error) {
+                                console.error('Failed to load logs:', error);
+                                // 获取失败时使用本地缓存的数据
+                                logs = msg.logs || [];
+                            }
                         } else {
                             // 没有 session/message id，使用本地数据
                             screenshots = msg.screenshots || [];
+                            logs = msg.logs || [];
                         }
 
                         // Smart log processing for ZhipuAI streaming output
@@ -4662,8 +5033,8 @@
 
                         taskDetailData.value = {
                             status: msg.status,
-                            logs: processLogs(msg.logs || []),
-                            screenshots: screenshots  // 只使用 screenshots，不再使用 base64 screenshot
+                            logs: processLogs(logs),  // 使用从服务器获取的最新日志
+                            screenshots: screenshots  // 使用从服务器获取的最新截图
                         };
                         showTaskDetail.value = true;
                     }
@@ -4708,7 +5079,7 @@
                     async function unlockDevice(deviceId) {
                         try {
                             const pin = pinInputValues.value[deviceId] || '';
-                            await apiCall(`/ api / devices / ${deviceId} / unlock`, {
+                            await apiCall(`/api/devices/${deviceId}/unlock`, {
                                 method: 'POST',
                                 body: JSON.stringify({ pin: pin }),
                             });
@@ -4782,7 +5153,7 @@
 
                     async function disconnectDevice(deviceId) {
                         try {
-                            const data = await apiCall(`/ api / devices / disconnect / ${deviceId}`, {
+                            const data = await apiCall(`/api/devices/disconnect/${deviceId}`, {
                                 method: 'POST',
                             });
                             if (data.success) {
@@ -4827,7 +5198,7 @@
 
                             apkLogs.value.push(`上传中: ${apkFile.value.name}`);
 
-                            const response = await fetch(`/ api / devices / ${apkTargetDevice.value} / install - apk`, {
+                            const response = await fetch(`/api/devices/${apkTargetDevice.value}/install-apk`, {
                                 method: 'POST',
                                 body: formData,
                             });
@@ -4858,8 +5229,7 @@
                         if (!fileDevice.value) return;
                         fileLoading.value = true;
                         try {
-                            const data = await apiCall(`/ api / devices / ${fileDevice.value} / files ? path = ${encodeURIComponent(filePath.value)
-                                } `);
+                            const data = await apiCall(`/api/devices/${fileDevice.value}/files?path=${encodeURIComponent(filePath.value)}`);
                             fileList.value = data.files || [];
                         } catch (error) {
                             showToast('加载文件列表失败: ' + error.message, 'error');
@@ -4912,7 +5282,7 @@
                     async function downloadFile(filename) {
                         const fullPath = filePath.value + '/' + filename;
                         try {
-                            const response = await fetch(`/ api / devices / ${fileDevice.value} /files/download ? path = ${encodeURIComponent(fullPath)} `);
+                            const response = await fetch(`/api/devices/${fileDevice.value}/files/download?path=${encodeURIComponent(fullPath)}`);
                             if (!response.ok) throw new Error('下载失败');
                             const blob = await response.blob();
                             const url = URL.createObjectURL(blob);
@@ -4941,7 +5311,7 @@
                             formData.append('file', uploadSelectedFile.value);
                             formData.append('path', filePath.value);
 
-                            const response = await fetch(`/ api / devices / ${fileDevice.value} /files/upload`, {
+                            const response = await fetch(`/api/devices/${fileDevice.value}/files/upload`, {
                                 method: 'POST',
                                 body: formData,
                             });
@@ -4968,7 +5338,7 @@
 
                         const fullPath = filePath.value + '/' + filename;
                         try {
-                            const data = await apiCall(`/ api / devices / ${fileDevice.value}/files?path=${encodeURIComponent(fullPath)}`, {
+                            const data = await apiCall(`/api/devices/${fileDevice.value}/files?path=${encodeURIComponent(fullPath)}`, {
                                 method: 'DELETE',
                             });
                             if (data.success) {
@@ -5503,6 +5873,100 @@
                         showToast('已恢复默认设置');
                     }
 
+                    // Telegram Bot functions
+                    async function loadTelegramConfig() {
+                        try {
+                            const data = await apiCall('/api/telegram/config');
+                            telegramConfig.value = {
+                                bot_token: data.bot_token || '',
+                                enabled: data.enabled || false,
+                                allowed_users: data.allowed_users || [],
+                                send_screenshots: data.send_screenshots !== undefined ? data.send_screenshots : true,
+                                send_logs: data.send_logs !== undefined ? data.send_logs : true,
+                                status: data.status || 'stopped'
+                            };
+                            telegramAllowedUsersStr.value = data.allowed_users.join(', ');
+                        } catch (error) {
+                            console.error('Failed to load Telegram config:', error);
+                        }
+                    }
+
+                    async function saveTelegramConfig() {
+                        loading.value = true;
+                        try {
+                            // Parse allowed users
+                            const allowedUsers = telegramAllowedUsersStr.value
+                                .split(',')
+                                .map(s => s.trim())
+                                .filter(s => s && !isNaN(s))
+                                .map(s => parseInt(s));
+
+                            await apiCall('/api/telegram/config', {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    bot_token: telegramConfig.value.bot_token,
+                                    enabled: telegramConfig.value.enabled,
+                                    allowed_users: allowedUsers,
+                                    send_screenshots: telegramConfig.value.send_screenshots,
+                                    send_logs: telegramConfig.value.send_logs
+                                })
+                            });
+
+                            await loadTelegramConfig();
+                            showToast('Telegram 配置已保存');
+                        } catch (error) {
+                            showToast('保存失败: ' + error.message, 'error');
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
+                    async function testTelegramConnection() {
+                        loading.value = true;
+                        try {
+                            const response = await apiCall('/api/telegram/test', {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    bot_token: telegramConfig.value.bot_token
+                                })
+                            });
+
+                            telegramBotInfo.value = response.bot_info;
+                            showToast('✅ 连接成功！');
+                        } catch (error) {
+                            showToast('❌ 连接失败: ' + error.message, 'error');
+                            telegramBotInfo.value = null;
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
+                    async function startTelegramBot() {
+                        loading.value = true;
+                        try {
+                            await apiCall('/api/telegram/start', { method: 'POST' });
+                            await loadTelegramConfig();
+                            showToast('✅ Telegram Bot 已启动');
+                        } catch (error) {
+                            showToast('❌ 启动失败: ' + error.message, 'error');
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
+                    async function stopTelegramBot() {
+                        loading.value = true;
+                        try {
+                            await apiCall('/api/telegram/stop', { method: 'POST' });
+                            await loadTelegramConfig();
+                            showToast('Telegram Bot 已停止');
+                        } catch (error) {
+                            showToast('❌ 停止失败: ' + error.message, 'error');
+                        } finally {
+                            loading.value = false;
+                        }
+                    }
+
                     // Rules configuration functions
                     async function loadAppMappings() {
                         try {
@@ -5805,6 +6269,10 @@
                         darkMode.value = initialTheme === 'dark';
                         applyTheme(initialTheme);
 
+                        // Initialize language from localStorage
+                        const savedLanguage = localStorage.getItem('language');
+                        currentLanguage.value = savedLanguage || 'zh';
+
                         // Listen for system theme changes
                         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
                             if (!localStorage.getItem('theme')) {
@@ -5846,6 +6314,7 @@
                         if (page === 'settings') {
                             loadEmailConfig();
                             loadScreenshotConfig();
+                            loadTelegramConfig();
                         }
                         if (page === 'rules') {
                             loadAppMappings();
@@ -5940,6 +6409,9 @@
                         debugMode,
                         darkMode,
                         toggleDarkMode,
+                        currentLanguage,
+                        toggleLanguage,
+                        t,
                         subtaskTimeoutSeconds,
                         subtaskCountdown,
                         sendChatMessage,
@@ -6055,6 +6527,15 @@
                         loadScreenshotConfig,
                         saveScreenshotConfig,
                         resetScreenshotConfig,
+                        // Telegram Bot config
+                        telegramConfig,
+                        telegramAllowedUsersStr,
+                        telegramBotInfo,
+                        loadTelegramConfig,
+                        saveTelegramConfig,
+                        testTelegramConnection,
+                        startTelegramBot,
+                        stopTelegramBot,
                     };
                 },
             });

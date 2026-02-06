@@ -44,16 +44,18 @@ class ChatMessage:
     image_id: Optional[str] = None  # Reference to screenshot
     status: Optional[str] = None  # running, success, error (for assistant messages)
     todo_list: Optional[str] = None  # JSON string of todoList for complex tasks
+    tokens: int = 0
+    model_name: Optional[str] = None
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        # Parse todo_list JSON string to array for API response
-        if d.get('todo_list'):
+        result = asdict(self)
+        # Parse todo_list if it's a JSON string
+        if self.todo_list:
             try:
-                d['todo_list'] = json.loads(d['todo_list'])
+                result['todo_list'] = json.loads(self.todo_list)
             except (json.JSONDecodeError, TypeError):
-                d['todo_list'] = None
-        return d
+                result['todo_list'] = None
+        return result
 
 
 @dataclass
@@ -155,6 +157,14 @@ class ChatStorage:
                 pass  # Column already exists
             try:
                 cursor.execute("ALTER TABLE chat_messages ADD COLUMN todo_list TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            try:
+                cursor.execute("ALTER TABLE chat_messages ADD COLUMN tokens INTEGER DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            try:
+                cursor.execute("ALTER TABLE chat_messages ADD COLUMN model_name TEXT")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
@@ -278,7 +288,8 @@ class ChatStorage:
     # ========== Message Operations ==========
 
     def add_message(self, session_id: str, role: str, content: str, image_id: Optional[str] = None,
-                     status: Optional[str] = None, todo_list: Optional[list] = None) -> ChatMessage:
+                     status: Optional[str] = None, todo_list: Optional[list] = None,
+                     tokens: int = 0, model_name: Optional[str] = None) -> ChatMessage:
         """Add a message to a session."""
         # Convert todo_list to JSON string for storage
         todo_list_json = json.dumps(todo_list) if todo_list else None
@@ -292,15 +303,18 @@ class ChatStorage:
             image_id=image_id,
             status=status,
             todo_list=todo_list_json,
+            tokens=tokens,
+            model_name=model_name,
         )
 
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO chat_messages (id, session_id, role, content, created_at, image_id, status, todo_list)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO chat_messages (id, session_id, role, content, created_at, image_id, status, todo_list, tokens, model_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (message.id, message.session_id, message.role, message.content,
-                  message.created_at, message.image_id, message.status, message.todo_list))
+                  message.created_at, message.image_id, message.status, message.todo_list,
+                  message.tokens, message.model_name))
 
             # Update session title if this is the first user message
             if role == "user":
@@ -314,8 +328,9 @@ class ChatStorage:
         return message
 
     def update_message(self, message_id: str, content: Optional[str] = None,
-                       status: Optional[str] = None, todo_list: Optional[list] = None) -> bool:
-        """Update message fields (content, status, todo_list)."""
+                       status: Optional[str] = None, todo_list: Optional[list] = None,
+                       tokens: Optional[int] = None, model_name: Optional[str] = None) -> bool:
+        """Update message fields (content, status, todo_list, tokens, model_name)."""
         updates = []
         values = []
         
@@ -328,6 +343,12 @@ class ChatStorage:
         if todo_list is not None:
             updates.append("todo_list = ?")
             values.append(json.dumps(todo_list))
+        if tokens is not None:
+            updates.append("tokens = ?")
+            values.append(tokens)
+        if model_name is not None:
+            updates.append("model_name = ?")
+            values.append(model_name)
         
         if not updates:
             return False

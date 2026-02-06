@@ -148,6 +148,8 @@ class UpdateMessageRequest(BaseModel):
     content: Optional[str] = None
     status: Optional[str] = None
     todo_list: Optional[list] = None
+    tokens: Optional[int] = None
+    model_name: Optional[str] = None
 
 
 @router.patch("/sessions/{session_id}/messages/{message_id}")
@@ -157,12 +159,14 @@ async def update_message(
     request: UpdateMessageRequest,
     _: bool = Depends(verify_token)
 ):
-    """Update message fields (content, status, todo_list)."""
+    """Update message fields (content, status, todo_list, tokens, model_name)."""
     success = chat_service.update_message(
         message_id,
         content=request.content,
         status=request.status,
-        todo_list=request.todo_list
+        todo_list=request.todo_list,
+        tokens=request.tokens,
+        model_name=request.model_name
     )
     if not success:
         raise HTTPException(status_code=404, detail="Message not found or no updates")
