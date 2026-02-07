@@ -27,29 +27,69 @@ class TelegramBotService:
         self._bot_token: Optional[str] = None
         self._enabled: bool = False
         self._allowed_users: list[int] = []
+        self._allowed_groups: list[int] = []  # New: authorized group IDs
+        self._group_member_auth: bool = True  # New: auto-authorize group members
         self._running: bool = False
         self._config: Dict[str, Any] = {}  # Store config for use in commands
+        self._notification_targets: Dict[str, str] = {}  # New: message routing config
         # Store pending tasks and device selections
         self._pending_tasks: Dict[str, str] = {}  # user_id -> task_content
         self._selected_devices: Dict[str, set] = {}  # user_id -> set of device_ids
-        self._pending_action: Dict[str, str] = {}  # user_id -> action (task/screenshot)
-        self._task_options: Dict[str, Dict[str, bool]] = {}  # chat_id -> {complex_task: bool, send_email: bool}
+        self._pending_action: dict[int, str] = {}  # chat_id -> pending_action
+        self._task_options: dict[int, dict] = {}  # chat_id -> {complex_task: bool, send_email: bool}
+        
+        # Track messages for real-time updates
+        self._progress_messages: dict[int, int] = {}  # chat_id -> message_id
+        self._screenshot_messages: dict[int, int] = {}  # chat_id -> message_id  
+        self._current_chat_tasks: dict[int, str] = {}  # chat_id -> session_id
+        self._last_update_time: dict[int, float] = {}  # chat_id -> last update timestamp
+        self._log_counters: dict[int, int] = {}  # chat_id -> log count for fake progress
+        self._token_counters: dict[int, int] = {}  # chat_id -> total tokens
+        self._model_names: dict[int, str] = {}  # chat_id -> model name used
+        self._recent_logs: dict[int, list[str]] = {}  # chat_id -> recent log lines (max 10)
+        self._sent_screenshots: dict[int, set[str]] = {}  # chat_id -> set of sent screenshot IDs
         self._menu_stack: Dict[str, list] = {}  # chat_id -> menu history for breadcrumb
+        self._task_creation: Dict[str, Dict[str, Any]] = {}  # user_id -> task creation state
 
     async def start(self, config: Dict[str, Any]):
         """Start the Telegram bot."""
         self._bot_token = config.get("bot_token")
         self._enabled = config.get("enabled", False)
         self._allowed_users = config.get("allowed_users", [])
+        self._allowed_groups = config.get("allowed_groups", [])
+        self._group_member_auth = config.get("group_member_auth", True)
+        self._notification_targets = config.get("notification_targets", {
+            "system_notifications": "groups",
+            "welcome_menu": "both",
+            "task_results": "requestor"
+        })
         self._config = config  # Store config
+        
+        # Backward compatibility: migrate old config format
+        # If allowed_groups is empty but allowed_users contains negative IDs (groups)
+        if not self._allowed_groups and self._allowed_users:
+            self._allowed_groups = [uid for uid in self._allowed_users if uid < 0]
+            self._allowed_users = [uid for uid in self._allowed_users if uid > 0]
+            logger.info(f"Migrated {len(self._allowed_groups)} group IDs from allowed_users to allowed_groups")
 
         if not self._enabled or not self._bot_token:
             logger.info("Telegram bot is disabled or not configured")
             return
 
         try:
-            # Create application
-            self._application = Application.builder().token(self._bot_token).build()
+            from telegram.request import HTTPXRequest
+            
+            # Create custom request with increased timeout to prevent slow responses
+            request = HTTPXRequest(
+                connection_pool_size=8,
+                read_timeout=30.0,      # Increase read timeout from default 5s to 30s
+                write_timeout=30.0,     # Increase write timeout
+                connect_timeout=10.0,   # Connection timeout
+                pool_timeout=10.0       # Pool timeout
+            )
+            
+            # Create application with custom request
+            self._application = Application.builder().token(self._bot_token).request(request).build()
 
             # Register command handlers
             self._application.add_handler(CommandHandler("start", self._cmd_start))
@@ -67,8 +107,21 @@ class TelegramBotService:
             # Start polling
             await self._application.initialize()
             await self._application.start()
+            
+            # Delete any existing webhook before starting polling
+            # Telegram doesn't allow both webhook and polling simultaneously
+            try:
+                await self._application.bot.delete_webhook(drop_pending_updates=True)
+                logger.info("Deleted existing webhook (if any)")
+            except Exception as e:
+                logger.warning(f"Failed to delete webhook: {e}")
+            
             await self._application.updater.start_polling()
             self._running = True
+            
+            # Set up bot commands menu
+            await self._setup_bot_commands()
+            
             logger.info("✅ Telegram bot started successfully")
 
         except Exception as e:
@@ -87,9 +140,40 @@ class TelegramBotService:
             except Exception as e:
                 logger.error(f"Error stopping Telegram bot: {e}")
 
-    def _check_authorization(self, user_id: int) -> bool:
-        """Check if user is authorized."""
-        return not self._allowed_users or user_id in self._allowed_users
+    def _check_authorization(self, update: Update) -> bool:
+        """
+        Check if user is authorized.
+        
+        Supports both individual user authorization and group-based authorization.
+        If group_member_auth is enabled, all members of authorized groups are automatically authorized.
+        
+        Args:
+            update: Telegram Update object
+            
+        Returns:
+            True if authorized, False otherwise
+        """
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        # If no restrictions configured, allow everyone
+        if not self._allowed_users and not self._allowed_groups:
+            return True
+        
+        # Check individual user authorization
+        if user_id in self._allowed_users:
+            logger.debug(f"User {user_id} authorized via allowed_users")
+            return True
+        
+        # Check group-based authorization
+        if self._group_member_auth and chat_id < 0:
+            # Message is from a group, check if group is authorized
+            if chat_id in self._allowed_groups:
+                logger.debug(f"User {user_id} authorized via group {chat_id}")
+                return True
+        
+        logger.debug(f"User {user_id} in chat {chat_id} not authorized")
+        return False
 
     def _escape_markdown(self, text: str) -> str:
         """Escape markdown special characters."""
@@ -99,9 +183,7 @@ class TelegramBotService:
 
     async def _cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
-        user_id = update.effective_user.id
-        
-        if not self._check_authorization(user_id):
+        if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
             return
 
@@ -110,7 +192,7 @@ class TelegramBotService:
 
     async def _cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
-        if not self._check_authorization(update.effective_user.id):
+        if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
             return
 
@@ -147,8 +229,13 @@ class TelegramBotService:
         user_id = update.effective_user.id
         chat_id = str(update.message.chat_id)
         
-        if not self._check_authorization(user_id):
+        if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
+            return
+        
+        # Check if user is in task creation flow
+        if user_id in self._task_creation:
+            await self._handle_task_creation_input(update, context)
             return
 
         # Check if user is in task input mode
@@ -208,7 +295,7 @@ class TelegramBotService:
 
     async def _cmd_task(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /task command - show device selection."""
-        if not self._check_authorization(update.effective_user.id):
+        if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
             return
 
@@ -274,7 +361,7 @@ class TelegramBotService:
 
     async def _cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command."""
-        if not self._check_authorization(update.effective_user.id):
+        if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
             return
 
@@ -304,7 +391,7 @@ class TelegramBotService:
 
     async def _cmd_devices(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /devices command."""
-        if not self._check_authorization(update.effective_user.id):
+        if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
             return
 
@@ -339,7 +426,7 @@ class TelegramBotService:
 
     async def _cmd_screenshot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /screenshot command - show device selection."""
-        if not self._check_authorization(update.effective_user.id):
+        if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
             return
 
@@ -397,7 +484,7 @@ class TelegramBotService:
 
     async def _cmd_config(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /config command."""
-        if not self._check_authorization(update.effective_user.id):
+        if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
             return
 
@@ -452,7 +539,7 @@ class TelegramBotService:
         query = update.callback_query
         await query.answer()
 
-        if not self._check_authorization(update.effective_user.id):
+        if not self._check_authorization(update):
             await query.edit_message_text("❌ 未授权的用户")
             return
 
@@ -557,6 +644,12 @@ class TelegramBotService:
                 await self._show_scheduled_tasks(query)
                 return
             
+            # Handle task pagination
+            if callback_data.startswith("tasks_page_"):
+                page = int(callback_data.replace("tasks_page_", ""))
+                await self._show_scheduled_tasks(query, page=page)
+                return
+            
             # Handle task toggle (enable/disable)
             if callback_data.startswith("toggle_task_"):
                 await self._handle_toggle_task(query, callback_data)
@@ -565,6 +658,32 @@ class TelegramBotService:
             # Handle task delete
             if callback_data.startswith("delete_task_"):
                 await self._handle_delete_task(query, callback_data)
+                return
+            
+            # Handle task logs view
+            if callback_data.startswith("task_logs_"):
+                await self._show_task_logs(query, callback_data)
+                return
+            
+            # Handle task creation
+            if callback_data == "create_task_start":
+                await self._start_task_creation(query)
+                return
+            
+            if callback_data.startswith("task_schedule_"):
+                await self._handle_schedule_selection(query, callback_data)
+                return
+            
+            if callback_data.startswith("task_device_"):
+                await self._handle_task_device_selection(query, callback_data)
+                return
+            
+            if callback_data == "task_create_confirm":
+                await self._confirm_task_creation(query)
+                return
+            
+            if callback_data == "task_create_cancel":
+                await self._cancel_task_creation(query)
                 return
             # === END SCHEDULED TASKS ===
             
@@ -594,7 +713,25 @@ class TelegramBotService:
             if callback_data == "devices_unlock":
                 await self._show_device_unlock_config(query)
                 return
-            # === END DEVICE UNLOCK ===
+            
+            if callback_data == "devices_unlock_list":
+                await self._show_device_action_list(query, "unlock")
+                return
+            
+            if callback_data == "devices_lock_list":
+                await self._show_device_action_list(query, "lock")
+                return
+            
+            if callback_data.startswith("device_unlock_"):
+                device_id = callback_data.replace("device_unlock_", "")
+                await self._execute_device_unlock(query, device_id)
+                return
+            
+            if callback_data.startswith("device_lock_"):
+                device_id = callback_data.replace("device_lock_", "")
+                await self._execute_device_lock(query, device_id)
+                return
+            # === END DEVICE UNLOCK/LOCK ===
             
             # === TASK HISTORY ===
             if callback_data == "tasks_history":
@@ -713,7 +850,7 @@ class TelegramBotService:
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 task_content = self._pending_tasks.get(chat_id, "未知任务")
                 
-                # Escape markdown special characters in task content
+                # Escape markdown special characters
                 task_content_safe = task_content.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
                 
                 await query.edit_message_text(
@@ -869,23 +1006,174 @@ class TelegramBotService:
                 
                 # Execute task
                 from web_app.services.task_service import task_service
+                from web_app.services.chat_service import chat_service
                 import base64
                 from io import BytesIO
                 
-                options_text = ""
-                if task_options["complex_task"]:
-                    options_text += "🔓 保持解锁 "
-                if task_options["send_email"]:
-                    options_text += "📧 邮件通知 "
+                # === TASK CONFLICT DETECTION ===
+                # Check if another task is already running
+                current_task = task_service.get_current_task()
+                if current_task:
+                    can_interrupt, current_info = task_service.can_interrupt_current_task("chat")
+                    
+                    if not can_interrupt:
+                        # Bot task has highest priority (chat=3), this shouldn't happen
+                        # But let's handle it gracefully
+                        await query.edit_message_text(
+                            f"⚠️ **有任务正在执行**\n\n"
+                            f"📋 {current_info['task_type_display']}: {current_info['task_content'][:30]}...\n"
+                            f"⏱️ 进度: {current_info['progress']}%\n\n"
+                            f"请等待当前任务完成后再试。",
+                            parse_mode='Markdown'
+                        )
+                        # Clean up
+                        if chat_id in self._pending_tasks:
+                            del self._pending_tasks[chat_id]
+                        if chat_id in self._selected_devices:
+                            del self._selected_devices[chat_id]
+                        if chat_id in self._pending_action:
+                            del self._pending_action[chat_id]
+                        return
+                    
+                    # Can interrupt - notify and stop current task
+                    await query.edit_message_text(
+                        f"⚠️ **正在停止当前任务**\n\n"
+                        f"📋 {current_info['task_type_display']}: {current_info['task_content'][:30]}...\n"
+                        f"⏳ Bot 任务优先级更高，将强制停止...\n\n"
+                        f"请稍候...",
+                        parse_mode='Markdown'
+                    )
+                    
+                # === BOT TASK HISTORY: Create chat session ===
+                # Use bot_ prefix to distinguish from Web tasks  
+                user_id = update.effective_user.id if update and update.effective_user else "unknown"
+                bot_device_id = f"bot_{user_id}_{list(selected_devices)[0] if selected_devices else 'unknown'}"
                 
-                await query.edit_message_text(
-                    f"📝 **任务执行中**\n\n"
-                    f"🎯 {task_content}\n"
-                    f"📱 设备: {len(selected_devices)} 个\n"
-                    f"⚙️ 选项: {options_text or '无'}\n\n"
-                    f"⏳ 请稍候...",
-                    parse_mode='Markdown'
+                # Create session for this Bot task
+                session = chat_service.create_session(
+                    device_id=bot_device_id,
+                    title=task_content[:50]  # Use task as title
                 )
+                session_id = session['id']
+                
+                # Add user message (the task description)
+                user_msg = chat_service.add_message(
+                    session_id=session_id,
+                    role='user',
+                    content=task_content
+                )
+                
+                # === MULTI-DEVICE FIX: Don't create assistant message here ===
+                # Let task_service create separate assistant messages for each device
+                # This ensures each device's logs and screenshots are isolated
+                
+                # Set current context to user message for now
+                chat_service.set_current_context(session_id, user_msg['id'])
+                logger.info(f"Created Bot task session {session_id} for user {user_id}")
+                
+                # === REAL-TIME FEEDBACK: Register callbacks ===
+                # Store chat_id for callbacks to access
+                self._current_chat_tasks[chat_id] = session_id
+                self._log_counters[chat_id] = 0  # Initialize log counter
+                self._token_counters[chat_id] = 0  # Initialize token counter
+                self._recent_logs[chat_id] = []  # Initialize recent logs buffer
+                self._sent_screenshots[chat_id] = set()  # Initialize sent screenshots tracking
+                
+                # Get and store model name
+                model_name = 'Unknown'
+                try:
+                    from web_app.services.model_service import model_service
+                    active_model = model_service.get_active_service_dict()
+                    # Use model_name (e.g. "glm-4-flash") instead of name (e.g. "OpenAI代理")
+                    model_name = active_model.get('model_name', 'Unknown') if active_model else 'Unknown'
+                    self._model_names[chat_id] = model_name
+                except Exception as e:
+                    logger.error(f"Failed to get model name: {e}")
+                    self._model_names[chat_id] = 'Unknown'
+                
+                # Progress callback
+                def progress_update_callback(task_id: str, progress: int):
+                    asyncio.create_task(
+                        self._update_progress_message(
+                            chat_id=chat_id,
+                            task_content=task_content,
+                            progress=progress
+                        )
+                    )
+                
+                # Log callback (for progress text and screenshot trigger)
+                def log_update_callback(task_id: str, message: str, task_type: str):
+                    # Increment log counter
+                    if chat_id in self._log_counters:
+                        self._log_counters[chat_id] += 1
+                        # Calculate fake progress: 1 log = 1%, cap at 99%
+                        fake_progress = min(self._log_counters[chat_id], 99)
+                    else:
+                        fake_progress = 0
+                    
+                    # Extract token count from log if present
+                    # Format: [TOKENS]input,output,total[/TOKENS]
+                    import re
+                    token_match = re.search(r'\[TOKENS\](\d+),(\d+),(\d+)\[/TOKENS\]', message)
+                    if token_match:
+                        tokens_total = int(token_match.group(3))
+                        # Initialize if not exists
+                        if chat_id not in self._token_counters:
+                            self._token_counters[chat_id] = 0
+                        # Accumulate tokens
+                        self._token_counters[chat_id] += tokens_total
+                        
+                        # Save to database
+                        try:
+                            # chat_service is already imported in the outer scope
+                            if session_id:
+                                chat_service.update_session_tokens(session_id, tokens_total)
+                        except Exception as e:
+                            logger.error(f"Failed to save token to database: {e}")
+                    
+                    # Store recent logs (keep last 10, skip token lines and empty lines)
+                    if message and not message.startswith('[TOKENS]'):
+                        # Clean the message for display
+                        clean_msg = message.strip()
+                        if clean_msg:
+                            if chat_id not in self._recent_logs:
+                                self._recent_logs[chat_id] = []
+                            self._recent_logs[chat_id].append(clean_msg)
+                            # Keep only last 10 logs
+                            if len(self._recent_logs[chat_id]) > 10:
+                                self._recent_logs[chat_id] = self._recent_logs[chat_id][-10:]
+                    
+                    # Update progress message with latest log and fake progress
+                    # No rate limiting - let Telegram handle it
+                    asyncio.create_task(
+                        self._update_progress_message(
+                            chat_id=chat_id,
+                            task_content=task_content,
+                            progress=fake_progress
+                        )
+                    )
+                    
+                    # Trigger screenshot update if this log mentions a screenshot
+                    # Use delay to avoid overwhelming Telegram
+                    if "📸" in message or "Screenshot" in message:
+                        # === PLAN A: Disable screenshot updates during AI interaction ===
+                        # Screenshot data in database may be incomplete (14 bytes issue)
+                        # We now rely on send_device_completion for screenshots after task completes
+                        # asyncio.create_task(self._update_screenshot(chat_id))
+                        pass
+                
+                task_service.add_progress_callback(progress_update_callback)
+                task_service.add_log_callback(log_update_callback)
+                
+                # Send initial progress message
+                await self._update_progress_message(
+                    chat_id=chat_id,
+                    task_content=task_content,
+                    progress=0,
+                    latest_log="正在启动任务执行..."
+                )
+                # Note: Removed the old static "📝 **任务执行中**" message
+                # Now using dynamic progress messages instead
                 
                 try:
                     # Execute task and get result directly from return value
@@ -894,7 +1182,8 @@ class TelegramBotService:
                         device_ids=list(selected_devices),
                         send_email=task_options["send_email"],
                         no_auto_lock=task_options["complex_task"],  # Use no_auto_lock for complex task mode
-                        task_type="manual"
+                        task_type="chat",  # Use 'chat' type so logs are auto-saved to DB
+                        session_id=session_id  # Pass session ID, let task_service create assistant message
                     )
                     
                     logger.info(f"Task execution completed - task_result exists: {task_result is not None}, status: {task_result.status if task_result else 'None'}")
@@ -906,6 +1195,12 @@ class TelegramBotService:
                         response = f"{status_emoji} **任务{task_result.status}**\n\n"
                         response += f"🎯 {task_content_safe}\n"
                         response += f"⏱️ 进度: {task_result.progress}%"
+                        
+                        # === BOT TASK HISTORY: Update session status ===
+                        chat_service.update_session_status(session_id, 'completed')
+                        
+                        # === MULTI-DEVICE FIX: Model names are saved per-device in task_service ===
+                        # Each device's assistant message gets model_name updated separately
                         
                         # Send status with main menu button
                         keyboard = [[InlineKeyboardButton("🏠 主菜单", callback_data="main_menu")]]
@@ -919,34 +1214,15 @@ class TelegramBotService:
                         
                         # Send logs
                         logger.info(f"Task logs count: {len(task_result.logs) if task_result.logs else 0}")
-                        if task_result.logs and len(task_result.logs) > 0:
-                            logs_text = "\n".join(task_result.logs[-15:])
-                            if len(logs_text) > 3500:
-                                logs_text = logs_text[-3500:]
-                            await self._application.bot.send_message(
-                                chat_id=query.message.chat_id,
-                                text=f"📋 **日志摘要**\n```\n{logs_text}\n```",
-                                parse_mode='Markdown'
-                            )
                         
-                        # Send screenshot
-                        config = self._config
-                        screenshot_data = getattr(task_result, '_screenshot_data', None)
-                        logger.info(f"Screenshot config: {config.get('send_screenshots', True)}, data exists: {screenshot_data is not None}")
-                        if config.get('send_screenshots', True) and screenshot_data:
-                            try:
-                                if isinstance(screenshot_data, str):
-                                    screenshot_bytes = base64.b64decode(screenshot_data)
-                                else:
-                                    screenshot_bytes = screenshot_data
-                                
-                                await self._application.bot.send_photo(
-                                    chat_id=query.message.chat_id,
-                                    photo=BytesIO(screenshot_bytes),
-                                    caption=f"📸 任务完成截图\n🎯 {task_content_safe}"
-                                )
-                            except Exception as e:
-                                logger.error(f"Failed to send screenshot: {e}")
+                        # === MULTI-DEVICE: Only send log summary for single device tasks ===
+                        # Multi-device tasks already sent per-device completion reports
+                        device_count = len(selected_devices) if selected_devices else 0
+                        
+                        # === ALL DEVICES: Skip log/screenshot summary ===
+                        # All tasks already sent per-device completion reports via send_device_completion
+                        logger.info(f"Skipping log/screenshot summary for {device_count} device(s) - already sent per-device")
+                        
                         
                         # Delete the progress message
                         await query.delete_message()
@@ -959,13 +1235,113 @@ class TelegramBotService:
                             text="✅ 任务已完成，结果已发送",
                             reply_markup=reply_markup
                         )
+                        
+                        # === BOT TASK HISTORY: Update session status ===
+                        chat_service.update_session_status(session_id, 'completed')
+                        chat_service.clear_current_context()
+                        logger.info(f"Bot task session {session_id} marked as completed")
+                        
+                        # === REAL-TIME FEEDBACK: Cleanup ===
+                        # Remove callbacks
+                        try:
+                            task_service.remove_progress_callback(progress_update_callback)
+                            task_service.remove_log_callback(log_update_callback)
+                        except Exception:
+                            pass
+                        
+                        # Update final progress message
+                        await self._update_progress_message(
+                            chat_id=chat_id,
+                            task_content=task_content,
+                            progress=100,
+                            latest_log="✅ 任务已完成"
+                        )
+                        
+                        # Clean up tracking
+                        if chat_id in self._current_chat_tasks:
+                            del self._current_chat_tasks[chat_id]
+                        if chat_id in self._last_update_time:
+                            del self._last_update_time[chat_id]
+                        if chat_id in self._log_counters:
+                            del self._log_counters[chat_id]
+                        if chat_id in self._token_counters:
+                            del self._token_counters[chat_id]
+                        if chat_id in self._model_names:
+                            del self._model_names[chat_id]
+                        if chat_id in self._recent_logs:
+                            del self._recent_logs[chat_id]
+                        if chat_id in self._sent_screenshots:
+                            del self._sent_screenshots[chat_id]
+                        # Clean up progress message reference (message was deleted at line 1228)
+                        if chat_id in self._progress_messages:
+                            del self._progress_messages[chat_id]
                     else:
                         logger.warning("Task completed but task_result is None!")
                         await query.edit_message_text("✅ 任务已提交")
                         
                 except Exception as e:
                     logger.error(f"Task execution failed: {e}")
+                    
+                    # === REAL-TIME FEEDBACK: Update progress with error ===
+                    await self._update_progress_message(
+                        chat_id=chat_id,
+                        task_content=task_content,
+                        progress=0,
+                        latest_log=f"❌ 执行失败: {str(e)[:80]}"
+                    )
+                    
+                    # Send error screenshot if available
+                    try:
+                        from web_app.services.device_service import device_service
+                        device_id = list(selected_devices)[0] if selected_devices else None
+                        if device_id:
+                            screenshot_data = await device_service.get_screenshot(device_id)
+                            if screenshot_data:
+                                if isinstance(screenshot_data, str):
+                                    screenshot_bytes = base64.b64decode(screenshot_data)
+                                else:
+                                    screenshot_bytes = screenshot_data
+                                
+                                await self._application.bot.send_photo(
+                                    chat_id=chat_id,
+                                    photo=BytesIO(screenshot_bytes),
+                                    caption=f"❌ 错误截图\n{str(e)[:100]}"
+                                )
+                    except Exception as screenshot_error:
+                        logger.error(f"Failed to send error screenshot: {screenshot_error}")
+                    
                     await query.edit_message_text(f"❌ 执行失败: {str(e)}")
+                    
+                    # === BOT TASK HISTORY: Mark as failed ===
+                    try:
+                        chat_service.update_session_status(session_id, 'failed')
+                        chat_service.clear_current_context()
+                        logger.info(f"Bot task session {session_id} marked as failed")
+                        
+                        # === REAL-TIME FEEDBACK: Cleanup ===
+                        try:
+                            task_service.remove_progress_callback(progress_update_callback)
+                            task_service.remove_log_callback(log_update_callback)
+                        except Exception:
+                            pass
+                        
+                        # Clean up tracking
+                        if chat_id in self._current_chat_tasks:
+                            del self._current_chat_tasks[chat_id]
+                        if chat_id in self._last_update_time:
+                            del self._last_update_time[chat_id]
+                        if chat_id in self._log_counters:
+                            del self._log_counters[chat_id]
+                        if chat_id in self._token_counters:
+                            del self._token_counters[chat_id]
+                        if chat_id in self._model_names:
+                            del self._model_names[chat_id]
+                        if chat_id in self._recent_logs:
+                            del self._recent_logs[chat_id]
+                        if chat_id in self._progress_messages:
+                            del self._progress_messages[chat_id]
+                    except Exception as cleanup_error:
+                        logger.error(f"Failed to cleanup session: {cleanup_error}")
                 
                 # Clean up
                 if chat_id in self._pending_tasks:
@@ -974,6 +1350,22 @@ class TelegramBotService:
                     del self._selected_devices[chat_id]
                 if chat_id in self._pending_action:
                     del self._pending_action[chat_id]
+                if chat_id in self._current_chat_tasks:
+                    del self._current_chat_tasks[chat_id]
+                if chat_id in self._last_update_time:
+                    del self._last_update_time[chat_id]
+                if chat_id in self._log_counters:
+                    del self._log_counters[chat_id]
+                if chat_id in self._token_counters:
+                    del self._token_counters[chat_id]
+                if chat_id in self._model_names:
+                    del self._model_names[chat_id]
+                if chat_id in self._recent_logs:
+                    del self._recent_logs[chat_id]
+                if chat_id in self._sent_screenshots:
+                    del self._sent_screenshots[chat_id]
+                if chat_id in self._progress_messages:
+                    del self._progress_messages[chat_id]
                 
                 return
             
@@ -1205,8 +1597,38 @@ class TelegramBotService:
                     await query.edit_message_text(f"{status} {option_names[option]}")
                     
         except Exception as e:
+            from telegram.error import BadRequest, RetryAfter
+            
+            # Handle Telegram rate limiting (Flood Control)
+            if isinstance(e, RetryAfter):
+                retry_after = e.retry_after
+                logger.warning(f"Telegram rate limit exceeded, retry after {retry_after}s")
+                # Don't try to send another message (would also be rate limited)
+                # Just answer the callback query to acknowledge the click
+                try:
+                    await query.answer(f"⚠️ 操作过快，请 {retry_after} 秒后重试", show_alert=True)
+                except Exception:
+                    pass  # If even this fails, just give up
+                return
+            
+            # Ignore "message not modified" errors (when user clicks same button twice)
+            if isinstance(e, BadRequest) and "message is not modified" in str(e).lower():
+                logger.debug(f"Message content unchanged, skipping edit")
+                return
+            
             logger.error(f"Button callback failed: {e}")
-            await query.edit_message_text(f"❌ 操作失败: {str(e)}")
+            # Try to edit message, but don't fail if this also times out
+            try:
+                await query.edit_message_text(f"❌ 操作失败: {str(e)}")
+            except Exception as edit_error:
+                # Don't log flood control errors for error messages
+                if not isinstance(edit_error, RetryAfter):
+                    logger.error(f"Failed to send error message: {edit_error}")
+                # Just answer the callback query instead
+                try:
+                    await query.answer(f"❌ 操作失败: {str(e)}", show_alert=True)
+                except Exception:
+                    pass  # Give up gracefully
 
     async def send_message(self, chat_id: int, text: str):
         """Send a message to a specific chat."""
@@ -1218,6 +1640,112 @@ class TelegramBotService:
             await self._application.bot.send_message(chat_id=chat_id, text=text, parse_mode='Markdown')
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
+
+    async def send_system_notification(self, message: str):
+        """
+        Send system notification to all authorized GROUP chats (chat_id < 0).
+        Individual users are not notified, only groups.
+        
+        Args:
+            message: The notification message to send
+        """
+        if not self._application or not self._running:
+            logger.warning("Cannot send system notification: bot not running")
+            return
+        
+        # Check if there are any authorized groups
+        if not self._allowed_groups:
+            logger.debug("No authorized group chats configured for system notifications")
+            return
+        
+        notification_text = f"🔔 *System Notification*\n\n{message}"
+        
+        # Send to all authorized groups
+        for chat_id in self._allowed_groups:
+            if chat_id < 0:  # Double-check it's a group
+                try:
+                    await self.send_message(chat_id, notification_text)
+                    logger.info(f"System notification sent to group {chat_id}")
+                except Exception as e:
+                    logger.error(f"Failed to send notification to group {chat_id}: {e}")
+        
+        # Send welcome menu to all users after startup notification
+        if "系统已启动" in message or "已就绪" in message:
+            await self.send_welcome_menu_to_all()
+    
+    async def send_welcome_menu_to_all(self):
+        """Send welcome menu to all authorized users and groups based on config."""
+        if not self._application or not self._running:
+            return
+        
+        # Check notification target configuration
+        target = self._notification_targets.get("welcome_menu", "both")
+        
+        try:
+            text = """
+🏠 **欢迎使用 AutoGLM Bot！**
+
+🤖 您的智能手机自动化助手已就绪
+
+✨ **核心能力：**
+• 📋 自动化任务执行 - AI 驱动的智能操作
+• 📱 多设备管理 - 统一控制所有设备
+• ⚙️ 灵活配置 - 个性化定制您的体验
+• 🤖 AI 模型集成 - GLM、Gemini 等主流模型
+
+👇 **请选择功能分类：**
+"""
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("📋 任务管理", callback_data="menu_tasks"),
+                    InlineKeyboardButton("📱 设备管理", callback_data="menu_devices"),
+                ],
+                [
+                    InlineKeyboardButton("⚙️ 系统设置", callback_data="menu_settings"),
+                    InlineKeyboardButton("🤖 模型配置", callback_data="menu_models"),
+                ],
+                [
+                    InlineKeyboardButton("📊 高级功能", callback_data="menu_advanced"),
+                    InlineKeyboardButton("ℹ️ 帮助支持", callback_data="menu_help"),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Send to individual users if configured
+            if target in ["both", "users"]:
+                for user_id in self._allowed_users:
+                    if user_id > 0:  # Only positive IDs are users
+                        try:
+                            await self._application.bot.send_message(
+                                chat_id=user_id,
+                                text=text,
+                                reply_markup=reply_markup,
+                                parse_mode='Markdown'
+                            )
+                            logger.info(f"Welcome menu sent to user {user_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to send welcome menu to user {user_id}: {e}")
+            
+            # Send to groups if configured
+            if target in ["both", "groups"]:
+                for group_id in self._allowed_groups:
+                    if group_id < 0:  # Only negative IDs are groups
+                        try:
+                            await self._application.bot.send_message(
+                                chat_id=group_id,
+                                text=text,
+                                reply_markup=reply_markup,
+                                parse_mode='Markdown'
+                            )
+                            logger.info(f"Welcome menu sent to group {group_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to send welcome menu to group {group_id}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Failed to send welcome menu: {e}")
+
+
 
     # ============ MENU SYSTEM ============
     
@@ -1266,6 +1794,28 @@ class TelegramBotService:
         else:
             await query_or_update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     
+    async def _setup_bot_commands(self):
+        """Set up bot command menu based on welcome menu structure."""
+        try:
+            from telegram import BotCommand
+            
+            commands = [
+                # Main categories matching welcome menu
+                BotCommand("start", "🏠 显示主菜单"),
+                BotCommand("tasks", "📋 任务管理"),
+                BotCommand("devices", "📱 设备管理"),
+                BotCommand("settings", "⚙️ 系统设置"),
+                BotCommand("models", "🤖 模型配置"),
+                BotCommand("advanced", "📊 高级功能"),
+                BotCommand("help", "ℹ️ 帮助支持"),
+            ]
+            
+            await self._application.bot.set_my_commands(commands)
+            logger.info(f"✅ Bot commands menu synchronized: {len(commands)} commands")
+            
+        except Exception as e:
+            logger.error(f"Failed to set up bot commands: {e}")
+    
     async def _show_tasks_menu(self, query):
         """Show tasks management menu."""
         text = """
@@ -1297,7 +1847,10 @@ class TelegramBotService:
         keyboard = [
             [InlineKeyboardButton("📱 设备列表", callback_data="show_devices")],
             [InlineKeyboardButton("➕ 添加设备", callback_data="devices_add")],
-            [InlineKeyboardButton("🔓 设备解锁", callback_data="devices_unlock")],
+            [
+                InlineKeyboardButton("🔓 解锁设备", callback_data="devices_unlock_list"),
+                InlineKeyboardButton("🔒 锁定设备", callback_data="devices_lock_list"),
+            ],
             [InlineKeyboardButton("📦 应用管理", callback_data="devices_apps")],
             [InlineKeyboardButton("📁 文件管理", callback_data="devices_files")],
         ]
@@ -1612,8 +2165,14 @@ class TelegramBotService:
     # === END MODEL CONFIGURATION ===
     
     # === SCHEDULED TASKS FUNCTIONS ===
-    async def _show_scheduled_tasks(self, query):
-        """Show list of scheduled tasks."""
+    async def _show_scheduled_tasks(self, query, page: int = 0):
+        """
+        Show list of scheduled tasks with pagination.
+        
+        Args:
+            query: Callback query object
+            page: Current page number (0-indexed)
+        """
         from web_app.services.scheduler_service import scheduler_service
         
         # Get all scheduled tasks
@@ -1633,14 +2192,27 @@ class TelegramBotService:
             await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
             return
         
+        # Pagination settings
+        TASKS_PER_PAGE = 5
+        total_tasks = len(tasks_data)
+        total_pages = (total_tasks + TASKS_PER_PAGE - 1) // TASKS_PER_PAGE
+        page = max(0, min(page, total_pages - 1))  # Ensure valid page
+        
+        start_idx = page * TASKS_PER_PAGE
+        end_idx = min(start_idx + TASKS_PER_PAGE, total_tasks)
+        page_tasks = tasks_data[start_idx:end_idx]
+        
         # Build task list
         text = f"""
-📅 **定时任务列表** ({len(tasks_data)} 个任务)
+📅 **定时任务列表** ({total_tasks} 个任务)
 
 """
         
+        if total_pages > 1:
+            text += f"📄 第 {page + 1}/{total_pages} 页\n\n"
+        
         keyboard = []
-        for i, task in enumerate(tasks_data[:10], 1):  # Limit to 10 tasks
+        for i, task in enumerate(page_tasks, start=start_idx + 1):
             task_id = task['id']
             task_name = task['name']
             enabled = task.get('enabled', True)
@@ -1666,12 +2238,26 @@ class TelegramBotService:
             # Add task info to text
             text += f"{i}️⃣ **{task_name}** {status_icon}\n   ⏰ {schedule}\n\n"
             
-            # Add control buttons for each task
+            # Add control buttons for each task WITH task number
             toggle_text = "禁用" if enabled else "启用"
             keyboard.append([
-                InlineKeyboardButton(f"{toggle_text}", callback_data=f"toggle_task_{task_id}"),
-                InlineKeyboardButton("🗑️ 删除", callback_data=f"delete_task_{task_id}"),
+                InlineKeyboardButton(f"{i}. {toggle_text}", callback_data=f"toggle_task_{task_id}"),
+                InlineKeyboardButton(f"{i}. 📜 日志", callback_data=f"task_logs_{task_id}"),
+                InlineKeyboardButton(f"{i}. 🗑️ 删除", callback_data=f"delete_task_{task_id}"),
             ])
+        
+        # Add pagination buttons if needed
+        if total_pages > 1:
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"tasks_page_{page - 1}"))
+            if page < total_pages - 1:
+                nav_buttons.append(InlineKeyboardButton("➡️ 下一页", callback_data=f"tasks_page_{page + 1}"))
+            if nav_buttons:
+                keyboard.append(nav_buttons)
+        
+        # Add create task button
+        keyboard.append([InlineKeyboardButton("➕ 创建新任务", callback_data="create_task_start")])
         
         self._add_back_button(keyboard, "menu_tasks")
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1733,6 +2319,76 @@ class TelegramBotService:
         except Exception as e:
             logger.error(f"Delete task failed: {e}")
             await query.answer("❌ 操作失败", show_alert=True)
+    
+    async def _show_task_logs(self, query, callback_data: str):
+        """Show execution logs for a scheduled task."""
+        from web_app.services.scheduler_service import scheduler_service
+        
+        task_id = callback_data.replace("task_logs_", "")
+        
+        # Get task info
+        task = scheduler_service.get_task(task_id)
+        if not task:
+            await query.answer("❌ 任务不存在", show_alert=True)
+            return
+        
+        # Get task logs
+        logs = scheduler_service.get_task_logs(task_id, limit=5)
+        
+        task_name = self._escape_markdown(task.name)
+        
+        if not logs:
+            text = f"""
+📜 **任务执行日志**
+
+任务: {task_name}
+
+暂无执行记录
+
+💡 提示：任务执行后会记录执行日志
+"""
+        else:
+            text = f"""
+📜 **任务执行日志**
+
+任务: {task_name}
+
+最近 {len(logs)} 次执行记录：
+
+"""
+            for i, log in enumerate(logs, 1):
+                timestamp = log.get('timestamp', '')
+                success = log.get('success', False)
+                message = log.get('message', '')
+                details = log.get('details', '')
+                
+                # Format timestamp
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(timestamp)
+                    time_str = dt.strftime('%m-%d %H:%M')
+                except:
+                    time_str = timestamp[:16] if timestamp else'Unknown'
+                
+                # Status icon
+                status_icon = "✅" if success else "❌"
+                
+                # Truncate details for display
+                details_short = details[:100] + "..." if len(details) > 100 else details
+                details_safe = self._escape_markdown(details_short)
+                
+                text += f"""
+{i}. {status_icon} `{time_str}`
+   {message}
+"""
+                if details_short:
+                    text += f"   {details_safe}\n"
+        
+        keyboard = []
+        self._add_back_button(keyboard, "tasks_scheduled")
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     # === END SCHEDULED TASKS ===
     
     # === EMAIL SETTINGS FUNCTIONS ===
@@ -2038,6 +2694,152 @@ class TelegramBotService:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def _show_device_action_list(self, query, action: str):
+        """Show device list for lock/unlock action."""
+        from web_app.services.device_service import device_service
+        
+        devices = device_service.get_all_devices()
+        
+        action_icons = {
+            "lock": "🔒",
+            "unlock": "🔓"
+        }
+        action_names = {
+            "lock": "锁定",
+            "unlock": "解锁"
+        }
+        
+        icon = action_icons.get(action, "🔧")
+        name = action_names.get(action, action)
+        
+        if not devices:
+            text = f"""
+{icon} **设备{name}**
+
+暂无设备
+
+💡 提示：请先连接设备
+"""
+            keyboard = []
+            self._add_back_button(keyboard, "menu_devices")
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+            return
+        
+        text = f"""
+{icon} **设备{name}**
+
+选择要{name}的设备：
+
+"""
+        
+        keyboard = []
+        for device in devices:
+            device_name = self._escape_markdown(device.name or device.id[:20])
+            status_icon = "🟢" if device.status == "connected" else "🔴"
+            
+            button_text = f"{status_icon} {device_name}"
+            callback_data = f"device_{action}_{device.id}"
+            
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+        
+        self._add_back_button(keyboard, "menu_devices")
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def _execute_device_unlock(self, query, device_id: str):
+        """Execute unlock operation on a device."""
+        from web_app.services.device_service import device_service
+        
+        device = device_service.get_device(device_id)
+        if not device:
+            await query.answer("❌ 设备未找到", show_alert=True)
+            return
+        
+        device_name = self._escape_markdown(device.name or device.id[:20])
+        
+        try:
+            # Try to unlock
+            success = await device_service.unlock_device(device_id)
+            
+            if success:
+                text = f"""
+✅ **解锁成功**
+
+设备: {device_name}
+状态: 已解锁
+"""
+                await query.answer("✅ 设备已解锁")
+            else:
+                text = f"""
+❌ **解锁失败**
+
+设备: {device_name}
+
+可能原因:
+• PIN 未配置或不正确
+• 设备未响应
+• 设备已解锁
+
+💡 提示：请在 Web 端设置 → 设备管理中配置 PIN
+"""
+                await query.answer("❌ 解锁失败", show_alert=True)
+            
+            keyboard = []
+            self._add_back_button(keyboard, "devices_unlock_list")
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error unlocking device {device_id}: {e}")
+            await query.answer(f"❌ 解锁出错: {str(e)}", show_alert=True)
+    
+    async def _execute_device_lock(self, query, device_id: str):
+        """Execute lock operation on a device."""
+        from web_app.services.device_service import device_service
+        
+        device = device_service.get_device(device_id)
+        if not device:
+            await query.answer("❌ 设备未找到", show_alert=True)
+            return
+        
+        device_name = self._escape_markdown(device.name or device.id[:20])
+        
+        try:
+            # Try to lock
+            success = await device_service.lock_device(device_id)
+            
+            if success:
+                text = f"""
+✅ **锁定成功**
+
+设备: {device_name}
+状态: 已锁定
+"""
+                await query.answer("✅ 设备已锁定")
+            else:
+                text = f"""
+❌ **锁定失败**
+
+设备: {device_name}
+
+可能原因:
+• 设备未响应
+• 设备已锁定
+
+💡 提示：请检查设备连接状态
+"""
+                await query.answer("❌ 锁定失败", show_alert=True)
+            
+            keyboard = []
+            self._add_back_button(keyboard, "devices_lock_list")
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error locking device {device_id}: {e}")
+            await query.answer(f"❌ 锁定出错: {str(e)}", show_alert=True)
     # === END DEVICE UNLOCK ===
     
     # === TASK HISTORY ===
@@ -2665,6 +3467,680 @@ Bot 界面已针对移动端优化，无需额外配置
             await self._application.bot.send_photo(chat_id=chat_id, photo=photo_data, caption=caption)
         except Exception as e:
             logger.error(f"Failed to send photo: {e}")
+    
+    # === TASK CREATION FLOW ===
+    async def _handle_task_creation_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text input during task creation flow."""
+        user_id = update.effective_user.id
+        
+        if user_id not in self._task_creation:
+            return
+        
+        step = self._task_creation[user_id]["step"]
+        
+        if step == "name":
+            await self._handle_task_name_input(update, context)
+        elif step == "content":
+            await self._handle_task_content_input(update, context)
+        elif step == "time":
+            await self._handle_time_input(update, context)
+    
+    async def _start_task_creation(self, query):
+        """Start the interactive task creation flow."""
+        user_id = query.from_user.id
+        
+        # Initialize task creation state
+        self._task_creation[user_id] = {
+            "step": "name",
+            "data": {}
+        }
+        
+        text = """
+➕ **创建定时任务 - 第1步**
+
+请输入任务名称：
+
+💡 示例: `每日数据备份`, `周一截图任务`
+
+发送消息输入任务名称
+"""
+        
+        keyboard = [[InlineKeyboardButton("❌ 取消", callback_data="task_create_cancel")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+        await query.answer("请在聊天中输入任务名称")
+    
+    async def _handle_task_name_input(self, update, context):
+        """Handle task name input."""
+        user_id = update.effective_user.id
+        task_name = update.message.text.strip()
+        
+        if not task_name:
+            await update.message.reply_text("❌ 任务名称不能为空，请重新输入：")
+            return
+        
+        self._task_creation[user_id]["data"]["name"] = task_name
+        self._task_creation[user_id]["step"] = "content"
+        
+        text = f"""
+✅ 任务名称: `{task_name}`
+
+➕ **创建定时任务 - 第2步**
+
+请输入任务内容（要执行的指令）：
+
+💡 示例: 
+• `帮我打开微信，查看未读消息`
+• `截取屏幕并保存`
+
+发送消息输入任务内容：
+"""
+        await update.message.reply_text(text, parse_mode='Markdown')
+    
+    async def _handle_task_content_input(self, update, context):
+        """Handle task content input."""
+        user_id = update.effective_user.id
+        task_content = update.message.text.strip()
+        
+        if not task_content:
+            await update.message.reply_text("❌ 任务内容不能为空，请重新输入：")
+            return
+        
+        self._task_creation[user_id]["data"]["content"] = task_content
+        self._task_creation[user_id]["step"] = "device"
+        
+        from web_app.services.device_service import device_service
+        devices = device_service.get_all_devices()
+        
+        if not devices:
+            await update.message.reply_text("❌ 暂无可用设备\n\n请先连接设备后再创建任务")
+            del self._task_creation[user_id]
+            return
+        
+        text = f"""
+✅ 任务内容: `{task_content[:50]}...`
+
+➕ **创建定时任务 - 第3步**
+
+选择要执行任务的设备：
+"""
+        keyboard = []
+        # Store device IDs temporarily to map indices
+        device_ids = []
+        for idx, device in enumerate(devices):
+            device_name = device.name or device.id[:20]
+            status_icon = "🟢" if device.status == "connected" else "🔴"
+            device_ids.append(device.id)
+            keyboard.append([InlineKeyboardButton(
+                f"{status_icon} {device_name}",
+                callback_data=f"task_device_select_{idx}"  # Use index instead of full ID
+            )])
+        
+        # Store device IDs mapping temporarily
+        self._task_creation[user_id]["device_ids"] = device_ids
+        
+        keyboard.append([InlineKeyboardButton("❌ 取消", callback_data="task_create_cancel")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def _handle_task_device_selection(self, query, callback_data: str):
+        """Handle device selection in task creation flow."""
+        user_id = query.from_user.id
+        
+        if user_id not in self._task_creation or self._task_creation[user_id]["step"] != "device":
+            await query.answer("❌ 会话已过期，请重新开始")
+            return
+        
+        # Extract device index and resolve to actual device ID
+        device_idx_str = callback_data.replace("task_device_select_", "")
+        try:
+            device_idx = int(device_idx_str)
+            device_ids = self._task_creation[user_id].get("device_ids", [])
+            if device_idx < 0 or device_idx >= len(device_ids):
+                await query.answer("❌ 设备选择无效")
+                return
+            device_id = device_ids[device_idx]
+        except (ValueError, KeyError):
+            await query.answer("❌ 设备选择错误")
+            return
+        
+        self._task_creation[user_id]["data"]["device_id"] = device_id
+        self._task_creation[user_id]["step"] = "schedule"
+        
+        text = """
+➕ **创建定时任务 - 第4步**
+
+选择任务执行计划：
+"""
+        keyboard = [
+            [InlineKeyboardButton("📅 每天执行", callback_data="task_schedule_daily")],
+            [InlineKeyboardButton("📆 每周执行", callback_data="task_schedule_weekly")],
+            [InlineKeyboardButton("⏱️ 间隔执行", callback_data="task_schedule_interval")],
+            [InlineKeyboardButton("❌ 取消", callback_data="task_create_cancel")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def _handle_schedule_selection(self, query, callback_data: str):
+        """Handle schedule type selection."""
+        user_id = query.from_user.id
+        
+        if user_id not in self._task_creation or self._task_creation[user_id]["step"] != "schedule":
+            await query.answer("❌ 会话已过期，请重新开始")
+            return
+        
+        schedule_type = callback_data.replace("task_schedule_", "")
+        self._task_creation[user_id]["data"]["schedule_type"] = schedule_type
+        self._task_creation[user_id]["step"] = "time"
+        
+        if schedule_type == "daily":
+            text = """
+➕ **创建定时任务 - 第5步**
+
+请输入每天执行的时间：
+
+💡 格式: `HH:MM` (24小时制)
+💡 示例: `09:00`, `14:30`
+
+发送消息输入时间：
+"""
+        elif schedule_type == "weekly":
+            # Set default for weekly
+            self._task_creation[user_id]["data"]["weekly_days"] = [0]  # Monday
+            self._task_creation[user_id]["data"]["weekly_time"] = "09:00"
+            self._task_creation[user_id]["step"] = "confirm"
+            await self._show_task_creation_summary(query)
+            return
+        else:  # interval
+            text = """
+➕ **创建定时任务 - 第5步**
+
+请输入执行间隔（分钟）：
+
+💡 示例: `30` (每30分钟), `60` (每小时)
+
+发送消息输入间隔分钟数：
+"""
+        
+        await query.edit_message_text(text, parse_mode='Markdown')
+        await query.answer("请在聊天中输入")
+    
+    async def _handle_time_input(self, update, context):
+        """Handle time input."""
+        user_id = update.effective_user.id
+        time_input = update.message.text.strip()
+        schedule_type = self._task_creation[user_id]["data"]["schedule_type"]
+        
+        if schedule_type == "daily":
+            import re
+            if not re.match(r'^([01]\d|2[0-3]):([0-5]\d)$', time_input):
+                await update.message.reply_text("❌ 时间格式错误，请使用 HH:MM 格式（如 09:00）：")
+                return
+            self._task_creation[user_id]["data"]["daily_time"] = time_input
+        elif schedule_type == "interval":
+            try:
+                interval = int(time_input)
+                if interval <= 0:
+                    raise ValueError
+            except ValueError:
+                await update.message.reply_text("❌ 请输入有效的正整数（分钟数）：")
+                return
+            self._task_creation[user_id]["data"]["interval_minutes"] = interval
+        
+        self._task_creation[user_id]["step"] = "confirm"
+        await self._show_task_creation_summary_msg(update)
+    
+    async def _show_task_creation_summary(self, query):
+        """Show task creation summary for confirmation."""
+        user_id = query.from_user.id
+        data = self._task_creation[user_id]["data"]
+        
+        schedule_type = data["schedule_type"]
+        if schedule_type == "daily":
+            schedule_text = f"每天 {data['daily_time']}"
+        elif schedule_type == "weekly":
+            schedule_text = f"每周一 {data['weekly_time']}"
+        else:
+            schedule_text = f"每 {data['interval_minutes']} 分钟"
+        
+        text = f"""
+📋 **任务创建确认**
+
+任务名称: `{data['name']}`
+任务内容: `{data['content'][:80]}...`
+执行计划: {schedule_text}
+
+确认创建此任务？
+"""
+        keyboard = [
+            [InlineKeyboardButton("✅ 确认创建", callback_data="task_create_confirm")],
+            [InlineKeyboardButton("❌ 取消", callback_data="task_create_cancel")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def _show_task_creation_summary_msg(self, update):
+        """Show task creation summary via message."""
+        user_id = update.effective_user.id
+        data = self._task_creation[user_id]["data"]
+        
+        schedule_type = data["schedule_type"]
+        if schedule_type == "daily":
+            schedule_text = f"每天 {data['daily_time']}"
+        elif schedule_type == "weekly":
+            schedule_text = f"每周一 {data['weekly_time']}"
+        else:
+            schedule_text = f"每 {data['interval_minutes']} 分钟"
+        
+        text = f"""
+📋 **任务创建确认**
+
+任务名称: `{data['name']}`
+任务内容: `{data['content'][:80]}...`
+执行计划: {schedule_text}
+
+确认创建此任务？
+"""
+        keyboard = [
+            [InlineKeyboardButton("✅ 确认创建", callback_data="task_create_confirm")],
+            [InlineKeyboardButton("❌ 取消", callback_data="task_create_cancel")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def _confirm_task_creation(self, query):
+        """Create the scheduled task."""
+        user_id = query.from_user.id
+        
+        if user_id not in self._task_creation:
+            await query.answer("❌ 会话已过期", show_alert=True)
+            return
+        
+        data = self._task_creation[user_id]["data"]
+        
+        try:
+            from gui_app.scheduler import ScheduledTask
+            from web_app.services.scheduler_service import scheduler_service
+            import uuid
+            
+            # Prepare devices list (convert single device_id to list)
+            device_id = data.get("device_id")
+            devices_list = [device_id] if device_id else []
+            
+            task = ScheduledTask(
+                id=str(uuid.uuid4())[:8],
+                name=data["name"],
+                task_content=data["content"],
+                devices=devices_list,  # Use 'devices' list instead of 'device_id'
+                enabled=True,
+                schedule_type=data["schedule_type"]
+            )
+            
+            if data["schedule_type"] == "daily":
+                task.daily_time = data["daily_time"]
+            elif data["schedule_type"] == "weekly":
+                task.weekly_days = data.get("weekly_days", [0])
+                task.weekly_time = data.get("weekly_time", "09:00")
+            else:
+                task.interval_minutes = data["interval_minutes"]
+            
+            scheduler_service.add_task(task)
+            del self._task_creation[user_id]
+            
+            text = f"""
+✅ **任务创建成功！**
+
+任务 `{data['name']}` 已添加到定时任务列表
+
+您可以在 📅 定时任务 中查看和管理
+"""
+            keyboard = [[InlineKeyboardButton("📅 查看任务列表", callback_data="tasks_scheduled")]]
+            self._add_back_button(keyboard, "menu_tasks")
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+            await query.answer("✅ 任务创建成功")
+            
+        except Exception as e:
+            logger.error(f"Failed to create task: {e}")
+            await query.answer(f"❌ 创建失败: {str(e)}", show_alert=True)
+    
+    async def _cancel_task_creation(self, query):
+        """Cancel task creation flow."""
+        user_id = query.from_user.id
+        
+        if user_id in self._task_creation:
+            del self._task_creation[user_id]
+        
+        text = """
+❌ **任务创建已取消**
+
+返回任务管理菜单
+"""
+        keyboard = []
+        self._add_back_button(keyboard, "tasks_scheduled")
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+        await query.answer("已取消")
+    # === END TASK CREATION FLOW ===
+
+
+    async def _update_progress_message(
+        self,
+        chat_id: int,
+        task_content: str = "",
+        progress: int = 0,
+        latest_log: str = ""
+    ):
+        """Update the progress message with latest status."""
+        import time
+        
+        # Rate limiting - at most one update every 0.5 seconds per chat
+        progress_key = f"progress_{chat_id}"
+        now = time.time()
+        if progress_key in self._last_update_time:
+            if now - self._last_update_time[progress_key] < 0.5:
+                # Skip update if too soon, unless it's an important log
+                if not any(keyword in latest_log for keyword in ["✅", "❌", "完成", "失败", "错误"]):
+                    return
+        
+        self._last_update_time[progress_key] = now
+        
+        # Build progress bar (20 blocks, 5% per block)
+        filled = int(progress / 5)
+        bar = "━" * filled + "░" * (20 - filled)
+        
+        # Format message
+        text = (
+            f"📝 **任务执行中**\n\n"
+            f"🎯 {task_content[:50]}...\n\n"
+            f"{bar}\n"
+            f"⏳ 进度: {progress}%\n"
+        )
+        
+        # Add model name and token counter on same line if available
+        info_parts = []
+        if chat_id in self._model_names:
+            info_parts.append(f"🤖 {self._model_names[chat_id]}")
+        if chat_id in self._token_counters and self._token_counters[chat_id] > 0:
+            info_parts.append(f"🔢 {self._token_counters[chat_id]:,} tokens")
+        
+        if info_parts:
+            text += " | ".join(info_parts) + "\n"
+        
+        # Add recent logs at the bottom if available (show last 5-10 lines)
+        if chat_id in self._recent_logs and self._recent_logs[chat_id]:
+            recent = self._recent_logs[chat_id][-5:]  # Show last 5 logs
+            text += "\n💬 **最新日志:**\n"
+            for log in recent:
+                # Clean log: remove special chars, emoji codes,  and limit length
+                clean_log = log.replace("[", "").replace("]", "").replace("`", "")
+                # Escape markdown special characters to prevent parsing errors
+                clean_log = self._escape_markdown(clean_log)
+                import re
+                clean_log = re.sub(r'\[TOKENS\].*?\[/TOKENS\]', '', clean_log)
+                # Limit each log line to 100 chars
+                if len(clean_log) > 100:
+                    clean_log = clean_log[:97] + "..."
+                text += f"  • {clean_log}\n"
+        
+        # Update or send message
+        message_id = self._progress_messages.get(chat_id)
+        try:
+            if message_id:
+                # Update existing message
+                await self._application.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text,
+                    parse_mode='Markdown'
+                )
+            else:
+                # Send new message
+                sent_message = await self._application.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode='Markdown'
+                )
+                self._progress_messages[chat_id] = sent_message.message_id
+        except Exception as e:
+            # Catch "message is not modified" error and ignore
+            if "message is not modified" not in str(e).lower():
+                logger.error(f"Failed to update progress message: {e}")
+    
+    async def _update_screenshot(self, chat_id: int):
+        """Update screenshot by sending all new screenshots from all devices."""
+        try:
+            from web_app.services.chat_service import chat_service
+            import base64
+            from io import BytesIO
+            import asyncio
+            
+            # Get session context
+            session_id = None
+            
+            # Try to get from chat_service current context
+            from web_app.services.task_service import task_service
+            if hasattr(task_service, '_chat_context'):
+                session_id = task_service._chat_context.session_id
+            
+            if not session_id:
+                return
+            
+            # === MULTI-DEVICE FIX: Get ALL screenshots from session, not just one message ===
+            # Get all screenshots from the entire session (all devices)
+            screenshots = chat_service.get_screenshots(session_id, message_id=None)
+            
+            if not screenshots:
+                return
+            
+            # Initialize sent screenshots set if not exists
+            if chat_id not in self._sent_screenshots:
+                self._sent_screenshots[chat_id] = set()
+            
+            # Find new screenshots that haven't been sent yet
+            new_screenshots = [
+                s for s in screenshots 
+                if s['id'] not in self._sent_screenshots[chat_id]
+            ]
+            
+            if not new_screenshots:
+                return
+            
+            # Send all new screenshots with retry mechanism
+            for screenshot in new_screenshots:
+                screenshot_id = screenshot['id']
+                max_retries = 3
+                retry_delays = [0.5, 1.5, 3.0]  # Progressive wait times for data transmission
+                
+                for attempt in range(max_retries):
+                    try:
+                        # Wait for screenshot data to be fully transmitted (especially for old devices)
+                        if attempt > 0:
+                            wait_time = retry_delays[attempt - 1]
+                            logger.info(f"Retry {attempt}/{max_retries} for screenshot {screenshot_id}, waiting {wait_time}s for data transmission")
+                            await asyncio.sleep(wait_time)
+                        
+                        screenshot_data = chat_service.get_screenshot(screenshot_id)
+                        
+                        if not screenshot_data:
+                            if attempt < max_retries - 1:
+                                continue  # Retry
+                            else:
+                                logger.warning(f"Screenshot {screenshot_id} data not available after {max_retries} attempts")
+                                break
+                        
+                        # Validate screenshot data
+                        try:
+                            image_bytes = base64.b64decode(screenshot_data)
+                            if len(image_bytes) < 100:  # Too small, likely incomplete
+                                raise ValueError(f"Screenshot data too small: {len(image_bytes)} bytes")
+                        except Exception as decode_error:
+                            if attempt < max_retries - 1:
+                                logger.warning(f"Screenshot {screenshot_id} decode failed (attempt {attempt + 1}): {decode_error}")
+                                continue  # Retry
+                            else:
+                                raise
+                        
+                        # Send screenshot
+                        photo = BytesIO(image_bytes)
+                        photo.name = "screenshot.jpg"
+                        
+                        # Get device info from description if available
+                        description = screenshot.get('description', '执行中...')
+                        caption = f"📸 {description[:100]}"
+                        
+                        await self._application.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo,
+                            caption=caption
+                        )
+                        
+                        logger.info(f"Screenshot {screenshot_id} sent successfully (attempt {attempt + 1})")
+                        
+                        # Mark as sent
+                        self._sent_screenshots[chat_id].add(screenshot_id)
+                        
+                        # Delay between screenshots to avoid rate limiting
+                        if len(new_screenshots) > 1:
+                            await asyncio.sleep(1.0)
+                        
+                        # Success, break retry loop
+                        break
+                        
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Failed to send screenshot {screenshot_id} (attempt {attempt + 1}/{max_retries}): {e}")
+                            # Will retry
+                        else:
+                            logger.error(f"Failed to send screenshot {screenshot_id} after {max_retries} attempts: {e}")
+            
+        except Exception as e:
+            logger.error(f"Failed to update screenshot: {e}")
+    
+    async def send_device_completion(
+        self, 
+        chat_id: int, 
+        device_id: str, 
+        session_id: str, 
+        message_id: str,
+        status: str,
+        logs: list[str],
+        skip_unlock: bool = False  # If True, assume device is already unlocked
+    ):
+        """Send device completion report with screenshot and logs immediately."""
+        try:
+            from web_app.services.chat_service import chat_service
+            import base64
+            from io import BytesIO
+            
+            device_short_id = device_id[:12] if len(device_id) > 12 else device_id
+            status_emoji = "✅" if status == "completed" else "❌"
+            
+            # Send screenshot first if available - use same method as /screenshot command
+            try:
+                from web_app.services.device_service import device_service
+                import base64
+                from io import BytesIO
+                
+                # Only handle lock/unlock if skip_unlock is False
+                was_locked = False
+                try:
+                    if not skip_unlock:
+                        # Check if device is locked
+                        was_locked = await device_service.is_screen_locked(device_id)
+                        logger.info(f"Device {device_id} lock state before completion screenshot: {was_locked}")
+                        
+                        # Unlock if needed
+                        if was_locked:
+                            pin = device_service.get_device_pin(device_id)
+                            unlock_success = await device_service.unlock_device(device_id, pin)
+                            if not unlock_success:
+                                logger.warning(f"Failed to unlock device {device_id} for completion screenshot")
+                            else:
+                                logger.info(f"Unlocked device {device_id} for completion screenshot")
+                    else:
+                        logger.info(f"Skipping lock check for {device_id} (device already unlocked during task)")
+                    
+                    # Capture screenshot using correct method name
+                    screenshot_data = await device_service.get_screenshot(device_id)
+                    
+                    if screenshot_data:
+                        # Store screenshot for email reporting (if task object is accessible)
+                        # This will be used by email report generation
+                        if not hasattr(self, '_device_screenshots'):
+                            self._device_screenshots = {}
+                        self._device_screenshots[device_id] = screenshot_data
+                        if isinstance(screenshot_data, str):
+                            screenshot_bytes = base64.b64decode(screenshot_data)
+                        else:
+                            screenshot_bytes = screenshot_data
+                        
+                        # === Save screenshot to database for Web UI ===
+                        try:
+                            screenshot_result = chat_service.add_screenshot(
+                                session_id,
+                                message_id,
+                                screenshot_data,
+                                f"设备 {device_short_id} 任务完成"
+                            )
+                            screenshot_id = screenshot_result.get("id")
+                            logger.info(f"Saved screenshot {screenshot_id} to database for Web UI")
+                        except Exception as save_error:
+                            logger.error(f"Failed to save screenshot to database: {save_error}")
+                        
+                        photo = BytesIO(screenshot_bytes)
+                        photo.seek(0)
+                        photo.name = "screenshot.jpg"
+                        
+                        caption = f"{status_emoji} 设备 {device_short_id} 任务完成"
+                        
+                        await self._application.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo,
+                            caption=caption
+                        )
+                        logger.info(f"Sent completion screenshot for device {device_id}")
+                    else:
+                        logger.warning(f"No screenshot data available for device {device_id}")
+                        
+                finally:
+                    # Only restore lock state if we unlocked it ourselves
+                    if not skip_unlock and was_locked:
+                        await device_service.lock_device(device_id)
+                        logger.info(f"Restored lock state for device {device_id}")
+                        
+            except Exception as e:
+                logger.error(f"Failed to send screenshot for device {device_id}: {e}")
+            
+            
+            # Send logs summary
+            if logs and len(logs) > 0:
+                # Get last 10 logs, filter out token lines
+                recent_logs = [log for log in logs[-15:] if not log.startswith('[TOKENS]')][-10:]
+                if recent_logs:
+                    logs_text = "\n".join(recent_logs)
+                    if len(logs_text) > 3500:
+                        logs_text = logs_text[-3500:]
+                    
+                    # Escape for Telegram markdown
+                    logs_text = logs_text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
+                    
+                    await self._application.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"{status_emoji} **设备 {device_short_id} 日志**\n```\n{logs_text}\n```",
+                        parse_mode='Markdown'
+                    )
+                    logger.info(f"Sent logs for device {device_id}")
+                    
+        except Exception as e:
+            logger.error(f"Failed to send device completion for {device_id}: {e}")
 
 
 # Global instance

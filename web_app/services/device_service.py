@@ -47,6 +47,11 @@ class DeviceService:
         self._load_pins()
         # Initialize device factory with ADB
         set_device_type(DeviceType.ADB)
+        # Device monitoring
+        self._previous_devices: set[str] = set()
+        self._monitoring_task: Optional[asyncio.Task] = None
+        self._telegram_bot = None  # Will be set by main.py
+
 
     def _load_pins(self):
         """Load device PINs from config."""
@@ -82,6 +87,7 @@ class DeviceService:
     async def refresh_devices(self) -> list[DeviceInfo]:
         """Refresh and return the list of connected devices using phone_agent."""
         devices = []
+        previous_count = len(self._devices)
         self._devices.clear()
 
         try:
@@ -105,7 +111,9 @@ class DeviceService:
                 devices.append(device_info)
                 self._devices[device.device_id] = device_info
 
-            logger.info(f"Found {len(devices)} device(s)")
+            # Only log if device count changed
+            if len(devices) != previous_count:
+                logger.info(f"Device count changed: {previous_count} -> {len(devices)} device(s)")
 
         except Exception as e:
             logger.error(f"Error refreshing devices: {e}")
@@ -620,6 +628,80 @@ class DeviceService:
             return False, "删除超时"
         except Exception as e:
             return False, f"删除错误: {str(e)}"
+
+    def set_telegram_bot(self, telegram_bot):
+        """Set telegram bot reference for notifications."""
+        self._telegram_bot = telegram_bot
+        logger.info("Telegram bot reference set for device monitoring")
+
+    async def start_device_monitoring(self):
+        """Start monitoring device connections for changes."""
+        if self._monitoring_task and not self._monitoring_task.done():
+            logger.warning("Device monitoring already running")
+            return
+        
+        # Initialize with current devices
+        current_devices = await self.refresh_devices()
+        self._previous_devices = {device.id for device in current_devices}
+        logger.info(f"Starting device monitoring with {len(self._previous_devices)} devices")
+        
+        # Start monitoring task
+        self._monitoring_task = asyncio.create_task(self._monitor_device_changes())
+    
+    async def _monitor_device_changes(self):
+        """Background task to monitor device connections/disconnections."""
+        logger.info("Device monitoring task started (10s interval)")
+        
+        while True:
+            try:
+                await asyncio.sleep(10)  # Check every 10 seconds
+                
+                # Get current devices
+                current_devices = await self.refresh_devices()
+                current_device_ids = {device.id for device in current_devices}
+                
+                # Detect changes
+                connected = current_device_ids - self._previous_devices
+                disconnected = self._previous_devices - current_device_ids
+                
+                # Send notifications for connections
+                for device_id in connected:
+                    device_info = self._devices.get(device_id)
+                    device_name = device_info.name if device_info else device_id
+                    
+                    message = (
+                        f"📱 *Device Connected*\n\n"
+                        f"Device: `{device_name}`\n"
+                        f"ID: `{device_id}`\n"
+                        f"Status: ✅ Online"
+                    )
+                    logger.info(f"Device connected: {device_id}")
+                    
+                    if self._telegram_bot:
+                        await self._telegram_bot.send_system_notification(message)
+                
+                # Send notifications for disconnections
+                for device_id in disconnected:
+                    message = (
+                        f"⚠️ *Device Disconnected*\n\n"
+                        f"Device: `{device_id}`\n"
+                        f"Status: ❌ Offline"
+                    )
+                    logger.warning(f"Device disconnected: {device_id}")
+                    
+                    if self._telegram_bot:
+                        await self._telegram_bot.send_system_notification(message)
+                
+                # Update previous state
+                self._previous_devices = current_device_ids
+                
+            except asyncio.CancelledError:
+                logger.info("Device monitoring task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in device monitoring: {e}")
+                # Continue monitoring despite errors
+                await asyncio.sleep(5)
 
 
 # Global service instance

@@ -35,6 +35,7 @@ class SchedulerService:
         self._callbacks: list[Callable[[str, str], None]] = []
         self._running = False
         self._task_logs: dict[str, list[dict]] = {}  # task_id -> list of log entries
+        self._telegram_bot = None  # Will be set by main.py
 
         self._load_tasks()
         self._load_logs()
@@ -81,17 +82,33 @@ class SchedulerService:
         if task_id not in self._task_logs:
             self._task_logs[task_id] = []
 
+        # Smart truncation: if details are too long, keep both beginning and end
+        max_length = 50000  # Increased from 5000 to 50000
+        if details and len(details) > max_length:
+            # Keep first 40000 chars and last 9000 chars with separator
+            truncated_details = (
+                details[:40000] + 
+                "\n\n... [中间部分已省略] ...\n\n" + 
+                details[-9000:]
+            )
+        else:
+            truncated_details = details if details else ""
+
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "success": success,
             "message": message,
-            "details": details[:5000] if details else "",  # Limit details size
+            "details": truncated_details,
         }
         self._task_logs[task_id].insert(0, log_entry)  # Newest first
 
         # Keep only last 50 logs per task
         self._task_logs[task_id] = self._task_logs[task_id][:50]
         self._save_logs()
+        
+        # Send notification to Telegram bot (async, non-blocking)
+        if self._telegram_bot:
+            asyncio.create_task(self._send_task_notification(task_id, success, message, details))
 
     def get_task_logs(self, task_id: str, limit: int = 20) -> list[dict]:
         """Get execution logs for a task."""
@@ -304,6 +321,39 @@ class SchedulerService:
                 logger.error(f"Error in task callback: {e}")
 
         return True
+    
+    def set_telegram_bot(self, telegram_bot):
+        """Set telegram bot reference for task notifications."""
+        self._telegram_bot = telegram_bot
+        logger.info("Telegram bot reference set for scheduler notifications")
+    
+    async def _send_task_notification(self, task_id: str, success: bool, message: str, details: str):
+        """Send task result notification to Telegram bot."""
+        try:
+            task = self.tasks.get(task_id)
+            if not task:
+                return
+            
+            # Format notification message
+            status_icon = "✅" if success else "❌"
+            notification = f"{status_icon} **定时任务执行结果**\\n\\n"
+            notification += f"任务名称: `{task.name}`\\n"
+            notification += f"任务内容: {task.task_content[:50]}...\\n" if len(task.task_content) > 50 else f"任务内容: {task.task_content}\\n"
+            notification += f"执行状态: {message}\\n"
+            
+            if details:
+                # Truncate details for notification (keep it short)
+                summary = details[:300] + "..." if len(details) > 300 else details
+                # Escape markdown special characters in details
+                summary = summary.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+                notification += f"\\n详情摘要:\\n```\\n{summary}\\n```"
+            
+            # Send to all authorized users
+            await self._telegram_bot.send_system_notification(notification)
+            logger.info(f"Task notification sent for task {task_id}")
+            
+        except Exception as e:
+            logger.error(f"Error sending task notification for {task_id}: {e}")
 
 
 # Global service instance

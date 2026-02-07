@@ -5,9 +5,13 @@
     -5256349867,
     7293120110
   ],
+  "allowed_groups": [],
+  "group_member_auth": true,
+  "notification_targets": {
+    "system_notifications": "groups",
+    "welcome_menu": "both",
+    "task_results": "requestor"
+  },
   "send_screenshots": true,
-  "send_logs": true,
-  "complex_mode": false,
-  "email_notifications": true,
-  "debug_mode": false
+  "send_logs": true
 }

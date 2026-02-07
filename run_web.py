@@ -60,7 +60,33 @@ def setup_logging():
 
 def main():
     """Main entry point."""
+    # ============================================================
+    # ENVIRONMENT VALIDATION - Run before anything else
+    # ============================================================
+    # Import here to avoid issues if dependencies are missing
+    try:
+        from web_app.utils.env_validator import validate_environment
+        
+        # Validate environment (allow warnings but block on errors)
+        if not validate_environment(strict=False):
+            print("\n❌ Environment validation failed. Exiting.")
+            print("Please fix the errors above and try again.\n")
+            sys.exit(1)
+    except ImportError as e:
+        print(f"\n❌ Failed to import environment validator: {e}")
+        print("This likely means the virtual environment is not activated.")
+        print("\nPlease activate the virtual environment:")
+        print("  source venv/bin/activate\n")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n⚠️  Environment validation check failed: {e}")
+        print("Continuing anyway, but you may encounter errors...\n")
+    
+    # ============================================================
+    # ARGUMENT PARSING
+    # ============================================================
     parser = argparse.ArgumentParser(
+
         description="AutoGLM Web Server",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""

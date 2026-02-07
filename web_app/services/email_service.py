@@ -88,6 +88,29 @@ class EmailServiceWrapper:
         finally:
             self.config.enabled = original_enabled
 
+    def _build_screenshot_html(self, screenshot_data: Optional[bytes], screenshots: Optional[dict]) -> str:
+        """Build HTML for screenshot section, supporting single or multiple screenshots."""
+        if screenshots and isinstance(screenshots, dict) and len(screenshots) > 0:
+            # Multiple device screenshots - display in a grid
+            html_parts = ["<div class='section'><div class='section-title'>执行截图</div>"]
+            html_parts.append("<div style='display: flex; flex-wrap: wrap; gap: 15px; justify-content: center;'>")
+            for idx, (device_id, ss_data) in enumerate(screenshots.items()):
+                if ss_data:
+                    short_id = device_id[:12] if len(device_id) > 12 else device_id
+                    html_parts.append(f"""
+                    <div style='text-align: center;'>
+                        <img src='cid:screenshot_{idx}' style='max-width: 280px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);'>
+                        <div style='font-size: 12px; color: #71717a; margin-top: 8px;'>{short_id}</div>
+                    </div>
+                    """)
+            html_parts.append("</div></div>")
+            return "".join(html_parts)
+        elif screenshot_data:
+            # Single screenshot (backward compatibility)
+            return "<div class='section'><div class='section-title'>执行截图</div><div class='screenshot'><img src='cid:screenshot'></div></div>"
+        else:
+            return ""
+
     def send_task_report(
         self,
         task_name: str,
@@ -97,7 +120,8 @@ class EmailServiceWrapper:
         details: str,
         screenshot_data: Optional[bytes] = None,
         is_scheduled: bool = False,
-        task_summary: Optional[str] = None
+        task_summary: Optional[str] = None,
+        screenshots: Optional[dict] = None  # {device_id: bytes} for multi-device screenshots
     ) -> tuple[bool, str]:
         """
         Send a task execution report email.
@@ -311,7 +335,7 @@ class EmailServiceWrapper:
             </div>
         </div>
 
-        {"<div class='section'><div class='section-title'>执行截图</div><div class='screenshot'><img src='cid:screenshot'></div></div>" if screenshot_data else ""}
+        {self._build_screenshot_html(screenshot_data, screenshots)}
 
         <div class="section">
             <div class="section-title">执行日志</div>
@@ -355,8 +379,26 @@ class EmailServiceWrapper:
             msg_alternative.attach(MIMEText(text_body, "plain", "utf-8"))
             msg_alternative.attach(MIMEText(html_body, "html", "utf-8"))
 
-            # Add screenshot attachment
-            if screenshot_data:
+            # Add screenshot attachment(s)
+            # Multi-screenshot support: use screenshots dict if provided, else fall back to single screenshot_data
+            if screenshots and isinstance(screenshots, dict):
+                # Multiple device screenshots
+                for idx, (device_id, ss_data) in enumerate(screenshots.items()):
+                    if ss_data:
+                        # Convert base64 string to bytes if needed
+                        if isinstance(ss_data, str):
+                            import base64
+                            try:
+                                ss_data = base64.b64decode(ss_data)
+                            except Exception:
+                                continue
+                        img = MIMEImage(ss_data)
+                        img.add_header("Content-ID", f"<screenshot_{idx}>")
+                        short_id = device_id[:12] if len(device_id) > 12 else device_id
+                        img.add_header("Content-Disposition", "inline", filename=f"screenshot_{short_id}.png")
+                        msg.attach(img)
+            elif screenshot_data:
+                # Single screenshot (backward compatibility)
                 img = MIMEImage(screenshot_data)
                 img.add_header("Content-ID", "<screenshot>")
                 img.add_header("Content-Disposition", "inline", filename="screenshot.png")

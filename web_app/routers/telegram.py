@@ -5,7 +5,7 @@ Telegram Bot API endpoints.
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 import logging
 import json
 from pathlib import Path
@@ -33,6 +33,13 @@ def load_telegram_config():
         "bot_token": "",
         "enabled": False,
         "allowed_users": [],
+        "allowed_groups": [],
+        "group_member_auth": True,
+        "notification_targets": {
+            "system_notifications": "groups",
+            "welcome_menu": "both",
+            "task_results": "requestor"
+        },
         "send_screenshots": True,
         "send_logs": True
     }
@@ -55,6 +62,9 @@ class TelegramConfig(BaseModel):
     bot_token: Optional[str] = None
     enabled: bool = False
     allowed_users: list[int] = []
+    allowed_groups: list[int] = []  # New: authorized group IDs
+    group_member_auth: bool = True  # New: auto-authorize group members
+    notification_targets: Dict[str, str] = {}  # New: message routing config
     send_screenshots: bool = True
     send_logs: bool = True
 
@@ -75,6 +85,13 @@ async def get_telegram_config(_: bool = Depends(verify_token)):
             "bot_token": "***" if config.get("bot_token") else "",
             "enabled": config.get("enabled", False),
             "allowed_users": config.get("allowed_users", []),
+            "allowed_groups": config.get("allowed_groups", []),
+            "group_member_auth": config.get("group_member_auth", True),
+            "notification_targets": config.get("notification_targets", {
+                "system_notifications": "groups",
+                "welcome_menu": "both",
+                "task_results": "requestor"
+            }),
             "send_screenshots": config.get("send_screenshots", True),
             "send_logs": config.get("send_logs", True),
             "status": "running" if telegram_bot_service._running else "stopped"
@@ -96,6 +113,13 @@ async def save_telegram_config_endpoint(config: TelegramConfig, _: bool = Depend
             "bot_token": config.bot_token if config.bot_token and config.bot_token != "***" else current_config.get("bot_token", ""),
             "enabled": config.enabled,
             "allowed_users": config.allowed_users,
+            "allowed_groups": config.allowed_groups,
+            "group_member_auth": config.group_member_auth,
+            "notification_targets": config.notification_targets if config.notification_targets else current_config.get("notification_targets", {
+                "system_notifications": "groups",
+                "welcome_menu": "both",
+                "task_results": "requestor"
+            }),
             "send_screenshots": config.send_screenshots,
             "send_logs": config.send_logs
         }

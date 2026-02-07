@@ -348,7 +348,10 @@ const app = createApp({
                         timestamp: msg.created_at,
                         logs: msg.logs ? msg.logs.map(l => l.content) : [],
                         screenshots: msg.screenshots || [],
-                        status: msg.role === 'assistant' ? 'success' : null
+                        // Use actual status from database, map 'completed' -> 'success', 'failed' -> 'error'
+                        status: msg.status === 'completed' ? 'success' : (msg.status === 'failed' ? 'error' : msg.status),
+                        // Load todoList for complex tasks (stored as todo_list in database)
+                        todoList: msg.todo_list || null
                     }));
                     // Scroll to bottom
                     setTimeout(() => {

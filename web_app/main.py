@@ -32,6 +32,7 @@ from web_app.routers import (
     telegram_router,
 )
 from web_app.services.scheduler_service import scheduler_service
+from web_app.services.device_service import device_service
 
 logger = logging.getLogger(__name__)
 
@@ -110,22 +111,61 @@ async def lifespan(app: FastAPI):
     logger.info("Devices refreshed")
 
     # Start Telegram bot if enabled
+    telegram_bot_started = False
     try:
         from web_app.services.telegram_bot import telegram_bot_service
         from web_app.routers.telegram import load_telegram_config
+        from datetime import datetime
         
         telegram_config = load_telegram_config()
         
         if telegram_config.get("enabled") and telegram_config.get("bot_token"):
             await telegram_bot_service.start(telegram_config)
             logger.info("Telegram bot started")
+            telegram_bot_started = True
+            
+            # Wire up device service with telegram bot for notifications
+            device_service.set_telegram_bot(telegram_bot_service)
+            
+            # Wire up scheduler service with telegram bot for task notifications
+            scheduler_service.set_telegram_bot(telegram_bot_service)
+            
+            # Start device monitoring
+            await device_service.start_device_monitoring()
+            logger.info("Device monitoring started")
+            
+            # Send startup notification to groups
+            device_count = len(device_service.get_all_devices())
+            startup_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            startup_msg = (
+                f"✅ *AutoGLM 系统已启动*\n\n"
+                f"⏰ 时间: `{startup_time}`\n"
+                f"📱 设备: {device_count} 台已连接\n"
+                f"🤖 状态: 已就绪"
+            )
+            await telegram_bot_service.send_system_notification(startup_msg)
+            logger.info("Startup notification sent")
     except Exception as e:
         logger.warning(f"Failed to start Telegram bot: {e}")
+
 
     yield
 
     # Shutdown
     logger.info("Shutting down AutoGLM Web Server...")
+    
+    # Stop device monitoring
+    try:
+        from web_app.services.device_service import device_service
+        if device_service._monitoring_task and not device_service._monitoring_task.done():
+            device_service._monitoring_task.cancel()
+            try:
+                await device_service._monitoring_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Device monitoring stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping device monitoring: {e}")
     
     # Stop Telegram bot
     try:
@@ -137,6 +177,7 @@ async def lifespan(app: FastAPI):
     
     await scheduler_service.stop()
     logger.info("Scheduler stopped")
+
 
 
 # Create FastAPI app
@@ -180,7 +221,16 @@ async def index():
     """Serve the main page."""
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
-        return FileResponse(index_file)
+        # Add no-cache headers to prevent browser caching
+        # This ensures users always get the latest HTML/JavaScript code
+        return FileResponse(
+            index_file,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     return {
         "message": "AutoGLM Web Server",
         "version": "0.1.0",

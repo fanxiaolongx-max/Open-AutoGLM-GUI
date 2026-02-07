@@ -270,7 +270,8 @@ def unlock_device(device_id: str, pin: str = None) -> Tuple[bool, str]:
         if not swipe_to_unlock(device_id):
             return False, "滑动解锁失败"
         
-        time.sleep(0.5)
+        # 等待滑动动画完成 - 增加延迟以适应慢速设备
+        time.sleep(1.0)  # 从0.5s增加到1.0s
         
         # 4. 检查是否还需要 PIN
         if is_device_locked(device_id):
@@ -288,11 +289,21 @@ def unlock_device(device_id: str, pin: str = None) -> Tuple[bool, str]:
             if not enter_pin(device_id, pin):
                 return False, "输入 PIN 失败"
             
-            time.sleep(0.5)
+            # 等待PIN验证完成 - 增加延迟以适应慢速设备
+            time.sleep(1.5)  # 从0.5s增加到1.5s
             
-            # 再次检查是否解锁成功
-            if is_device_locked(device_id):
-                return False, "PIN 验证失败，设备仍然锁定"
+            # 再次检查是否解锁成功 - 添加重试逻辑
+            max_retries = 3
+            for retry in range(max_retries):
+                if not is_device_locked(device_id):
+                    return True, "设备解锁成功"
+                
+                # 如果还锁定，等待一下再检查（给慢速设备更多时间）
+                if retry < max_retries - 1:
+                    time.sleep(0.8)  # 每次重试等待0.8秒
+            
+            # 所有重试都失败
+            return False, "PIN 验证失败，设备仍然锁定"
         
         return True, "设备解锁成功"
         

@@ -145,12 +145,14 @@
             border: 1px solid #f59e0b;
         }
 
-        .chat-bubble.error {
+        .chat-bubble.error,
+        .chat-bubble.failed {
             background: #fee2e2;
             border: 1px solid #ef4444;
         }
 
-        .chat-bubble.success {
+        .chat-bubble.success,
+        .chat-bubble.completed {
             background: #d1fae5;
             border: 1px solid #10b981;
         }
@@ -4388,6 +4390,54 @@
                         chatRunning.value = false;
                         saveCurrentSession();
                         scrollChatToBottom();
+
+                        // Send email report after all subtasks completed (if enabled)
+                        if (chatAutoEmail.value) {
+                            try {
+                                console.log('[复杂任务] 发送汇总邮件...');
+
+                                // Fetch latest screenshots from API (msg.screenshots may not be updated in manual mode)
+                                let latestScreenshotId = null;
+                                try {
+                                    const screenshotsResponse = await apiCall(
+                                        `/api/chat/sessions/${currentSessionId.value}/screenshots?message_id=${msg.id}`
+                                    );
+                                    if (screenshotsResponse && screenshotsResponse.length > 0) {
+                                        // Get the last screenshot (most recent)
+                                        latestScreenshotId = screenshotsResponse[screenshotsResponse.length - 1].id;
+                                        console.log('[复杂任务] 获取到截图ID:', latestScreenshotId);
+                                    }
+                                } catch (ssError) {
+                                    console.log('[复杂任务] 获取截图失败, 尝试使用本地缓存:', ssError);
+                                    // Fallback to local msg.screenshots
+                                    if (msg.screenshots && msg.screenshots.length > 0) {
+                                        latestScreenshotId = msg.screenshots[msg.screenshots.length - 1].id;
+                                    }
+                                }
+
+                                const emailResult = await apiCall('/api/tasks/send-complex-email', {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        task_name: msg.originalContent || msg.content,
+                                        subtasks: msg.todoList.map(t => ({
+                                            content: t.content,
+                                            status: t.status,
+                                            logs: t.logs || []
+                                        })),
+                                        total_tokens: msg.tokens || 0,
+                                        screenshot_id: latestScreenshotId
+                                    }),
+                                });
+                                if (emailResult.success) {
+                                    console.log('[复杂任务] 邮件发送成功');
+                                    showToast('邮件发送成功', 'success');
+                                } else {
+                                    console.log('[复杂任务] 邮件发送失败:', emailResult.message);
+                                }
+                            } catch (emailError) {
+                                console.error('[复杂任务] 邮件发送失败:', emailError);
+                            }
+                        }
                     }
 
                     // Tap preview functions (debug mode)
@@ -5031,8 +5081,13 @@
                             return result;
                         }
 
+                        // Map database status to frontend status for display
+                        // Database uses 'completed'/'failed', frontend uses 'success'/'error'
+                        const displayStatus = msg.status === 'completed' ? 'success' :
+                            (msg.status === 'failed' ? 'error' : msg.status);
+
                         taskDetailData.value = {
-                            status: msg.status,
+                            status: displayStatus,
                             logs: processLogs(logs),  // 使用从服务器获取的最新日志
                             screenshots: screenshots  // 使用从服务器获取的最新截图
                         };
