@@ -658,6 +658,21 @@ class TaskService:
                 except Exception as e:
                     logger.error(f"Failed to trigger device completion: {e}")
             
+            # === SCHEDULED/MANUAL TASK: Collect screenshot for email report ===
+            # Chat tasks already handle this above, but scheduled and manual tasks need this
+            if task_type != TaskType.CHAT.value and task.send_email:
+                try:
+                    # Device is still unlocked here, capture screenshot before locking
+                    screenshot_data = await device_service.get_screenshot(device_id)
+                    if screenshot_data:
+                        # Store in _device_screenshots dict for email report
+                        if not hasattr(task, '_device_screenshots'):
+                            task._device_screenshots = {}
+                        task._device_screenshots[device_id] = screenshot_data
+                        logger.info(f"Captured screenshot from {device_id} for scheduled/manual task email")
+                except Exception as screenshot_error:
+                    logger.error(f"Failed to capture screenshot for scheduled/manual task: {screenshot_error}")
+            
             # Restore lock state if device was locked before (skip if no_auto_lock is True)
             # If restore_lock_to_state is explicitly specified, use that instead of detected state
             should_restore_lock = restore_lock_to_state if restore_lock_to_state is not None else was_locked

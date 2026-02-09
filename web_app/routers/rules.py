@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from web_app.auth import verify_token
-from gui_app.rules_manager import get_rules_manager
+from web_app.models.rules_manager import get_rules_manager
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 

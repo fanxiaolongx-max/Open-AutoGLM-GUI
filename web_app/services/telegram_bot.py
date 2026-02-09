@@ -50,6 +50,12 @@ class TelegramBotService:
         self._sent_screenshots: dict[int, set[str]] = {}  # chat_id -> set of sent screenshot IDs
         self._menu_stack: Dict[str, list] = {}  # chat_id -> menu history for breadcrumb
         self._task_creation: Dict[str, Dict[str, Any]] = {}  # user_id -> task creation state
+        
+        # Chat persistent conversation mode
+        self._chat_mode_device: dict[int, str] = {}  # chat_id -> device_id (bound device)
+        self._chat_mode_active: dict[int, bool] = {}  # chat_id -> is in chat mode
+        self._chat_mode_session: dict[int, str] = {}  # chat_id -> session_id (persistent session)
+        self._chat_mode_task: dict[int, asyncio.Task] = {}  # chat_id -> running task (for cancellation)
 
     async def start(self, config: Dict[str, Any]):
         """Start the Telegram bot."""
@@ -95,6 +101,7 @@ class TelegramBotService:
             self._application.add_handler(CommandHandler("start", self._cmd_start))
             self._application.add_handler(CommandHandler("help", self._cmd_help))
             self._application.add_handler(CommandHandler("task", self._cmd_task))
+            self._application.add_handler(CommandHandler("chat", self._cmd_chat))  # Persistent chat mode
             self._application.add_handler(CommandHandler("status", self._cmd_status))
             self._application.add_handler(CommandHandler("devices", self._cmd_devices))
             self._application.add_handler(CommandHandler("screenshot", self._cmd_screenshot))
@@ -115,6 +122,9 @@ class TelegramBotService:
                 logger.info("Deleted existing webhook (if any)")
             except Exception as e:
                 logger.warning(f"Failed to delete webhook: {e}")
+            
+            # Add error handler for graceful Conflict handling
+            self._application.add_error_handler(self._handle_telegram_error)
             
             await self._application.updater.start_polling()
             self._running = True
@@ -139,6 +149,39 @@ class TelegramBotService:
                 logger.info("Telegram bot stopped")
             except Exception as e:
                 logger.error(f"Error stopping Telegram bot: {e}")
+
+    async def _handle_telegram_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle Telegram errors gracefully, especially Conflict errors.
+        
+        Conflict errors occur when multiple bot instances are running with the same token.
+        Instead of showing a long traceback, we log a clean message and notify the frontend.
+        """
+        error = context.error
+        
+        # Check if this is a Conflict error (multiple bot instances)
+        error_str = str(error)
+        if "Conflict" in error_str or "terminated by other getUpdates" in error_str:
+            # Log a clean, single-line warning instead of full traceback
+            logger.warning("⚠️ Telegram Bot Conflict: 检测到有其他 Bot 实例正在运行。请确保只有一个实例在运行。")
+            
+            # Broadcast alert to frontend
+            try:
+                from web_app.routers.websocket import broadcast_system_alert
+                broadcast_system_alert(
+                    level="warning",
+                    title="Telegram Bot 冲突",
+                    message="检测到有其他 Bot 实例正在运行，可能导致消息接收不稳定。请检查是否有其他服务器进程在后台运行。",
+                    auto_dismiss=0  # Require manual dismiss
+                )
+            except Exception as e:
+                logger.debug(f"Could not broadcast alert: {e}")
+            
+            # Don't re-raise Conflict errors - they are handled
+            return
+        
+        # For other errors, log with traceback
+        logger.error(f"Telegram error: {error}", exc_info=error)
 
     def _check_authorization(self, update: Update) -> bool:
         """
@@ -228,9 +271,15 @@ class TelegramBotService:
         """Handle non-command text messages - check for task input or show welcome menu."""
         user_id = update.effective_user.id
         chat_id = str(update.message.chat_id)
+        chat_id_int = update.message.chat_id
         
         if not self._check_authorization(update):
             await update.message.reply_text("❌ 未授权的用户")
+            return
+        
+        # Check if user is in persistent chat mode
+        if chat_id_int in self._chat_mode_active and self._chat_mode_active[chat_id_int]:
+            await self._handle_chat_mode_message(update, context)
             return
         
         # Check if user is in task creation flow
@@ -358,6 +407,240 @@ class TelegramBotService:
         except Exception as e:
             logger.error(f"Task command failed: {e}")
             await update.message.reply_text(f"❌ 失败: {str(e)}")
+
+    async def _cmd_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /chat command - enter persistent chat mode with device selection."""
+        if not self._check_authorization(update):
+            await update.message.reply_text("❌ 未授权的用户")
+            return
+        
+        chat_id = update.effective_chat.id
+        
+        # If already in chat mode, show status
+        if chat_id in self._chat_mode_active and self._chat_mode_active[chat_id]:
+            device_id = self._chat_mode_device.get(chat_id, "未知")
+            device_short = device_id[:12] + "..." if len(device_id) > 12 else device_id
+            keyboard = [[InlineKeyboardButton("🚪 退出 Chat 模式", callback_data="chat_exit")]]
+            await update.message.reply_text(
+                f"💬 **已在 Chat 模式中**\n"
+                f"📱 设备: `{device_short}`\n\n"
+                f"发送任意消息执行任务",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            return
+        
+        try:
+            from web_app.services.device_service import device_service
+            
+            devices = device_service.get_all_devices()
+            if not devices:
+                await update.message.reply_text("❌ 没有可用的设备")
+                return
+            
+            # Create device selection buttons for chat mode
+            keyboard = []
+            for device in devices:
+                status_emoji = "🟢" if device.status == "online" else "🔴"
+                device_label = f"{status_emoji} {device.name[:15]}" if device.name else f"{status_emoji} {device.id[:12]}..."
+                keyboard.append([InlineKeyboardButton(
+                    device_label,
+                    callback_data=f"chat_select_{device.id}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("❌ 取消", callback_data="main_menu")])
+            
+            await update.message.reply_text(
+                "💬 **进入 Chat 模式**\n\n"
+                "选择一个设备后，可以直接发送任务消息执行，无需每次选择设备。\n\n"
+                "📱 请选择设备:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            
+        except Exception as e:
+            logger.error(f"Chat command failed: {e}")
+            await update.message.reply_text(f"❌ 失败: {str(e)}")
+
+    async def _handle_chat_mode_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle messages in persistent chat mode - execute task on bound device."""
+        chat_id = update.message.chat_id
+        task_content = update.message.text.strip()
+        
+        if not task_content:
+            return
+        
+        device_id = self._chat_mode_device.get(chat_id)
+        if not device_id:
+            # Device not found, exit chat mode
+            self._chat_mode_active[chat_id] = False
+            await update.message.reply_text("❌ 设备未绑定，已退出 Chat 模式")
+            return
+        
+        # Send initial progress message
+        device_short = device_id[:12] + "..." if len(device_id) > 12 else device_id
+        keyboard = [[
+            InlineKeyboardButton("⏹️ 停止", callback_data="chat_stop"),
+            InlineKeyboardButton("🚪 退出 Chat", callback_data="chat_exit")
+        ]]
+        
+        progress_msg = await update.message.reply_text(
+            f"🔄 **执行中...**\n"
+            f"📱 设备: `{device_short}`\n"
+            f"📝 任务: {task_content[:50]}{'...' if len(task_content) > 50 else ''}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+        
+        # Store progress message for updates
+        self._progress_messages[chat_id] = progress_msg.message_id
+        
+        async def execute_task():
+            """Inner function to execute task, can be cancelled."""
+            from web_app.services.task_service import task_service
+            from web_app.services.chat_service import chat_service
+            
+            # Use persistent session from chat mode, or create one if missing
+            session_id = self._chat_mode_session.get(chat_id)
+            if not session_id:
+                # Fallback: create session if not exists
+                session = chat_service.create_session(
+                    device_id=f"bot_{update.effective_user.id}_{device_id}",
+                    title="Telegram Chat Mode"
+                )
+                session_id = session['id']
+                self._chat_mode_session[chat_id] = session_id
+                logger.info(f"Created fallback chat session {session_id} for chat {chat_id}")
+            
+            # Add user message to existing session
+            user_msg = chat_service.add_message(
+                session_id=session_id,
+                role='user',
+                content=task_content,
+                source='telegram'
+            )
+            
+            # Track this task
+            self._current_chat_tasks[chat_id] = session_id
+            
+            # Create assistant message placeholder
+            assistant_msg = chat_service.add_message(
+                session_id=session_id,
+                role='assistant',
+                content='执行中...'
+            )
+            
+            # Token callback to save tokens to database (both session and message level)
+            message_tokens_accumulated = [0]  # Use list for mutable closure
+            def token_callback(task_id: str, input_tokens: int, output_tokens: int, total_tokens: int):
+                try:
+                    # Update session total tokens
+                    chat_service.update_session_tokens(session_id, total_tokens)
+                    
+                    # Accumulate and update message tokens
+                    message_tokens_accumulated[0] += total_tokens
+                    chat_service.update_message(assistant_msg['id'], tokens=message_tokens_accumulated[0])
+                    
+                    logger.info(f"Chat mode: saved {total_tokens} tokens to session {session_id}, message {assistant_msg['id'][:8]} (total: {message_tokens_accumulated[0]})")
+                except Exception as e:
+                    logger.error(f"Failed to save tokens to database: {e}")
+            
+            # Register token callback
+            task_service.add_token_callback(token_callback)
+            
+            try:
+                # Run task - keep device unlocked (no_auto_lock) until chat exit, no email
+                result = await task_service.run_task(
+                    task_content=task_content,
+                    device_ids=[device_id],
+                    task_type='chat',
+                    session_id=session_id,
+                    message_id=assistant_msg['id'],
+                    no_auto_lock=True,  # Keep device unlocked in chat mode
+                    send_email=False,   # No email for chat mode tasks
+                )
+                
+                return result
+            finally:
+                # Always remove callback after task completes
+                task_service.remove_token_callback(token_callback)
+        
+        try:
+            # Create and track the task for cancellation
+            task = asyncio.create_task(execute_task())
+            self._chat_mode_task[chat_id] = task
+            
+            try:
+                result = await task
+                
+                # Get result
+                success = result.status == 'completed' if hasattr(result, 'status') else result.get('status') == 'completed'
+                finish_message = ""
+                if hasattr(result, 'results') and result.results:
+                    finish_message = result.results[0].get('message', '') if isinstance(result.results[0], dict) else str(result.results[0])
+                
+                # Update progress message with result
+                status_emoji = "✅" if success else "❌"
+                # Get session_id and message_id for display
+                session_id_display = self._chat_mode_session.get(chat_id, "N/A")[:8]
+                result_text = (
+                    f"{status_emoji} **{'完成' if success else '失败'}**\n"
+                    f"📱 设备: `{device_short}`\n"
+                    f"🆔 Session: `{session_id_display}`\n"
+                )
+                if finish_message:
+                    result_text += f"💬 {finish_message[:100]}{'...' if len(finish_message) > 100 else ''}\n"
+                
+                result_text += "\n发送下一个任务，或点击退出"
+                
+                # Note: Screenshot is sent by send_device_completion callback
+                # Just update the progress message here
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=progress_msg.message_id,
+                        text=result_text,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode='Markdown'
+                    )
+                except Exception:
+                    pass
+                    
+            except asyncio.CancelledError:
+                # Task was cancelled by stop button
+                logger.info(f"Chat mode task cancelled for chat {chat_id}")
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=progress_msg.message_id,
+                        text=f"⏹️ **任务已停止**\n📱 设备: `{device_short}`\n\n💬 发送新消息继续执行任务",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("🚪 退出 Chat", callback_data="chat_exit")
+                        ]]),
+                        parse_mode='Markdown'
+                    )
+                except Exception:
+                    pass
+            
+        except Exception as e:
+            logger.error(f"Chat mode task failed: {e}")
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=progress_msg.message_id,
+                    text=f"❌ **执行失败**\n{str(e)[:100]}",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='Markdown'
+                )
+            except Exception:
+                pass
+        finally:
+            # Cleanup task tracking
+            if chat_id in self._chat_mode_task:
+                del self._chat_mode_task[chat_id]
+            if chat_id in self._current_chat_tasks:
+                del self._current_chat_tasks[chat_id]
+
 
     async def _cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command."""
@@ -559,7 +842,166 @@ class TelegramBotService:
                     del self._selected_devices[chat_id]
                 if chat_id in self._pending_action:
                     del self._pending_action[chat_id]
+                # Also exit chat mode when going to main menu
+                chat_id_int = query.message.chat_id
+                # Cancel any running task
+                if chat_id_int in self._chat_mode_task:
+                    task = self._chat_mode_task[chat_id_int]
+                    if not task.done():
+                        task.cancel()
+                    del self._chat_mode_task[chat_id_int]
+                if chat_id_int in self._chat_mode_active:
+                    del self._chat_mode_active[chat_id_int]
+                if chat_id_int in self._chat_mode_device:
+                    del self._chat_mode_device[chat_id_int]
+                if chat_id_int in self._chat_mode_session:
+                    del self._chat_mode_session[chat_id_int]
                     
+                return
+            
+            # === CHAT MODE CALLBACKS ===
+            # Handle enter chat mode (from tasks menu)
+            if callback_data == "enter_chat_mode":
+                try:
+                    from web_app.services.device_service import device_service
+                    
+                    devices = device_service.get_all_devices()
+                    if not devices:
+                        await query.edit_message_text("❌ 没有可用的设备")
+                        return
+                    
+                    # Create device selection buttons for chat mode
+                    keyboard = []
+                    for device in devices:
+                        status_emoji = "🟢" if device.status == "online" else "🔴"
+                        device_label = f"{status_emoji} {device.name[:15]}" if device.name else f"{status_emoji} {device.id[:12]}..."
+                        keyboard.append([InlineKeyboardButton(
+                            device_label,
+                            callback_data=f"chat_select_{device.id}"
+                        )])
+                    
+                    keyboard.append([InlineKeyboardButton("🔙 返回", callback_data="menu_tasks")])
+                    
+                    await query.edit_message_text(
+                        "💬 **进入 Chat 模式**\n\n"
+                        "选择一个设备后，可以直接发送任务消息执行，无需每次选择设备。\n\n"
+                        "📱 请选择设备:",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.error(f"Enter chat mode failed: {e}")
+                    await query.edit_message_text(f"❌ 失败: {str(e)}")
+                return
+            
+            # Handle chat device selection
+            if callback_data.startswith("chat_select_"):
+                device_id = callback_data.replace("chat_select_", "")
+                chat_id_int = query.message.chat_id
+                
+                # Create a persistent session for this chat mode
+                try:
+                    from web_app.services.chat_service import chat_service
+                    session = chat_service.create_session(
+                        device_id=f"bot_{query.from_user.id}_{device_id}",
+                        title="Telegram Chat Mode"
+                    )
+                    self._chat_mode_session[chat_id_int] = session['id']
+                    logger.info(f"Created persistent chat session {session['id']} for chat {chat_id_int}")
+                except Exception as e:
+                    logger.error(f"Failed to create chat session: {e}")
+                
+                # Enter chat mode with selected device
+                self._chat_mode_device[chat_id_int] = device_id
+                self._chat_mode_active[chat_id_int] = True
+                
+                device_short = device_id[:12] + "..." if len(device_id) > 12 else device_id
+                
+                keyboard = [[InlineKeyboardButton("🚪 退出 Chat 模式", callback_data="chat_exit")]]
+                session_short = session['id'][:8] if session else "N/A"
+                await query.edit_message_text(
+                    f"✅ **已进入 Chat 模式**\n\n"
+                    f"📱 设备: `{device_short}`\n"
+                    f"🆔 Session: `{session_short}`\n\n"
+                    f"💡 直接发送消息执行任务\n"
+                    f"💬 每条消息都会在该设备上执行",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Handle chat mode exit
+            if callback_data == "chat_exit":
+                chat_id_int = query.message.chat_id
+                
+                # Cancel any running task first
+                if chat_id_int in self._chat_mode_task:
+                    task = self._chat_mode_task[chat_id_int]
+                    if not task.done():
+                        task.cancel()
+                        logger.info(f"Cancelled running task on chat exit for chat {chat_id_int}")
+                
+                # Also stop via task_service
+                from web_app.services.task_service import task_service
+                await task_service.stop_all_tasks()
+                
+                # Get device before clearing state
+                device_id = self._chat_mode_device.get(chat_id_int)
+                
+                # Exit chat mode and clear session
+                if chat_id_int in self._chat_mode_active:
+                    del self._chat_mode_active[chat_id_int]
+                if chat_id_int in self._chat_mode_device:
+                    del self._chat_mode_device[chat_id_int]
+                if chat_id_int in self._chat_mode_session:
+                    del self._chat_mode_session[chat_id_int]
+                if chat_id_int in self._chat_mode_task:
+                    del self._chat_mode_task[chat_id_int]
+                
+                # Lock device on exit
+                if device_id:
+                    try:
+                        from web_app.services.device_service import device_service
+                        await device_service.lock_device(device_id)
+                        logger.info(f"Locked device {device_id} on chat exit")
+                    except Exception as e:
+                        logger.warning(f"Failed to lock device on chat exit: {e}")
+                
+                # Send new message instead of edit (photo messages can't be edited to text)
+                await query.message.reply_text(
+                    "👋 **已退出 Chat 模式**\n\n"
+                    "返回正常模式，可以使用 /chat 再次进入",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Handle chat stop (cancel running task)
+            if callback_data == "chat_stop":
+                chat_id_int = query.message.chat_id
+                
+                # Cancel the tracked asyncio task for this chat
+                if chat_id_int in self._chat_mode_task:
+                    task = self._chat_mode_task[chat_id_int]
+                    if not task.done():
+                        task.cancel()
+                        logger.info(f"Cancelled task for chat {chat_id_int}")
+                
+                # Also stop via task_service for immediate effect
+                from web_app.services.task_service import task_service
+                await task_service.stop_all_tasks()
+                
+                # Send new message (original might be a photo)
+                device_id = self._chat_mode_device.get(chat_id_int, "")
+                device_short = device_id[:12] + "..." if len(device_id) > 12 else device_id
+                await query.message.reply_text(
+                    f"⏹️ **任务已停止**\n"
+                    f"📱 设备: `{device_short}`\n\n"
+                    f"💬 发送新消息继续执行任务",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🚪 退出 Chat", callback_data="chat_exit")
+                    ]]),
+                    parse_mode='Markdown'
+                )
                 return
             
             # === NEW MENU SYSTEM ROUTING ===
@@ -1056,11 +1498,12 @@ class TelegramBotService:
                 )
                 session_id = session['id']
                 
-                # Add user message (the task description)
+                # Add user message (the task description) - mark as from Telegram
                 user_msg = chat_service.add_message(
                     session_id=session_id,
                     role='user',
-                    content=task_content
+                    content=task_content,
+                    source='telegram'  # Mark as from Telegram bot
                 )
                 
                 # === MULTI-DEVICE FIX: Don't create assistant message here ===
@@ -1802,6 +2245,7 @@ class TelegramBotService:
             commands = [
                 # Main categories matching welcome menu
                 BotCommand("start", "🏠 显示主菜单"),
+                BotCommand("chat", "💬 持续对话模式"),
                 BotCommand("tasks", "📋 任务管理"),
                 BotCommand("devices", "📱 设备管理"),
                 BotCommand("settings", "⚙️ 系统设置"),
@@ -1826,10 +2270,10 @@ class TelegramBotService:
         
         keyboard = [
             [InlineKeyboardButton("▶️ 执行任务", callback_data="get_task")],
+            [InlineKeyboardButton("💬 Chat 模式", callback_data="enter_chat_mode")],
             [InlineKeyboardButton("📸 获取截图", callback_data="get_screenshot")],
             [InlineKeyboardButton("📅 定时任务", callback_data="tasks_scheduled")],
             [InlineKeyboardButton("📜 任务历史", callback_data="tasks_history")],
-            [InlineKeyboardButton("💬 Chat 对话", callback_data="tasks_chat")],
         ]
         
         self._add_back_button(keyboard)
@@ -3764,7 +4208,7 @@ Bot 界面已针对移动端优化，无需额外配置
         data = self._task_creation[user_id]["data"]
         
         try:
-            from gui_app.scheduler import ScheduledTask
+            from web_app.models.scheduler import ScheduledTask
             from web_app.services.scheduler_service import scheduler_service
             import uuid
             
@@ -4112,16 +4556,21 @@ Bot 界面已针对移动端优化，无需额外配置
                         
                 finally:
                     # Only restore lock state if we unlocked it ourselves
-                    if not skip_unlock and was_locked:
+                    # AND we're not in persistent chat mode
+                    is_chat_mode = chat_id in self._chat_mode_active and self._chat_mode_active[chat_id]
+                    if not skip_unlock and was_locked and not is_chat_mode:
                         await device_service.lock_device(device_id)
                         logger.info(f"Restored lock state for device {device_id}")
+                    elif is_chat_mode:
+                        logger.info(f"Skipping lock restore for chat mode (device {device_id})")
                         
             except Exception as e:
                 logger.error(f"Failed to send screenshot for device {device_id}: {e}")
             
             
-            # Send logs summary
-            if logs and len(logs) > 0:
+            # Send logs summary (skip for chat mode - screenshot is enough)
+            is_chat_mode = chat_id in self._chat_mode_active and self._chat_mode_active[chat_id]
+            if logs and len(logs) > 0 and not is_chat_mode:
                 # Get last 10 logs, filter out token lines
                 recent_logs = [log for log in logs[-15:] if not log.startswith('[TOKENS]')][-10:]
                 if recent_logs:

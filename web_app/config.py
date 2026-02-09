@@ -42,27 +42,26 @@ class WebConfigManager:
     """Manager for web configuration."""
 
     def __init__(self):
-        self.config_dir = Path.home() / ".autoglm"
-        self.config_file = self.config_dir / "web_config.json"
-        self.config_dir.mkdir(parents=True, exist_ok=True)
         self.config = self._load()
 
     def _load(self) -> WebConfig:
-        """Load configuration from file."""
-        if self.config_file.exists():
-            try:
-                data = json.loads(self.config_file.read_text(encoding="utf-8"))
+        """Load configuration from database."""
+        try:
+            from web_app.services.config_storage import config_storage
+            data = config_storage.get("web_config")
+            if data:
                 return WebConfig.from_dict(data)
-            except Exception:
-                pass
+        except Exception:
+            pass
         return WebConfig()
 
     def save(self):
-        """Save configuration to file."""
-        self.config_file.write_text(
-            json.dumps(self.config.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        """Save configuration to database."""
+        try:
+            from web_app.services.config_storage import config_storage
+            config_storage.set("web_config", self.config.to_dict(), "web")
+        except Exception:
+            pass
 
     def get_config(self) -> WebConfig:
         """Get current configuration."""

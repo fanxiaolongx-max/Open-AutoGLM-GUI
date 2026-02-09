@@ -225,34 +225,12 @@ def check_system_requirements(
             else:
                 print("❌ FAILED")
                 print("   Error: ADB Keyboard is not installed on the device.")
-                print("   Attempting automatic installation...")
-                
-                # Import and use the auto-install function
-                try:
-                    from gui_app.app import ensure_adb_keyboard_installed
-                    ok, installed_now = ensure_adb_keyboard_installed(device_id)
-                    if ok:
-                        if installed_now:
-                            print("   ✅ ADB Keyboard automatically installed and enabled!")
-                            print("   Note: If input fails, enable it in Settings > System > Languages & Input > Virtual Keyboard")
-                        else:
-                            print("   ✅ ADB Keyboard already available")
-                    else:
-                        print("   ❌ Automatic installation failed")
-                        print("   Manual solution:")
-                        print("     1. Download ADB Keyboard APK from:")
-                        print("        https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk")
-                        print("     2. Install it on your device: adb install ADBKeyboard.apk")
-                        print("     3. Enable it in Settings > System > Languages & Input > Virtual Keyboard")
-                        all_passed = False
-                except ImportError:
-                    print("   ❌ Auto-install function not available")
-                    print("   Manual solution:")
-                    print("     1. Download ADB Keyboard APK from:")
-                    print("        https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk")
-                    print("     2. Install it on your device: adb install ADBKeyboard.apk")
-                    print("     3. Enable it in Settings > System > Languages & Input > Virtual Keyboard")
-                    all_passed = False
+                print("   Solution:")
+                print("     1. Download ADB Keyboard APK from:")
+                print("        https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk")
+                print("     2. Install it on your device: adb install ADBKeyboard.apk")
+                print("     3. Enable it in Settings > System > Languages & Input > Virtual Keyboard")
+                all_passed = False
         except subprocess.TimeoutExpired:
             print("❌ FAILED")
             print("   Error: ADB command timed out.")

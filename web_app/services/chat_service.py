@@ -64,8 +64,13 @@ class ChatService:
 
     # ========== Message Management ==========
 
-    def add_message(self, session_id: str, role: str, content: str, image_data: Optional[bytes] = None) -> Dict:
-        """Add a message to a session, optionally with an image."""
+    def add_message(self, session_id: str, role: str, content: str, 
+                     image_data: Optional[bytes] = None, source: Optional[str] = None) -> Dict:
+        """Add a message to a session, optionally with an image.
+        
+        Args:
+            source: Message source - 'web' or 'telegram'
+        """
         image_id = None
 
         # If there's image data, save it as a screenshot first
@@ -73,7 +78,7 @@ class ChatService:
             # We'll link it after creating the message
             pass
 
-        message = chat_storage.add_message(session_id, role, content, image_id)
+        message = chat_storage.add_message(session_id, role, content, image_id, source=source)
         self._current_message_id = message.id
 
         # Now save the image if provided

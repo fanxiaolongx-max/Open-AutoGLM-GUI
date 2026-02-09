@@ -12,7 +12,7 @@ from dataclasses import asdict
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from gui_app.model_services import ModelServicesManager, ModelServiceConfig, PRESET_SERVICES
+from web_app.models.model_services import ModelServicesManager, ModelServiceConfig, PRESET_SERVICES
 
 
 class ModelService:

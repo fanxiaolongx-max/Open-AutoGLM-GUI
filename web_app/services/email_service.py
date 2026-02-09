@@ -20,7 +20,7 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from gui_app.email_service import EmailConfig
+from web_app.models.email_config import EmailConfig
 
 
 class EmailServiceWrapper:
@@ -28,25 +28,25 @@ class EmailServiceWrapper:
 
     def __init__(self):
         self.config = EmailConfig()
-        self.config_file = Path.home() / ".autoglm" / "email_config.json"
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
         self._load_config()
 
     def _load_config(self):
-        """Load email configuration from file."""
-        if self.config_file.exists():
-            try:
-                data = json.loads(self.config_file.read_text(encoding="utf-8"))
+        """Load email configuration from database."""
+        try:
+            from web_app.services.config_storage import config_storage
+            data = config_storage.get_email_config()
+            if data:
                 self.config = EmailConfig.from_dict(data)
-            except Exception:
-                self.config = EmailConfig()
+        except Exception:
+            self.config = EmailConfig()
 
     def _save_config(self):
-        """Save email configuration to file."""
-        self.config_file.write_text(
-            json.dumps(self.config.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        """Save email configuration to database."""
+        try:
+            from web_app.services.config_storage import config_storage
+            config_storage.set_email_config(self.config.to_dict())
+        except Exception:
+            pass
 
     def get_config(self) -> dict:
         """Get current email configuration."""

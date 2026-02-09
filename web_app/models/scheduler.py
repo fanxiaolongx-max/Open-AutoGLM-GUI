@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Scheduled tasks manager for automated task execution."""
+"""
+Scheduled task data models.
+Pure data classes without Qt dependencies.
+"""
 
-import json
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from enum import Enum
-from pathlib import Path
-from typing import Callable
-
-from PySide6 import QtCore
 
 
 class ScheduleType(Enum):
@@ -152,148 +150,3 @@ class ScheduledTask:
 
         next_time = datetime.fromisoformat(self.next_run)
         return datetime.now() >= next_time
-
-
-class ScheduledTasksManager(QtCore.QObject):
-    """Manager for scheduled tasks with persistent storage."""
-
-    task_triggered = QtCore.Signal(str, str)  # task_id, task_content
-    tasks_changed = QtCore.Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.tasks: dict[str, ScheduledTask] = {}
-        self.running_tasks: set[str] = set()  # Track running task IDs
-        self.config_file = Path.home() / ".autoglm" / "scheduled_tasks.json"
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Timer for checking scheduled tasks
-        self.check_timer = QtCore.QTimer(self)
-        self.check_timer.timeout.connect(self._check_tasks)
-        self.check_timer.setInterval(30000)  # Check every 30 seconds
-
-        self._load_tasks()
-
-    def start(self):
-        """Start the scheduler."""
-        self._update_all_next_runs()
-        self.check_timer.start()
-
-    def stop(self):
-        """Stop the scheduler."""
-        self.check_timer.stop()
-
-    def _load_tasks(self):
-        """Load tasks from config file."""
-        if self.config_file.exists():
-            try:
-                data = json.loads(self.config_file.read_text(encoding="utf-8"))
-                self.tasks = {
-                    task_id: ScheduledTask.from_dict(task_data)
-                    for task_id, task_data in data.items()
-                }
-            except Exception:
-                self.tasks = {}
-
-    def _save_tasks(self):
-        """Save tasks to config file."""
-        data = {task_id: task.to_dict() for task_id, task in self.tasks.items()}
-        self.config_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    def _update_all_next_runs(self):
-        """Update next_run for all tasks."""
-        for task in self.tasks.values():
-            task.update_next_run()
-        self._save_tasks()
-
-    def _check_tasks(self):
-        """Check and trigger tasks that should run."""
-        for task in self.tasks.values():
-            if task.should_run_now() and task.id not in self.running_tasks:
-                # Mark as running
-                self.mark_task_running(task.id)
-                
-                # Mark as run
-                task.last_run = datetime.now().isoformat()
-                task.run_count += 1
-                task.update_next_run()
-
-                # For one-time tasks, disable after run
-                if task.schedule_type == ScheduleType.ONCE.value:
-                    task.enabled = False
-
-                self._save_tasks()
-
-                self.task_triggered.emit(task.id, task.task_content)
-
-    def add_task(self, task: ScheduledTask) -> str:
-        """Add a new scheduled task."""
-        task.update_next_run()
-        self.tasks[task.id] = task
-        self._save_tasks()
-        self.tasks_changed.emit()
-        return task.id
-
-    def update_task(self, task: ScheduledTask):
-        """Update an existing task."""
-        task.update_next_run()
-        self.tasks[task.id] = task
-        self._save_tasks()
-        self.tasks_changed.emit()
-
-    def delete_task(self, task_id: str):
-        """Delete a task."""
-        if task_id in self.tasks:
-            del self.tasks[task_id]
-            self._save_tasks()
-            self.tasks_changed.emit()
-
-    def get_task(self, task_id: str) -> ScheduledTask | None:
-        """Get a task by ID."""
-        return self.tasks.get(task_id)
-
-    def get_all_tasks(self) -> list[ScheduledTask]:
-        """Get all tasks sorted by next run time."""
-        return sorted(
-            self.tasks.values(),
-            key=lambda t: t.next_run if t.next_run else "9999"
-        )
-
-    def get_running_tasks(self) -> set[str]:
-        """Get set of currently running task IDs."""
-        return self.running_tasks.copy()
-
-    def mark_task_running(self, task_id: str):
-        """Mark a task as running."""
-        self.running_tasks.add(task_id)
-
-    def mark_task_finished(self, task_id: str):
-        """Mark a task as finished."""
-        self.running_tasks.discard(task_id)
-
-    def stop_all(self):
-        """Clear all running tasks (used for emergency stop)."""
-        self.running_tasks.clear()
-
-    def set_task_enabled(self, task_id: str, enabled: bool):
-        """Enable or disable a task."""
-        if task_id in self.tasks:
-            self.tasks[task_id].enabled = enabled
-            if enabled:
-                self.tasks[task_id].update_next_run()
-            self._save_tasks()
-            self.tasks_changed.emit()
-
-    def run_task_now(self, task_id: str):
-        """Manually trigger a task to run immediately."""
-        task = self.tasks.get(task_id)
-        if task:
-            # Mark as running
-            self.mark_task_running(task.id)
-            
-            task.last_run = datetime.now().isoformat()
-            task.run_count += 1
-            task.update_next_run()
-            self._save_tasks()
-
-            self.task_triggered.emit(task.id, task.task_content)

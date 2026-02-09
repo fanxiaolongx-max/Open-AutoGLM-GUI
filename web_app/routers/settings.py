@@ -107,9 +107,6 @@ async def generate_auth_token(_: bool = Depends(verify_token)):
 
 
 # Screenshot settings
-CONFIG_FILE = Path(__file__).parent.parent.parent / "config" / "screenshot_settings.json"
-
-
 class ScreenshotSettings(BaseModel):
     """Screenshot configuration settings."""
     max_image_dimension: int = Field(ge=100, le=4000, description="Maximum image dimension")
@@ -117,25 +114,25 @@ class ScreenshotSettings(BaseModel):
 
 
 def load_config_from_file() -> Dict[str, Any]:
-    """Load screenshot config from file."""
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to load config file: {e}")
+    """Load screenshot config from database."""
+    try:
+        from web_app.services.config_storage import config_storage
+        config = config_storage.get("screenshot_settings")
+        if config:
+            return config
+    except Exception as e:
+        logger.error(f"Failed to load screenshot config: {e}")
     return {}
 
 
 def save_config_to_file(config: Dict[str, Any]) -> None:
-    """Save screenshot config to file."""
+    """Save screenshot config to database."""
     try:
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=2)
-        logger.info(f"Saved screenshot config to {CONFIG_FILE}")
+        from web_app.services.config_storage import config_storage
+        config_storage.set("screenshot_settings", config, "settings")
+        logger.info(f"Saved screenshot config to database")
     except Exception as e:
-        logger.error(f"Failed to save config file: {e}")
+        logger.error(f"Failed to save screenshot config: {e}")
         raise
 
 

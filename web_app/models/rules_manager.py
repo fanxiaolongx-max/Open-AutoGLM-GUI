@@ -281,51 +281,56 @@ class RulesManager:
 
     def _load_custom_apps(self):
         """加载自定义应用映射"""
-        if self.apps_file.exists():
-            try:
-                self._custom_apps = json.loads(self.apps_file.read_text(encoding="utf-8"))
-            except Exception:
-                self._custom_apps = {}
+        try:
+            from web_app.services.config_storage import config_storage
+            self._custom_apps = config_storage.get_custom_apps()
+        except Exception:
+            self._custom_apps = {}
 
     def _load_custom_timing(self):
         """加载自定义时间配置"""
-        if self.timing_file.exists():
-            try:
-                self._custom_timing = json.loads(self.timing_file.read_text(encoding="utf-8"))
-            except Exception:
-                self._custom_timing = {}
+        try:
+            from web_app.services.config_storage import config_storage
+            self._custom_timing = config_storage.get_custom_timing()
+        except Exception:
+            self._custom_timing = {}
 
     def _load_action_rules(self):
         """加载动作规则"""
-        if self.actions_file.exists():
-            try:
-                self._action_rules = json.loads(self.actions_file.read_text(encoding="utf-8"))
-            except Exception:
+        try:
+            from web_app.services.config_storage import config_storage
+            rules = config_storage.get_action_rules()
+            if rules:
+                self._action_rules = rules
+            else:
                 self._action_rules = DEFAULT_ACTION_RULES.copy()
-        else:
+                self._save_action_rules()
+        except Exception:
             self._action_rules = DEFAULT_ACTION_RULES.copy()
-            self._save_action_rules()
 
     def _save_custom_apps(self):
         """保存自定义应用映射"""
-        self.apps_file.write_text(
-            json.dumps(self._custom_apps, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        try:
+            from web_app.services.config_storage import config_storage
+            config_storage.set_custom_apps(self._custom_apps)
+        except Exception:
+            pass  # Fallback silently
 
     def _save_custom_timing(self):
         """保存自定义时间配置"""
-        self.timing_file.write_text(
-            json.dumps(self._custom_timing, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        try:
+            from web_app.services.config_storage import config_storage
+            config_storage.set_custom_timing(self._custom_timing)
+        except Exception:
+            pass  # Fallback silently
 
     def _save_action_rules(self):
         """保存动作规则"""
-        self.actions_file.write_text(
-            json.dumps(self._action_rules, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        try:
+            from web_app.services.config_storage import config_storage
+            config_storage.set_action_rules(self._action_rules)
+        except Exception:
+            pass  # Fallback silently
 
     # ========== 应用映射规则 ==========
 
@@ -768,23 +773,22 @@ class RulesManager:
 
     def _load_prompts(self):
         """加载自定义提示词"""
-        if not hasattr(self, 'prompts_file'):
-            self.prompts_file = self.config_dir / "custom_prompts.json"
         if not hasattr(self, '_custom_prompts'):
             self._custom_prompts = {}
-
-        if self.prompts_file.exists():
-            try:
-                self._custom_prompts = json.loads(self.prompts_file.read_text(encoding="utf-8"))
-            except Exception:
-                self._custom_prompts = {}
+        try:
+            from web_app.services.config_storage import config_storage
+            self._custom_prompts = config_storage.get_custom_prompts()
+        except Exception:
+            self._custom_prompts = {}
 
     def _save_prompts(self):
         """保存自定义提示词"""
-        self.prompts_file.write_text(
-            json.dumps(self._custom_prompts, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        try:
+            from web_app.services.config_storage import config_storage
+            for key, value in self._custom_prompts.items():
+                config_storage.set_custom_prompt(key, value)
+        except Exception:
+            pass  # Fallback silently
 
     def get_default_prompts(self) -> dict[str, dict]:
         """获取默认提示词定义"""
@@ -792,7 +796,7 @@ class RulesManager:
         from pathlib import Path
         import importlib.util
 
-        prompts_dir = Path(__file__).parent.parent / "phone_agent" / "config"
+        prompts_dir = Path(__file__).parent.parent.parent / "phone_agent" / "config"
 
         def load_prompt_from_file(filename: str) -> str:
             """从文件加载提示词"""

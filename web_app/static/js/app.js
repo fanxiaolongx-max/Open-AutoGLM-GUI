@@ -35,6 +35,9 @@ const app = createApp({
         const wsConnected = ref(false);
         const loading = ref(false);
 
+        // System alerts (banners from backend)
+        const systemAlerts = ref([]);
+
         // WebSocket
         let ws = null;
         let reconnectTimer = null;
@@ -48,6 +51,10 @@ const app = createApp({
             setTimeout(() => {
                 toasts.value = toasts.value.filter(t => t.id !== id);
             }, 3000);
+        }
+
+        function dismissSystemAlert(alertId) {
+            systemAlerts.value = systemAlerts.value.filter(a => a.id !== alertId);
         }
 
         // API calls
@@ -169,6 +176,22 @@ const app = createApp({
                     break;
                 case 'ping':
                     ws.send(JSON.stringify({ type: 'pong' }));
+                    break;
+                case 'system_alert':
+                    // Add system alert banner
+                    const alertId = Date.now();
+                    systemAlerts.value.push({
+                        id: alertId,
+                        level: data.level || 'warning',
+                        title: data.title || '系统通知',
+                        message: data.message || '',
+                    });
+                    // Auto dismiss if specified
+                    if (data.auto_dismiss > 0) {
+                        setTimeout(() => {
+                            systemAlerts.value = systemAlerts.value.filter(a => a.id !== alertId);
+                        }, data.auto_dismiss * 1000);
+                    }
                     break;
             }
         }
@@ -664,6 +687,7 @@ const app = createApp({
             wsConnected,
             loading,
             toasts,
+            systemAlerts,
 
             // Chat State
             chatMessages,
@@ -697,6 +721,7 @@ const app = createApp({
             sendChatMessage,
             clearChatHistory,
             onChatDeviceChange,
+            dismissSystemAlert,
         };
     },
 });

@@ -46,6 +46,7 @@ class ChatMessage:
     todo_list: Optional[str] = None  # JSON string of todoList for complex tasks
     tokens: int = 0
     model_name: Optional[str] = None
+    source: Optional[str] = None  # 'web' or 'telegram' - message source
 
     def to_dict(self) -> dict:
         result = asdict(self)
@@ -165,6 +166,10 @@ class ChatStorage:
                 pass  # Column already exists
             try:
                 cursor.execute("ALTER TABLE chat_messages ADD COLUMN model_name TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            try:
+                cursor.execute("ALTER TABLE chat_messages ADD COLUMN source TEXT")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
@@ -289,8 +294,13 @@ class ChatStorage:
 
     def add_message(self, session_id: str, role: str, content: str, image_id: Optional[str] = None,
                      status: Optional[str] = None, todo_list: Optional[list] = None,
-                     tokens: int = 0, model_name: Optional[str] = None) -> ChatMessage:
-        """Add a message to a session."""
+                     tokens: int = 0, model_name: Optional[str] = None,
+                     source: Optional[str] = None) -> ChatMessage:
+        """Add a message to a session.
+        
+        Args:
+            source: Message source - 'web' or 'telegram' (None for legacy messages)
+        """
         # Convert todo_list to JSON string for storage
         todo_list_json = json.dumps(todo_list) if todo_list else None
         
@@ -305,16 +315,17 @@ class ChatStorage:
             todo_list=todo_list_json,
             tokens=tokens,
             model_name=model_name,
+            source=source,
         )
 
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO chat_messages (id, session_id, role, content, created_at, image_id, status, todo_list, tokens, model_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO chat_messages (id, session_id, role, content, created_at, image_id, status, todo_list, tokens, model_name, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (message.id, message.session_id, message.role, message.content,
                   message.created_at, message.image_id, message.status, message.todo_list,
-                  message.tokens, message.model_name))
+                  message.tokens, message.model_name, message.source))
 
             # Update session title if this is the first user message
             if role == "user":

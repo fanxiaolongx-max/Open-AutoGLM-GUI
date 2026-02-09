@@ -65,6 +65,88 @@
             display: none;
         }
 
+        /* System Alert Banners */
+        .system-alerts-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 9999;
+            padding: 0;
+        }
+
+        .system-alert {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            gap: 12px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .system-alert-warning {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            color: #92400e;
+        }
+
+        .system-alert-error {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            color: #991b1b;
+        }
+
+        .system-alert-success {
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            color: #065f46;
+        }
+
+        .system-alert-info {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            color: #1e40af;
+        }
+
+        .system-alert-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .system-alert-content {
+            flex: 1;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .system-alert-content strong {
+            font-weight: 600;
+        }
+
+        .system-alert-close {
+            background: transparent;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+            padding: 4px 8px;
+        }
+
+        .system-alert-close:hover {
+            opacity: 1;
+        }
+
         /* Chat Page Styles */
         .chat-container {
             display: flex;
@@ -1119,6 +1201,22 @@
 
 <body>
     <div id="app" v-cloak>
+        <!-- System Alert Banners -->
+        <div class="system-alerts-container" v-if="systemAlerts && systemAlerts.length > 0">
+            <div v-for="alert in systemAlerts" :key="alert.id" :class="['system-alert', 'system-alert-' + alert.level]">
+                <div class="system-alert-icon">
+                    <span v-if="alert.level === 'warning'">⚠️</span>
+                    <span v-else-if="alert.level === 'error'">❌</span>
+                    <span v-else-if="alert.level === 'success'">✅</span>
+                    <span v-else>ℹ️</span>
+                </div>
+                <div class="system-alert-content">
+                    <strong>{{ alert.title }}</strong>
+                    <span>{{ alert.message }}</span>
+                </div>
+                <button class="system-alert-close" @click="dismissSystemAlert(alert.id)">✕</button>
+            </div>
+        </div>
         <div class="app-container">
             <!-- Sidebar -->
             <aside class="sidebar">
@@ -1207,7 +1305,11 @@
                             <div v-for="session in chatSessions" :key="session.id" class="chat-session-item"
                                 :class="{ active: currentSessionId === session.id }" @click="switchSession(session.id)">
                                 <div class="chat-session-info">
-                                    <div class="chat-session-title">{{ session.title || '新会话' }}</div>
+                                    <div class="chat-session-title">
+                                        <span v-if="session.deviceId && session.deviceId.startsWith('bot_')"
+                                            title="来自 Telegram Bot" style="margin-right: 4px;">✈️</span>{{ session.title
+                                        || '新会话' }}
+                                    </div>
                                     <div class="chat-session-time">{{ formatSessionTime(session.updatedAt) }}</div>
                                 </div>
                                 <button class="chat-session-delete" @click.stop="deleteSession(session.id)"
@@ -1232,6 +1334,11 @@
                                 </select>
                                 <span v-if="chatDeviceId" style="color: #10b981;">✓ {{ t('chatConnected') }}</span>
                                 <span v-else style="color: #f59e0b;">{{ t('chatSelectDeviceFirst') }}</span>
+                                <span v-if="currentSessionId"
+                                    style="margin-left: 12px; font-size: 11px; color: var(--text-muted); font-family: monospace;"
+                                    title="Session ID">
+                                    🆔 {{ currentSessionId.substring(0, 8) }}
+                                </span>
                             </div>
                             <div class="chat-header-right">
                                 <div class="email-toggle" v-if="complexTaskMode" style="margin-right: 12px;">
@@ -1275,7 +1382,10 @@
                             <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-message" :class="msg.role">
                                 <div class="chat-avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
                                 <div class="chat-bubble" :class="msg.status || ''">
-                                    <div v-if="msg.role === 'user'">{{ msg.content }}</div>
+                                    <div v-if="msg.role === 'user'">
+                                        <span v-if="msg.source === 'telegram'" title="来自 Telegram Bot"
+                                            style="margin-right: 4px;">✈️</span>{{ msg.content }}
+                                    </div>
                                     <div v-else>
                                         <div v-if="msg.status === 'running'">
                                             <span class="mini-spinner"></span>正在执行任务...
@@ -1386,7 +1496,8 @@
                                                             {{ item.content }}
                                                         </div>
                                                         <div v-for="(log, li) in item.logs.slice(-3)" :key="li"
-                                                            class="task-log-item">{{ log }}</div>
+                                                            class="task-log-item">{{ typeof log === 'object' ?
+                                                            (log.content || JSON.stringify(log)) : log }}</div>
                                                         <div v-if="item.logs.length > 3" class="task-log-more">... 共 {{
                                                             item.logs.length }} 条</div>
                                                     </div>
@@ -1396,13 +1507,14 @@
                                             <template v-else-if="msg.logs && msg.logs.length > 0">
                                                 <div v-for="(log, i) in msg.logs.slice(-3)" :key="i"
                                                     class="task-log-item">
-                                                    {{ log }}
+                                                    {{ typeof log === 'object' ? (log.content || JSON.stringify(log)) :
+                                                    log }}
                                                 </div>
                                             </template>
                                             <div class="task-result-hint">点击查看详情和截图 →</div>
                                         </div>
                                     </div>
-                                    <!-- 时间戳和token显示 -->
+                                    <!-- 时间戳、token和ID显示 -->
                                     <div class="chat-meta" v-if="msg.timestamp">
                                         <button v-if="msg.role === 'user' && !chatRunning" class="retry-icon-btn"
                                             @click.stop="retryMessage(msg.content)" title="重新发送" style="background: none; border: none; cursor: pointer; font-size: 12px; margin-right: 6px; 
@@ -1412,6 +1524,11 @@
                                             🔄
                                         </button>
                                         <span>{{ formatMsgTime(msg.timestamp) }}</span>
+                                        <span v-if="msg.id"
+                                            style="margin-left: 8px; font-size: 10px; color: var(--text-muted); font-family: monospace;"
+                                            title="Message ID">
+                                            #{{ msg.id.substring(0, 6) }}
+                                        </span>
                                         <span v-if="msg.tokens || msg.model_name"
                                             style="margin-left: 8px; font-size: 11px; color: var(--text-secondary);">
                                             <span v-if="msg.tokens">{{ msg.tokens }} tokens</span>
@@ -1571,6 +1688,9 @@
                                     style="margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                                     <button class="btn btn-sm btn-secondary" @click.stop="unlockDevice(device.id)">
                                         🔓 {{ t('devicesUnlock') }}
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" @click.stop="lockDevice(device.id)">
+                                        🔒 {{ t('devicesLock') }}
                                     </button>
                                     <button v-if="device.id.includes(':')" class="btn btn-sm btn-danger"
                                         @click.stop="disconnectDevice(device.id)" :title="t('devicesDisconnect')">
@@ -3054,6 +3174,7 @@
                     const wsConnected = ref(false);
                     const loading = ref(false);
                     const toasts = ref([]);
+                    const systemAlerts = ref([]);  // System alerts (banners from backend)
                     const devicePins = ref({});
                     const pinInputValues = ref({});  // Store input values for PIN fields
                     const showPinFor = ref('');  // Device ID for which PIN is visible
@@ -3162,7 +3283,7 @@
                             devicesPleaseSelect: '请选择设备', devicesApkFile: 'APK 文件', devicesInstallButton: '安装',
                             devicesInstalling: '安装中...', devicesSelected: '已选择:', devicesNoDevices: '未发现设备',
                             devicesNoDevicesHint: '通过USB连接设备或使用上方无线配对，然后点击刷新', devicesLoading: '加载设备中...',
-                            devicesUnlock: '解锁', devicesDisconnect: '断开', devicesHidePin: '隐藏PIN', devicesShowPin: '显示PIN',
+                            devicesUnlock: '解锁', devicesLock: '锁定', devicesDisconnect: '断开', devicesHidePin: '隐藏PIN', devicesShowPin: '显示PIN',
                             time1Min: '1分钟', time2Min: '2分钟', time3Min: '3分钟', time5Min: '5分钟', time10Min: '10分钟',
                             tasksSelectDevices: '选择设备', tasksSelectAll: '全选', tasksDeselectAll: '取消全选',
                             tasksNoDevices: '暂无已连接设备，请先连接设备', tasksOnline: '在线', tasksOffline: '离线',
@@ -3243,7 +3364,7 @@
                             devicesPleaseSelect: 'Please select a device', devicesApkFile: 'APK File', devicesInstallButton: 'Install',
                             devicesInstalling: 'Installing...', devicesSelected: 'Selected:', devicesNoDevices: 'No devices found',
                             devicesNoDevicesHint: 'Connect a device via USB or use wireless pairing above, then refresh', devicesLoading: 'Loading devices...',
-                            devicesUnlock: 'Unlock', devicesDisconnect: 'Disconnect', devicesHidePin: 'Hide PIN', devicesShowPin: 'Show PIN',
+                            devicesUnlock: 'Unlock', devicesLock: 'Lock', devicesDisconnect: 'Disconnect', devicesHidePin: 'Hide PIN', devicesShowPin: 'Show PIN',
                             time1Min: '1 min', time2Min: '2 mins', time3Min: '3 mins', time5Min: '5 mins', time10Min: '10 mins',
                             tasksSelectDevices: 'Select Devices', tasksSelectAll: 'Select All', tasksDeselectAll: 'Deselect All',
                             tasksNoDevices: 'No connected devices, please connect first', tasksOnline: 'Online', tasksOffline: 'Offline',
@@ -3362,6 +3483,10 @@
                         setTimeout(() => {
                             toasts.value = toasts.value.filter(t => t.id !== id);
                         }, 3000);
+                    }
+
+                    function dismissSystemAlert(alertId) {
+                        systemAlerts.value = systemAlerts.value.filter(a => a.id !== alertId);
                     }
 
                     // API calls
@@ -3553,21 +3678,26 @@
                                 }
                                 break;
                             case 'task_tokens':
-                                // Update chat message tokens
+                                // Update chat message tokens - only for current session
                                 if (chatMessages.value.length > 0) {
-                                    // Find target message - also allow completed/success/error status
-                                    // because tokens may arrive after task finishes
+                                    // Check session_id matches current session
+                                    if (data.session_id && data.session_id !== currentSessionId.value) {
+                                        console.log(`Token for session ${data.session_id} ignored (current: ${currentSessionId.value})`);
+                                        break;
+                                    }
+
+                                    // Find target message - only match RUNNING tasks
+                                    // Do NOT match completed tasks to avoid accumulating tokens on old messages
                                     let targetMsg = null;
                                     for (let i = chatMessages.value.length - 1; i >= 0; i--) {
                                         const msg = chatMessages.value[i];
                                         if (msg.role === 'assistant') {
-                                            // Match running tasks or recently completed tasks (within same session)
+                                            // Only match running tasks - NOT completed ones
                                             const isRunning = msg.status === 'running';
-                                            const isCompleted = msg.status === 'success' || msg.status === 'error' || msg.status === 'completed';
                                             const isComplexTaskRunning = msg.todoList && msg.todoList.length > 0 &&
-                                                msg.todoList.some(t => t.status === 'running' || t.status === 'pending');
+                                                msg.todoList.some(t => t.status === 'running');
 
-                                            if (isRunning || isComplexTaskRunning || isCompleted) {
+                                            if (isRunning || isComplexTaskRunning) {
                                                 if (data.task_id && msg.taskId && msg.taskId !== data.task_id) {
                                                     continue;
                                                 }
@@ -3619,6 +3749,22 @@
                                             y: data.y
                                         }));
                                     }
+                                }
+                                break;
+                            case 'system_alert':
+                                // System alert from backend (e.g., Telegram conflict)
+                                const alertId = Date.now();
+                                systemAlerts.value.push({
+                                    id: alertId,
+                                    level: data.level || 'warning',
+                                    title: data.title || '系统通知',
+                                    message: data.message || '',
+                                });
+                                // Auto dismiss if specified
+                                if (data.auto_dismiss > 0) {
+                                    setTimeout(() => {
+                                        systemAlerts.value = systemAlerts.value.filter(a => a.id !== alertId);
+                                    }, data.auto_dismiss * 1000);
                                 }
                                 break;
                         }
@@ -5144,6 +5290,17 @@
                         }
                     }
 
+                    async function lockDevice(deviceId) {
+                        try {
+                            await apiCall(`/api/devices/${deviceId}/lock`, {
+                                method: 'POST',
+                            });
+                            showToast('设备已锁定');
+                        } catch (error) {
+                            showToast('锁定失败', 'error');
+                        }
+                    }
+
                     // Wireless pairing functions
                     async function wirelessPair() {
                         if (!pairAddress.value) {
@@ -6512,11 +6669,14 @@
                         startDragPreview,
                         // Functions
                         showToast,
+                        systemAlerts,
+                        dismissSystemAlert,
                         refreshDevices,
                         toggleDeviceSelection,
                         selectAllDevices,
                         getDeviceName,
                         unlockDevice,
+                        lockDevice,
                         updateDevicePin,
                         saveDevicePin,
                         loadDevicePins,

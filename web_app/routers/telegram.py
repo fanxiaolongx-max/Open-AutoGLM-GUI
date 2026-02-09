@@ -17,41 +17,41 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
-# Configuration file path
-CONFIG_FILE = Path(__file__).parent.parent.parent / "config" / "telegram_settings.json"
+
+DEFAULT_TELEGRAM_CONFIG = {
+    "bot_token": "",
+    "enabled": False,
+    "allowed_users": [],
+    "allowed_groups": [],
+    "group_member_auth": True,
+    "notification_targets": {
+        "system_notifications": "groups",
+        "welcome_menu": "both",
+        "task_results": "requestor"
+    },
+    "send_screenshots": True,
+    "send_logs": True
+}
 
 
 def load_telegram_config():
-    """Load Telegram config from file."""
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to load Telegram config: {e}")
-    return {
-        "bot_token": "",
-        "enabled": False,
-        "allowed_users": [],
-        "allowed_groups": [],
-        "group_member_auth": True,
-        "notification_targets": {
-            "system_notifications": "groups",
-            "welcome_menu": "both",
-            "task_results": "requestor"
-        },
-        "send_screenshots": True,
-        "send_logs": True
-    }
+    """Load Telegram config from database."""
+    try:
+        from web_app.services.config_storage import config_storage
+        config = config_storage.get("telegram_config")
+        if config:
+            return config
+    except Exception as e:
+        logger.error(f"Failed to load Telegram config: {e}")
+    return DEFAULT_TELEGRAM_CONFIG.copy()
 
 
 def save_telegram_config(config: dict):
-    """Save Telegram config to file."""
+    """Save Telegram config to database."""
     try:
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=2)
-        logger.info(f"Saved Telegram config to {CONFIG_FILE}")
+        from web_app.services.config_storage import config_storage
+        config_storage.set("telegram_config", config, "telegram")
+        logger.info(f"Saved Telegram config to database")
     except Exception as e:
         logger.error(f"Failed to save Telegram config: {e}")
         raise

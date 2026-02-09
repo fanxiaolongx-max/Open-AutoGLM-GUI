@@ -43,7 +43,6 @@ class DeviceService:
     def __init__(self):
         self._devices: dict[str, DeviceInfo] = {}
         self._device_pins: dict[str, str] = {}
-        self._pins_file = Path.home() / ".autoglm" / "device_pins.json"
         self._load_pins()
         # Initialize device factory with ADB
         set_device_type(DeviceType.ADB)
@@ -54,22 +53,20 @@ class DeviceService:
 
 
     def _load_pins(self):
-        """Load device PINs from config."""
-        if self._pins_file.exists():
-            try:
-                self._device_pins = json.loads(
-                    self._pins_file.read_text(encoding="utf-8")
-                )
-            except Exception:
-                self._device_pins = {}
+        """Load device PINs from database."""
+        try:
+            from web_app.services.config_storage import config_storage
+            self._device_pins = config_storage.get_device_pins()
+        except Exception:
+            self._device_pins = {}
 
     def _save_pins(self):
-        """Save device PINs to config."""
-        self._pins_file.parent.mkdir(parents=True, exist_ok=True)
-        self._pins_file.write_text(
-            json.dumps(self._device_pins, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        """Save device PINs to database."""
+        try:
+            from web_app.services.config_storage import config_storage
+            config_storage.set("device_pins", self._device_pins, config_storage.CATEGORY_DEVICE)
+        except Exception:
+            pass
 
     def get_device_pin(self, device_id: str) -> Optional[str]:
         """Get PIN for a device."""

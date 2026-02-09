@@ -222,36 +222,59 @@ class ModelServicesManager:
         初始化管理器
 
         Args:
-            config_dir: 配置文件目录，默认为用户配置目录
+            config_dir: 配置文件目录（已废弃，仅用于迁移）
         """
-        if config_dir:
-            self.config_dir = Path(config_dir)
-        else:
-            # 默认使用 ~/.config/autoglm-gui/ 或应用目录
-            config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-            self.config_dir = Path(config_home) / "autoglm-gui"
-
-        self.config_file = self.config_dir / "model_services.json"
+        self._storage = None
         self.services: list[ModelServiceConfig] = []
+        self._migrate_from_json()  # One-time migration
         self._load()
 
-    def _load(self):
-        """从配置文件加载服务配置"""
-        if self.config_file.exists():
+    @property
+    def storage(self):
+        if self._storage is None:
+            from web_app.services.config_storage import config_storage
+            self._storage = config_storage
+        return self._storage
+
+    def _migrate_from_json(self):
+        """One-time migration from JSON file to database."""
+        # Check legacy locations
+        config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        legacy_file = Path(config_home) / "autoglm-gui" / "model_services.json"
+        
+        if legacy_file.exists():
             try:
-                with open(self.config_file, "r", encoding="utf-8") as f:
+                # Check if already migrated
+                existing = self.storage.get("model_services")
+                if existing:
+                    return  # Already migrated
+                
+                with open(legacy_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                self.services = []
-                for item in data.get("services", []):
-                    service = ModelServiceConfig(**item)
-                    self.services.append(service)
-                # 确保至少有一个激活的服务
-                if self.services and not any(s.is_active for s in self.services):
-                    self.services[0].is_active = True
+                
+                services_data = data.get("services", [])
+                if services_data:
+                    self.storage.set("model_services", services_data, "models")
+                    print(f"Migrated {len(services_data)} model services to database")
             except Exception as e:
-                print(f"加载模型服务配置失败: {e}")
-                self._init_default()
-        else:
+                print(f"Failed to migrate model services: {e}")
+
+    def _load(self):
+        """从数据库加载服务配置"""
+        try:
+            data = self.storage.get("model_services", [])
+            self.services = []
+            for item in data:
+                service = ModelServiceConfig(**item)
+                self.services.append(service)
+            # 确保至少有一个激活的服务
+            if self.services and not any(s.is_active for s in self.services):
+                self.services[0].is_active = True
+        except Exception as e:
+            print(f"加载模型服务配置失败: {e}")
+            self._init_default()
+        
+        if not self.services:
             self._init_default()
 
     def _init_default(self):
@@ -276,13 +299,12 @@ class ModelServicesManager:
         self._save()
 
     def _save(self):
-        """保存服务配置到文件"""
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        data = {
-            "services": [asdict(s) for s in self.services]
-        }
-        with open(self.config_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        """保存服务配置到数据库"""
+        try:
+            data = [asdict(s) for s in self.services]
+            self.storage.set("model_services", data, "models")
+        except Exception as e:
+            print(f"保存模型服务配置失败: {e}")
 
     def get_all_services(self) -> list[ModelServiceConfig]:
         """获取所有服务配置"""

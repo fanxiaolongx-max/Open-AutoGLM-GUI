@@ -12,7 +12,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from gui_app.scheduler import ScheduledTask
+from web_app.models.scheduler import ScheduledTask
 from web_app.auth import verify_token
 from web_app.services.scheduler_service import scheduler_service
 

@@ -11,16 +11,23 @@ from typing import Optional, Tuple, Callable
 def get_device_pin(device_id: str) -> Optional[str]:
     """从 PIN 管理器获取设备的 PIN"""
     try:
-        from gui_app.device_pin_manager import get_device_pin_manager
+        from web_app.models.device_pin_manager import get_device_pin_manager
         return get_device_pin_manager().get_pin(device_id)
     except ImportError:
         return None
 
 
 def get_screen_size(device_id: str) -> Tuple[int, int]:
-    """获取设备屏幕尺寸"""
+    """获取设备屏幕尺寸（考虑屏幕方向）
+    
+    Returns:
+        Tuple[int, int]: (width, height) 根据当前屏幕方向返回正确的宽高
+        横屏模式下会交换宽高，确保坐标转换正确
+    """
     try:
         adb_prefix = ["adb", "-s", device_id] if device_id else ["adb"]
+        
+        # 获取物理尺寸
         result = subprocess.run(
             adb_prefix + ["shell", "wm", "size"],
             capture_output=True,
@@ -30,21 +37,67 @@ def get_screen_size(device_id: str) -> Tuple[int, int]:
         
         # 解析输出，优先使用 Override size
         output = result.stdout.strip()
+        width, height = 1080, 2400  # 默认值
+        
         for line in output.split("\n"):
             if "Override" in line:
                 size_str = line.split(":")[-1].strip()
                 w, h = size_str.split("x")
-                return int(w), int(h)
+                width, height = int(w), int(h)
+                break
+        else:
+            # 如果没有 Override，使用 Physical size
+            for line in output.split("\n"):
+                if "Physical" in line:
+                    size_str = line.split(":")[-1].strip()
+                    w, h = size_str.split("x")
+                    width, height = int(w), int(h)
+                    break
         
-        # 如果没有 Override，使用 Physical size
-        for line in output.split("\n"):
-            if "Physical" in line:
-                size_str = line.split(":")[-1].strip()
-                w, h = size_str.split("x")
-                return int(w), int(h)
+        # 检测屏幕方向
+        # rotation: 0=portrait, 1=landscape (90°), 2=reverse portrait, 3=landscape (270°)
+        try:
+            rotation_result = subprocess.run(
+                adb_prefix + ["shell", "dumpsys", "display", "|", "grep", "mCurrentOrientation"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            
+            # Try alternative method if first fails
+            if "mCurrentOrientation" not in rotation_result.stdout:
+                rotation_result = subprocess.run(
+                    adb_prefix + ["shell", "dumpsys display | grep mCurrentOrientation"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            
+            # Parse rotation value
+            rotation = 0
+            if "mCurrentOrientation=" in rotation_result.stdout:
+                import re
+                match = re.search(r'mCurrentOrientation=(\d)', rotation_result.stdout)
+                if match:
+                    rotation = int(match.group(1))
+            
+            # In landscape mode (rotation 1 or 3), swap width and height
+            # wm size always returns portrait dimensions (smaller x larger)
+            # but for tap coordinates, we need the current orientation's dimensions
+            if rotation in (1, 3):  # Landscape
+                # Ensure width > height for landscape
+                if width < height:
+                    width, height = height, width
+                    print(f"[横屏模式] 检测到横屏方向 (rotation={rotation})，交换宽高: {width}x{height}")
+            else:  # Portrait (rotation 0 or 2)
+                # Ensure height > width for portrait
+                if width > height:
+                    width, height = height, width
+                    
+        except Exception as e:
+            print(f"检测屏幕方向失败，使用默认方向: {e}")
         
-        # 默认尺寸
-        return 1080, 2400
+        return width, height
         
     except Exception as e:
         print(f"获取屏幕尺寸失败: {e}")

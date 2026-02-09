@@ -36,7 +36,7 @@ def get_system_prompt(lang: str = "cn") -> str:
     """
     # 尝试从 rules_manager 获取自定义提示词
     try:
-        from gui_app.rules_manager import get_rules_manager
+        from web_app.models.rules_manager import get_rules_manager
         rm = get_rules_manager()
 
         if lang == "en":

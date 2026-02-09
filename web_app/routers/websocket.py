@@ -145,10 +145,16 @@ def on_task_tokens(task_id: str, input_tokens: int, output_tokens: int, total_to
     if _main_loop is None:
         return
     try:
+        # Get session_id from task_service's chat context
+        session_id = None
+        if task_service._chat_context:
+            session_id = task_service._chat_context.session_id
+        
         _main_loop.call_soon_threadsafe(
             lambda: asyncio.create_task(manager.broadcast({
                 "type": "task_tokens",
                 "task_id": task_id,
+                "session_id": session_id,  # Include session_id for correct routing
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": total_tokens,
@@ -277,6 +283,33 @@ async def broadcast_task_finished(task_id: str, success: bool, message: str, scr
         "message": message,
         # 不再发送 base64 截图
     })
+
+
+def broadcast_system_alert(level: str, title: str, message: str, auto_dismiss: int = 0):
+    """
+    Broadcast system alert to all connected clients (thread-safe).
+    
+    Args:
+        level: Alert level - 'info', 'warning', 'error', 'success'
+        title: Short title for the alert
+        message: Detailed message
+        auto_dismiss: Auto dismiss after N seconds (0 = manual dismiss only)
+    """
+    global _main_loop
+    if _main_loop is None:
+        return
+    try:
+        _main_loop.call_soon_threadsafe(
+            lambda: asyncio.create_task(manager.broadcast({
+                "type": "system_alert",
+                "level": level,
+                "title": title,
+                "message": message,
+                "auto_dismiss": auto_dismiss,
+            }))
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast system alert: {e}")
 
 
 async def request_tap_preview(x: int, y: int, width: int, height: int, screenshot_b64: str, timeout: float = 30.0) -> tuple[bool, int, int]:

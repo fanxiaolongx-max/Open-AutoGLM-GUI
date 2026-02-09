@@ -54,7 +54,7 @@ class RuleEngine:
         """懒加载规则管理器"""
         if self._rules_manager is None:
             try:
-                from gui_app.rules_manager import get_rules_manager
+                from web_app.models.rules_manager import get_rules_manager
                 self._rules_manager = get_rules_manager()
             except ImportError:
                 logger.warning("无法加载规则管理器，使用默认规则")
