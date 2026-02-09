@@ -104,6 +104,34 @@ async def update_session_status(
     return {"success": True}
 
 
+class UpdateSessionRequest(BaseModel):
+    title: Optional[str] = None
+    status: Optional[str] = None
+
+
+@router.patch("/sessions/{session_id}")
+async def update_session(
+    session_id: str,
+    request: UpdateSessionRequest,
+    _: bool = Depends(verify_token)
+):
+    """Update session fields (title, status)."""
+    updates = {}
+    if request.title is not None:
+        updates['title'] = request.title
+    if request.status is not None:
+        updates['status'] = request.status
+    
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    from web_app.services.chat_storage import chat_storage
+    success = chat_storage.update_session(session_id, **updates)
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"success": True}
+
+
 # ========== Message Endpoints ==========
 
 @router.get("/sessions/{session_id}/messages")

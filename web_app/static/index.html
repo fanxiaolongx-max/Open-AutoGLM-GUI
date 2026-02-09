@@ -3854,7 +3854,13 @@
                             if (!session.title || session.title === '新会话') {
                                 const firstUserMsg = chatMessages.value.find(m => m.role === 'user');
                                 if (firstUserMsg) {
-                                    session.title = firstUserMsg.content.substring(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '');
+                                    const newTitle = firstUserMsg.content.substring(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '');
+                                    session.title = newTitle;
+                                    // Sync title to server
+                                    apiCall(`/api/chat/sessions/${session.id}`, {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({ title: newTitle })
+                                    }).catch(err => console.warn('Failed to sync session title:', err));
                                 }
                             }
                             saveSessions();
