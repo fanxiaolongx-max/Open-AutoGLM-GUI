@@ -36,7 +36,7 @@ class TelegramBotService:
         self._pending_tasks: Dict[str, str] = {}  # user_id -> task_content
         self._selected_devices: Dict[str, set] = {}  # user_id -> set of device_ids
         self._pending_action: dict[int, str] = {}  # chat_id -> pending_action
-        self._task_options: dict[int, dict] = {}  # chat_id -> {complex_task: bool, send_email: bool}
+        self._task_options: dict[int, dict] = {}  # chat_id -> {complex_task: bool, send_email: bool, parallel: bool}
         
         # Track messages for real-time updates
         self._progress_messages: dict[int, int] = {}  # chat_id -> message_id
@@ -1410,9 +1410,9 @@ class TelegramBotService:
                     await query.answer("❌ 请至少选择一个设备", show_alert=True)
                     return
                 
-                # Initialize task options if not exists (both default to False)
+                # Initialize task options if not exists (all default to False)
                 if chat_id not in self._task_options:
-                    self._task_options[chat_id] = {"complex_task": False, "send_email": False}
+                    self._task_options[chat_id] = {"complex_task": False, "send_email": False, "parallel": False}
                 
                 await self._show_task_options(query, chat_id)
                 return
@@ -1420,15 +1420,22 @@ class TelegramBotService:
             # Handle task option toggles
             elif callback_data == "toggle_complex_task":
                 if chat_id not in self._task_options:
-                    self._task_options[chat_id] = {"complex_task": False, "send_email": False}
+                    self._task_options[chat_id] = {"complex_task": False, "send_email": False, "parallel": False}
                 self._task_options[chat_id]["complex_task"] = not self._task_options[chat_id]["complex_task"]
                 await self._show_task_options(query, chat_id)
                 return
-            
+
             elif callback_data == "toggle_send_email":
                 if chat_id not in self._task_options:
-                    self._task_options[chat_id] = {"complex_task": False, "send_email": False}
+                    self._task_options[chat_id] = {"complex_task": False, "send_email": False, "parallel": False}
                 self._task_options[chat_id]["send_email"] = not self._task_options[chat_id]["send_email"]
+                await self._show_task_options(query, chat_id)
+                return
+
+            elif callback_data == "toggle_parallel":
+                if chat_id not in self._task_options:
+                    self._task_options[chat_id] = {"complex_task": False, "send_email": False, "parallel": False}
+                self._task_options[chat_id]["parallel"] = not self._task_options[chat_id]["parallel"]
                 await self._show_task_options(query, chat_id)
                 return
             
@@ -1436,7 +1443,7 @@ class TelegramBotService:
                 # Proceed to actual task execution with selected options
                 task_content = self._pending_tasks.get(chat_id)
                 selected_devices = self._selected_devices.get(chat_id, set())
-                task_options = self._task_options.get(chat_id, {"complex_task": False, "send_email": False})
+                task_options = self._task_options.get(chat_id, {"complex_task": False, "send_email": False, "parallel": False})
                 
                 if not task_content:
                     await query.edit_message_text("❌ 任务已过期，请重新提交")
@@ -1487,10 +1494,11 @@ class TelegramBotService:
                     )
                     
                 # === BOT TASK HISTORY: Create chat session ===
-                # Use bot_ prefix to distinguish from Web tasks  
+                # Use bot_ prefix to distinguish from Web tasks
                 user_id = update.effective_user.id if update and update.effective_user else "unknown"
-                bot_device_id = f"bot_{user_id}_{list(selected_devices)[0] if selected_devices else 'unknown'}"
-                
+                first_device_id = list(selected_devices)[0] if selected_devices else 'unknown'
+                bot_device_id = f"bot_{user_id}_{first_device_id}"
+
                 # Create session for this Bot task
                 session = chat_service.create_session(
                     device_id=bot_device_id,
@@ -1629,14 +1637,28 @@ class TelegramBotService:
                 
                 try:
                     # Execute task and get result directly from return value
-                    task_result = await task_service.run_task(
-                        task_content=task_content,
-                        device_ids=list(selected_devices),
-                        send_email=task_options["send_email"],
-                        no_auto_lock=task_options["complex_task"],  # Use no_auto_lock for complex task mode
-                        task_type="chat",  # Use 'chat' type so logs are auto-saved to DB
-                        session_id=session_id  # Pass session ID, let task_service create assistant message
-                    )
+                    # Use parallel mode if enabled and multiple devices selected
+                    use_parallel = task_options.get("parallel", False) and len(selected_devices) > 1
+
+                    if use_parallel:
+                        logger.info(f"[PARALLEL MODE] Running task on {len(selected_devices)} devices in parallel")
+                        task_result = await task_service.run_task_parallel(
+                            task_content=task_content,
+                            device_ids=list(selected_devices),
+                            send_email=task_options["send_email"],
+                            no_auto_lock=task_options["complex_task"],
+                            task_type="chat",
+                            session_id=session_id
+                        )
+                    else:
+                        task_result = await task_service.run_task(
+                            task_content=task_content,
+                            device_ids=list(selected_devices),
+                            send_email=task_options["send_email"],
+                            no_auto_lock=task_options["complex_task"],
+                            task_type="chat",
+                            session_id=session_id
+                        )
                     
                     logger.info(f"Task execution completed - task_result exists: {task_result is not None}, status: {task_result.status if task_result else 'None'}")
                     
@@ -3033,16 +3055,18 @@ class TelegramBotService:
     # === DEVICE UNLOCK CONFIG ===
     async def _show_task_options(self, query, chat_id: str):
         """Show task execution options configuration page."""
-        task_options = self._task_options.get(chat_id, {"complex_task": False, "send_email": False})
+        task_options = self._task_options.get(chat_id, {"complex_task": False, "send_email": False, "parallel": False})
         task_content = self._pending_tasks.get(chat_id, "未知任务")
         selected_devices = self._selected_devices.get(chat_id, set())
-        
+
         # Build toggle buttons with checkboxes
         keep_unlocked_icon = "☑️" if task_options["complex_task"] else "☐"
         email_icon = "☑️" if task_options["send_email"] else "☐"
-        
+        parallel_icon = "☑️" if task_options.get("parallel", False) else "☐"
+
         task_escaped = self._escape_markdown(task_content[:100])
-        
+
+        # Build text with optional parallel section
         text = f"""
 ⚙️ **任务选项配置**
 
@@ -3060,17 +3084,31 @@ class TelegramBotService:
 ├ 任务完成后发送邮件通知
 ├ 需先配置邮件设置
 └ 包含任务结果和截图
-
-💡 点击按钮切换开关状态
 """
-        
+
+        # Add parallel option only if multiple devices selected
+        if len(selected_devices) > 1:
+            text += f"""
+{parallel_icon} **并行执行**
+├ 多设备同时执行任务
+├ 大幅缩短总执行时间
+└ 每个设备独立运行
+"""
+
+        text += "\n💡 点击按钮切换开关状态\n"
+
         keyboard = [
             [InlineKeyboardButton(f"{keep_unlocked_icon} 保持解锁", callback_data="toggle_complex_task")],
             [InlineKeyboardButton(f"{email_icon} 邮件通知", callback_data="toggle_send_email")],
-            [InlineKeyboardButton("✅ 确认并执行", callback_data="confirm_task_options")],
-            [InlineKeyboardButton("🏠 主菜单", callback_data="main_menu")]
         ]
-        
+
+        # Add parallel button only if multiple devices selected
+        if len(selected_devices) > 1:
+            keyboard.append([InlineKeyboardButton(f"{parallel_icon} 并行执行", callback_data="toggle_parallel")])
+
+        keyboard.append([InlineKeyboardButton("✅ 确认并执行", callback_data="confirm_task_options")])
+        keyboard.append([InlineKeyboardButton("🏠 主菜单", callback_data="main_menu")])
+
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     

@@ -92,6 +92,8 @@ class TaskExecution:
     send_email: bool = True  # Whether to send email after completion
     task_type: str = TaskType.MANUAL.value  # 任务类型
     initial_lock_state: Optional[bool] = None  # Initial lock state detected (for subtask chains)
+    chat_session_id: Optional[str] = None  # Chat session ID for this task
+    chat_message_id: Optional[str] = None  # Chat message ID for this task
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -110,7 +112,8 @@ class TaskService:
     """Service for executing automation tasks."""
 
     def __init__(self):
-        self._current_task: Optional[TaskExecution] = None
+        self._current_task: Optional[TaskExecution] = None  # For backward compatibility
+        self._running_tasks: dict[str, TaskExecution] = {}  # task_id -> TaskExecution for parallel support
         self._task_history: list[TaskExecution] = []
         self._stop_requested = False
         self._log_callbacks: list[Callable[[str, str], None]] = []
@@ -169,14 +172,18 @@ class TaskService:
     def _emit_log(self, task_id: str, message: str):
         """Emit a log message to all callbacks and store in current task."""
         # Store log in current task for email report
+        # Use _running_tasks dict to support parallel execution
+        task = self._running_tasks.get(task_id) or (self._current_task if self._current_task and self._current_task.id == task_id else None)
         task_type = None
-        if self._current_task and self._current_task.id == task_id:
+
+        if task:
             timestamp = datetime.now().strftime("%H:%M:%S")
-            self._current_task.logs.append(f"[{timestamp}] {message}")
-            task_type = self._current_task.task_type
+            task.logs.append(f"[{timestamp}] {message}")
+            task_type = task.task_type
 
             # For chat tasks, also save to SQLite
-            if task_type == TaskType.CHAT.value and self._chat_context.session_id and self._chat_context.message_id:
+            # Use task's own session/message IDs (not shared _chat_context) to avoid parallel mode issues
+            if task_type == TaskType.CHAT.value and task.chat_session_id and task.chat_message_id:
                 try:
                     from web_app.services.chat_service import chat_service
                     # Determine log type based on content
@@ -188,8 +195,8 @@ class TaskService:
                     elif "🎯" in message or "✅" in message or "点击" in message or "输入" in message:
                         log_type = "action"
                     chat_service.add_log(
-                        self._chat_context.session_id,
-                        self._chat_context.message_id,
+                        task.chat_session_id,
+                        task.chat_message_id,
                         message,
                         log_type
                     )
@@ -341,8 +348,11 @@ class TaskService:
             is_scheduled=is_scheduled,
             send_email=send_email,
             task_type=task_type,
+            chat_session_id=chat_session_id,
+            chat_message_id=chat_message_id,
         )
         self._current_task = task
+        self._running_tasks[task.id] = task  # Register for parallel execution support
 
         # Detect initial lock state immediately (before execution loop) so frontend can access it
         # This is crucial for sequential subtask chains to share the original lock state
@@ -368,14 +378,24 @@ class TaskService:
                 self._emit_log(task.id, "Task stopped by user")
                 break
 
-
-            # Message already created in initialization (lines 302-310)
-            # Just update model name for the existing message
-            if task_type == TaskType.CHAT.value and self._chat_context.message_id:
+            # For multi-device tasks, create a new message for each device (except the first one)
+            if task_type == TaskType.CHAT.value and task.chat_session_id:
                 try:
                     from web_app.services.chat_service import chat_service
                     from web_app.services.model_service import model_service
-                    
+
+                    device_short_id = device_id[:12] if len(device_id) > 12 else device_id
+
+                    # For multi-device: create new message for each device after the first
+                    if len(device_ids) > 1 and device_id != device_ids[0]:
+                        assistant_message = chat_service.add_message(
+                            task.chat_session_id,
+                            "assistant",
+                            f"📱 设备 {device_short_id}... 执行中"
+                        )
+                        task.chat_message_id = assistant_message["id"]
+                        logger.info(f"Created device message {task.chat_message_id} for device {device_short_id}")
+
                     # Get model name and update the existing message
                     model_name = 'Unknown'
                     try:
@@ -386,12 +406,12 @@ class TaskService:
                     
                     # Update existing message with model name
                     chat_service.update_message(
-                        message_id=self._chat_context.message_id,
+                        message_id=task.chat_message_id,
                         model_name=model_name
                     )
-                    
+
                     device_short_id = device_id[:12] if len(device_id) > 12 else device_id
-                    logger.info(f"Using message {self._chat_context.message_id} for device {device_short_id} with model {model_name}")
+                    logger.info(f"Using message {task.chat_message_id} for device {device_short_id} with model {model_name}")
                 except Exception as e:
                     logger.error(f"Failed to update message model name: {e}")
             self._emit_log(task.id, f"Running on device: {device_id}")
@@ -583,21 +603,21 @@ class TaskService:
             # === OPTIMIZATION: Send device completion BEFORE lock restoration ===
             # This avoids redundant unlock -> lock -> unlock cycles
             # Device is already unlocked here, so screenshot can be taken directly
-            if task_type == TaskType.CHAT.value and self._chat_context.message_id:
+            if task_type == TaskType.CHAT.value and task.chat_message_id:
                 try:
                     from web_app.services.telegram_bot import telegram_bot_service
                     # Get chat_id from bot's tracking
                     telegram_chat_id = None
                     for cid, sid in telegram_bot_service._current_chat_tasks.items():
-                        if sid == self._chat_context.session_id:
+                        if sid == task.chat_session_id:
                             telegram_chat_id = cid
                             break
-                    
+
                     if telegram_chat_id:
                         # Telegram scenario: use telegram_bot_service
                         # Get all logs for this task
                         all_logs = task.logs if hasattr(task, 'logs') and task.logs else []
-                        
+
                         # CRITICAL: await (not create_task) to ensure screenshot completes BEFORE lock
                         # create_task is non-blocking → device locks → black screenshot
                         # Convert status to correct string value for bot
@@ -605,20 +625,20 @@ class TaskService:
                         await telegram_bot_service.send_device_completion(
                             chat_id=telegram_chat_id,
                             device_id=device_id,
-                            session_id=self._chat_context.session_id,
-                            message_id=self._chat_context.message_id,
+                            session_id=task.chat_session_id,
+                            message_id=task.chat_message_id,
                             status=status_value,
                             logs=all_logs,
                             skip_unlock=True  # Device is already unlocked
                         )
-                        
+
                         # Collect screenshot for email report from telegram service
                         if hasattr(telegram_bot_service, '_device_screenshots') and device_id in telegram_bot_service._device_screenshots:
                             if not hasattr(task, '_device_screenshots'):
                                 task._device_screenshots = {}
                             task._device_screenshots[device_id] = telegram_bot_service._device_screenshots[device_id]
                             logger.info(f"Collected screenshot from {device_id} for email report")
-                        
+
                         logger.info(f"Completed Telegram device report for {device_id} (before lock restoration)")
                     else:
                         # Web chat scenario: save screenshot directly to chat_storage
@@ -629,27 +649,27 @@ class TaskService:
                                 from web_app.services.chat_storage import chat_storage
                                 # Save to database
                                 screenshot = chat_storage.add_screenshot(
-                                    session_id=self._chat_context.session_id,
-                                    message_id=self._chat_context.message_id,
+                                    session_id=task.chat_session_id,
+                                    message_id=task.chat_message_id,
                                     image_data=screenshot_data,
                                     description="Task completion screenshot"
                                 )
-                                logger.info(f"Saved web chat screenshot {screenshot.id} for session {self._chat_context.session_id}")
-                                
+                                logger.info(f"Saved web chat screenshot {screenshot.id} for session {task.chat_session_id}")
+
                                 # Store screenshot_id for frontend to access
                                 if not hasattr(task, '_screenshot_id'):
                                     task._screenshot_id = screenshot.id
-                                
+
                                 # Collect screenshot for email report
                                 # Store in _device_screenshots dict for multi-device email support
                                 if not hasattr(task, '_device_screenshots'):
                                     task._device_screenshots = {}
                                 task._device_screenshots[device_id] = screenshot_data
-                                
+
                                 # Also keep _screenshot_data for backward compatibility (single device)
                                 if not hasattr(task, '_screenshot_data'):
                                     task._screenshot_data = screenshot_data
-                                
+
                                 logger.info(f"Completed web chat device report for {device_id} (before lock restoration)")
                             else:
                                 logger.warning(f"Failed to get screenshot for web chat device {device_id}")
@@ -693,12 +713,12 @@ class TaskService:
                 self._emit_log(task.id, f"📱 No lock restoration needed (should_restore={should_restore_lock}, no_auto_lock={no_auto_lock})")
 
             # === MULTI-DEVICE FIX: Update device message with completion status ===
-            if task_type == TaskType.CHAT.value and self._chat_context.message_id:
+            if task_type == TaskType.CHAT.value and task.chat_message_id:
                 try:
                     from web_app.services.chat_service import chat_service
                     device_short_id = device_id[:12] if len(device_id) > 12 else device_id
                     status_emoji = "✅" if result.status == TaskStatus.COMPLETED.value else "❌"
-                    
+
                     # Extract token usage from logs
                     token_text = ""
                     for log in reversed(task.logs if hasattr(task, 'logs') else []):
@@ -710,15 +730,15 @@ class TaskService:
                                 break
                             except:
                                 pass
-                    
+
                     # Standardized completion message format
                     completion_text = f'{status_emoji} {device_short_id}: {task_content[:30]}{token_text}'
                     chat_service.update_message(
-                        message_id=self._chat_context.message_id,
+                        message_id=task.chat_message_id,
                         content=completion_text,
                         status='completed' if result.status == TaskStatus.COMPLETED.value else 'failed'
                     )
-                    logger.info(f"Updated device message {self._chat_context.message_id} with status: {result.status}")
+                    logger.info(f"Updated device message {task.chat_message_id} with status: {result.status}")
                 except Exception as e:
                     logger.error(f"Failed to update device message: {e}")
 
@@ -740,31 +760,29 @@ class TaskService:
         self._task_history.append(task)
 
         # For chat tasks, update session status and add assistant response
-        if task.task_type == TaskType.CHAT.value and self._chat_context.session_id:
+        if task.task_type == TaskType.CHAT.value and task.chat_session_id:
             try:
                 from web_app.services.chat_service import chat_service
                 # Update session status
                 status = "completed" if all_success else "failed"
-                chat_service.update_session_status(self._chat_context.session_id, status)
-                
+                chat_service.update_session_status(task.chat_session_id, status)
+
                 # Update assistant message content AND status (database uses 'completed'/'failed')
                 # Frontend will map these to 'success'/'error' for display
                 from web_app.services.chat_storage import chat_storage
                 response_content = f"✅ 任务执行完成！" if all_success else f"❌ 任务执行失败"
-                
+
                 # Update the existing assistant message with BOTH content and status
-                with chat_storage._get_conn() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "UPDATE chat_messages SET content = ?, status = ? WHERE id = ?",
-                        (response_content, status, self._chat_context.message_id)
-                    )
-                logger.info(f"Updated chat session {self._chat_context.session_id} status to {status}")
+                if task.chat_message_id:
+                    with chat_storage._get_conn() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "UPDATE chat_messages SET content = ?, status = ? WHERE id = ?",
+                            (response_content, status, task.chat_message_id)
+                        )
+                logger.info(f"Updated chat session {task.chat_session_id} status to {status}")
             except Exception as e:
                 logger.error(f"Failed to update chat session: {e}")
-            finally:
-                # Clear chat context
-                self._chat_context.clear()
 
         # Emit task finished event before clearing current task
         all_success = all(r.get("success", False) for r in task.results)
@@ -780,6 +798,9 @@ class TaskService:
         )
 
         self._current_task = None
+        # Clean up from running tasks dict
+        if task.id in self._running_tasks:
+            del self._running_tasks[task.id]
 
         # Send email report after task completion
         await self._send_email_report(task)
@@ -788,11 +809,13 @@ class TaskService:
 
     async def _send_email_report(self, task: TaskExecution):
         """Send email report after task completion."""
+        # Debug log to trace email decision
+        logger.info(f"[EMAIL] Task {task.id[:8]} - send_email={task.send_email}, task_type={task.task_type}")
+
         # Check if email should be sent for this task
         if not task.send_email:
-            # Don't log "skipped" for chat tasks to avoid noise (handled separately or not needed)
-            if task.task_type != "chat":
-                self._emit_log(task.id, f"📧 Email skipped (disabled for this task)")
+            # Always log when email is skipped for debugging
+            self._emit_log(task.id, f"📧 Email skipped (disabled for this task)")
             return
 
         try:
@@ -1142,7 +1165,7 @@ class TaskService:
             )
         
         logger.info(f"Starting PARALLEL execution for {len(device_ids)} devices: {device_ids}")
-        
+
         # Create a combined task for tracking
         combined_task = TaskExecution(
             task_content=task_content,
@@ -1150,12 +1173,34 @@ class TaskService:
             status=TaskStatus.RUNNING.value,
             start_time=datetime.now().isoformat(),
             task_type=task_type,
+            is_scheduled=is_scheduled,
+            send_email=send_email,
+            chat_session_id=session_id,  # Use parent session
         )
-        
+
+        # For parallel mode, pre-create messages for each device in the shared session
+        device_message_ids = {}
+        if task_type == TaskType.CHAT.value and session_id:
+            try:
+                from web_app.services.chat_service import chat_service
+                for device_id in device_ids:
+                    device_short_id = device_id[:12] if len(device_id) > 12 else device_id
+                    assistant_message = chat_service.add_message(
+                        session_id,
+                        "assistant",
+                        f"📱 设备 {device_short_id}... 执行中"
+                    )
+                    device_message_ids[device_id] = assistant_message["id"]
+                    logger.info(f"[PARALLEL] Created message {assistant_message['id']} for device {device_short_id}")
+            except Exception as e:
+                logger.error(f"Failed to create device messages: {e}")
+
         async def run_single_device(device_id: str) -> tuple[str, TaskExecution]:
             """Run task on a single device and return (device_id, result)."""
             try:
                 logger.info(f"[PARALLEL] Starting device: {device_id}")
+                # Get pre-created message_id for this device
+                device_message_id = device_message_ids.get(device_id)
                 result = await self.run_task(
                     task_content=task_content,
                     device_ids=[device_id],  # Single device
@@ -1165,7 +1210,8 @@ class TaskService:
                     no_auto_lock=no_auto_lock,
                     restore_lock_to_state=restore_lock_to_state,
                     task_type=task_type,
-                    session_id=None,  # Each device gets its own session
+                    session_id=session_id,  # Use shared session
+                    message_id=device_message_id,  # Use pre-created message
                     debug_mode=debug_mode,
                 )
                 logger.info(f"[PARALLEL] Completed device: {device_id}, status: {result.status}")
@@ -1187,41 +1233,53 @@ class TaskService:
         # Run all devices in parallel
         tasks = [run_single_device(device_id) for device_id in device_ids]
         results = await asyncio.gather(*tasks)
-        
+
         # Aggregate results
         all_success = True
         combined_logs = []
         combined_results = []
-        
+        combined_screenshots = {}  # Collect screenshots from all devices
+
         for device_id, result in results:
             device_short = device_id[:12] if len(device_id) > 12 else device_id
             combined_logs.append(f"=== Device: {device_short} ===")
             combined_logs.extend(result.logs)
-            
+
             if result.status != TaskStatus.COMPLETED.value:
                 all_success = False
-            
+
             combined_results.append({
                 "device_id": device_id,
                 "status": result.status,
+                "success": result.status == TaskStatus.COMPLETED.value,
                 "message": result.results[0].get("message", "") if result.results else "",
             })
-        
+
+            # Collect screenshots from each device's task
+            device_screenshots = getattr(result, '_device_screenshots', None)
+            if device_screenshots and isinstance(device_screenshots, dict):
+                combined_screenshots.update(device_screenshots)
+                logger.info(f"[PARALLEL] Collected {len(device_screenshots)} screenshot(s) from device {device_short}")
+
         # Update combined task
         combined_task.status = TaskStatus.COMPLETED.value if all_success else TaskStatus.FAILED.value
         combined_task.end_time = datetime.now().isoformat()
         combined_task.logs = combined_logs
         combined_task.results = combined_results
         combined_task.progress = 100
+
+        # Attach combined screenshots for email report
+        if combined_screenshots:
+            combined_task._device_screenshots = combined_screenshots
+            # Also set _screenshot_data for backward compatibility (use first screenshot)
+            first_screenshot = next(iter(combined_screenshots.values()), None)
+            if first_screenshot:
+                combined_task._screenshot_data = first_screenshot
+            logger.info(f"[PARALLEL] Total {len(combined_screenshots)} screenshot(s) collected for email")
         
         # Send combined email if requested
-        if send_email and not is_scheduled:
-            try:
-                self._emit_log(combined_task.id, "Sending combined email report...")
-                # Email logic can be added here if needed
-            except Exception as e:
-                logger.error(f"Failed to send combined email: {e}")
-        
+        await self._send_email_report(combined_task)
+
         success_count = sum(1 for _, r in results if r.status == TaskStatus.COMPLETED.value)
         logger.info(f"[PARALLEL] All devices completed: {success_count}/{len(device_ids)} succeeded")
         
