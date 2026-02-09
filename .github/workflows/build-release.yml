@@ -7,12 +7,12 @@ on:
   workflow_dispatch:  # 支持手动触发
 
 env:
-  APP_NAME: Open-AutoGLM-GUI
+  APP_NAME: Open-AutoGLM
   PYTHON_VERSION: '3.11'
 
 jobs:
   # ============================================
-  # macOS 构建 (GUI + CLI) - Apple Silicon
+  # macOS 构建 (Web Server Only) - Apple Silicon
   # ============================================
   build-macos-arm:
     runs-on: macos-14  # M1 runner
@@ -31,38 +31,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build GUI App
-        run: |
-          pyinstaller --onedir --windowed \
-            --name "${{ env.APP_NAME }}" \
-            --add-data "phone_agent:phone_agent" \
-            --add-data "gui_app:gui_app" \
-            --add-data "main.py:." \
-            --add-data "load_fonts.py:." \
-            --hidden-import PySide6 \
-            --hidden-import PySide6.QtCore \
-            --hidden-import PySide6.QtGui \
-            --hidden-import PySide6.QtWidgets \
-            --hidden-import PySide6.QtNetwork \
-            --hidden-import openai \
-            --hidden-import anthropic \
-            --hidden-import google.generativeai \
-            --hidden-import qrcode \
-            --hidden-import zeroconf \
-            --hidden-import requests \
-            --hidden-import fastapi \
-            --hidden-import uvicorn \
-            --hidden-import websockets \
-            --collect-all PySide6 \
-            run_gui.py
-
       - name: Build Web Server
         run: |
           pyinstaller --onefile \
             --name "${{ env.APP_NAME }}-web" \
             --add-data "phone_agent:phone_agent" \
             --add-data "web_app:web_app" \
-            --add-data "gui_app:gui_app" \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
@@ -90,8 +64,6 @@ jobs:
             --hidden-import uvicorn.lifespan \
             --hidden-import uvicorn.lifespan.on \
             --hidden-import websockets \
-            --hidden-import PySide6 \
-            --hidden-import PySide6.QtCore \
             --hidden-import pydantic \
             --hidden-import qrcode \
             --hidden-import zeroconf \
@@ -117,23 +89,18 @@ jobs:
             --hidden-import base64 \
             --hidden-import json \
             --hidden-import logging \
+            --hidden-import httpx \
+            --hidden-import telegram \
+            --hidden-import apscheduler \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
-            --collect-submodules PySide6 \
             --collect-submodules pydantic \
             --collect-submodules email \
+            --collect-submodules httpx \
+            --collect-submodules telegram \
+            --collect-submodules apscheduler \
             run_web.py
-
-      - name: Create DMG for GUI
-        run: |
-          mkdir -p dmg_contents
-          cp -r "dist/${{ env.APP_NAME }}.app" dmg_contents/
-          ln -s /Applications dmg_contents/Applications
-          hdiutil create -volname "${{ env.APP_NAME }}" \
-            -srcfolder dmg_contents \
-            -ov -format UDZO \
-            "dist/${{ env.APP_NAME }}-macOS-ARM64-GUI.dmg"
 
       - name: Package Web Server
         run: |
@@ -144,15 +111,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-arm-builds
-          path: |
-            dist/*.dmg
-            dist/*.zip
+          path: dist/*.zip
 
   # ============================================
-  # macOS 构建 (GUI + CLI) - Intel
+  # macOS 构建 (Web Server Only) - Intel
   # ============================================
   build-macos:
-    runs-on: macos-15-intel  # Intel runner
+    runs-on: macos-13  # Intel runner
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -168,39 +133,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # 构建 GUI 版本
-      - name: Build GUI App
-        run: |
-          pyinstaller --onedir --windowed \
-            --name "${{ env.APP_NAME }}" \
-            --add-data "phone_agent:phone_agent" \
-            --add-data "gui_app:gui_app" \
-            --add-data "main.py:." \
-            --add-data "load_fonts.py:." \
-            --hidden-import PySide6 \
-            --hidden-import PySide6.QtCore \
-            --hidden-import PySide6.QtGui \
-            --hidden-import PySide6.QtWidgets \
-            --hidden-import PySide6.QtNetwork \
-            --hidden-import openai \
-            --hidden-import anthropic \
-            --hidden-import google.generativeai \
-            --hidden-import qrcode \
-            --hidden-import zeroconf \
-            --hidden-import requests \
-            --hidden-import fastapi \
-            --hidden-import uvicorn \
-            --hidden-import websockets \
-            --collect-all PySide6 \
-            run_gui.py
-
       - name: Build Web Server
         run: |
           pyinstaller --onefile \
             --name "${{ env.APP_NAME }}-web" \
             --add-data "phone_agent:phone_agent" \
             --add-data "web_app:web_app" \
-            --add-data "gui_app:gui_app" \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
@@ -228,8 +166,6 @@ jobs:
             --hidden-import uvicorn.lifespan \
             --hidden-import uvicorn.lifespan.on \
             --hidden-import websockets \
-            --hidden-import PySide6 \
-            --hidden-import PySide6.QtCore \
             --hidden-import pydantic \
             --hidden-import qrcode \
             --hidden-import zeroconf \
@@ -255,23 +191,18 @@ jobs:
             --hidden-import base64 \
             --hidden-import json \
             --hidden-import logging \
+            --hidden-import httpx \
+            --hidden-import telegram \
+            --hidden-import apscheduler \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
-            --collect-submodules PySide6 \
             --collect-submodules pydantic \
             --collect-submodules email \
+            --collect-submodules httpx \
+            --collect-submodules telegram \
+            --collect-submodules apscheduler \
             run_web.py
-
-      - name: Create DMG for GUI
-        run: |
-          mkdir -p dmg_contents
-          cp -r "dist/${{ env.APP_NAME }}.app" dmg_contents/
-          ln -s /Applications dmg_contents/Applications
-          hdiutil create -volname "${{ env.APP_NAME }}" \
-            -srcfolder dmg_contents \
-            -ov -format UDZO \
-            "dist/${{ env.APP_NAME }}-macOS-Intel-GUI.dmg"
 
       - name: Package Web Server
         run: |
@@ -282,12 +213,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-intel-builds
-          path: |
-            dist/*.dmg
-            dist/*.zip
+          path: dist/*.zip
 
   # ============================================
-  # Windows 构建 (GUI + CLI)
+  # Windows 构建 (Web Server Only)
   # ============================================
   build-windows:
     runs-on: windows-latest
@@ -306,39 +235,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # 构建 GUI 版本
-      - name: Build GUI App
-        run: |
-          pyinstaller --onedir --windowed `
-            --name "${{ env.APP_NAME }}" `
-            --add-data "phone_agent;phone_agent" `
-            --add-data "gui_app;gui_app" `
-            --add-data "main.py;." `
-            --add-data "load_fonts.py;." `
-            --hidden-import PySide6 `
-            --hidden-import PySide6.QtCore `
-            --hidden-import PySide6.QtGui `
-            --hidden-import PySide6.QtWidgets `
-            --hidden-import PySide6.QtNetwork `
-            --hidden-import openai `
-            --hidden-import anthropic `
-            --hidden-import google.generativeai `
-            --hidden-import qrcode `
-            --hidden-import zeroconf `
-            --hidden-import requests `
-            --hidden-import fastapi `
-            --hidden-import uvicorn `
-            --hidden-import websockets `
-            --collect-all PySide6 `
-            run_gui.py
-
       - name: Build Web Server
         run: |
           pyinstaller --onefile `
             --name "${{ env.APP_NAME }}-web" `
             --add-data "phone_agent;phone_agent" `
             --add-data "web_app;web_app" `
-            --add-data "gui_app;gui_app" `
             --hidden-import openai `
             --hidden-import anthropic `
             --hidden-import google.generativeai `
@@ -366,8 +268,6 @@ jobs:
             --hidden-import uvicorn.lifespan `
             --hidden-import uvicorn.lifespan.on `
             --hidden-import websockets `
-            --hidden-import PySide6 `
-            --hidden-import PySide6.QtCore `
             --hidden-import pydantic `
             --hidden-import qrcode `
             --hidden-import zeroconf `
@@ -393,17 +293,21 @@ jobs:
             --hidden-import base64 `
             --hidden-import json `
             --hidden-import logging `
+            --hidden-import httpx `
+            --hidden-import telegram `
+            --hidden-import apscheduler `
             --collect-submodules fastapi `
             --collect-submodules starlette `
             --collect-submodules uvicorn `
-            --collect-submodules PySide6 `
             --collect-submodules pydantic `
             --collect-submodules email `
+            --collect-submodules httpx `
+            --collect-submodules telegram `
+            --collect-submodules apscheduler `
             run_web.py
 
-      - name: Create ZIP archives
+      - name: Create ZIP archive
         run: |
-          Compress-Archive -Path "dist\${{ env.APP_NAME }}" -DestinationPath "dist\${{ env.APP_NAME }}-Windows-GUI.zip"
           Compress-Archive -Path "dist\${{ env.APP_NAME }}-web.exe" -DestinationPath "dist\${{ env.APP_NAME }}-Windows-Web.zip"
 
       - name: Upload Windows artifacts
@@ -413,7 +317,7 @@ jobs:
           path: dist/*.zip
 
   # ============================================
-  # Linux 构建 (GUI + CLI)
+  # Linux 构建 (Web Server Only)
   # ============================================
   build-linux:
     runs-on: ubuntu-22.04
@@ -429,14 +333,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libegl1 \
-            libxkbcommon0 \
-            libxcb-cursor0 \
-            libxcb-icccm4 \
-            libxcb-keysyms1 \
-            libxcb-shape0 \
-            ruby ruby-dev rubygems build-essential
+          sudo apt-get install -y ruby ruby-dev rubygems build-essential
 
       - name: Install fpm for packaging
         run: sudo gem install fpm
@@ -447,37 +344,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # 构建 GUI 版本
-      - name: Build GUI App
-        run: |
-          pyinstaller --onedir \
-            --name "${{ env.APP_NAME }}" \
-            --add-data "phone_agent:phone_agent" \
-            --add-data "gui_app:gui_app" \
-            --add-data "main.py:." \
-            --add-data "load_fonts.py:." \
-            --hidden-import PySide6 \
-            --hidden-import PySide6.QtCore \
-            --hidden-import PySide6.QtGui \
-            --hidden-import PySide6.QtWidgets \
-            --hidden-import openai \
-            --hidden-import anthropic \
-            --hidden-import google.generativeai \
-            --hidden-import qrcode \
-            --hidden-import zeroconf \
-            --hidden-import requests \
-            --hidden-import fastapi \
-            --hidden-import uvicorn \
-            --hidden-import websockets \
-            run_gui.py
-
       - name: Build Web Server
         run: |
           pyinstaller --onefile \
             --name "${{ env.APP_NAME }}-web" \
             --add-data "phone_agent:phone_agent" \
             --add-data "web_app:web_app" \
-            --add-data "gui_app:gui_app" \
             --hidden-import openai \
             --hidden-import anthropic \
             --hidden-import google.generativeai \
@@ -505,8 +377,6 @@ jobs:
             --hidden-import uvicorn.lifespan \
             --hidden-import uvicorn.lifespan.on \
             --hidden-import websockets \
-            --hidden-import PySide6 \
-            --hidden-import PySide6.QtCore \
             --hidden-import pydantic \
             --hidden-import qrcode \
             --hidden-import zeroconf \
@@ -532,12 +402,17 @@ jobs:
             --hidden-import base64 \
             --hidden-import json \
             --hidden-import logging \
+            --hidden-import httpx \
+            --hidden-import telegram \
+            --hidden-import apscheduler \
             --collect-submodules fastapi \
             --collect-submodules starlette \
             --collect-submodules uvicorn \
-            --collect-submodules PySide6 \
             --collect-submodules pydantic \
             --collect-submodules email \
+            --collect-submodules httpx \
+            --collect-submodules telegram \
+            --collect-submodules apscheduler \
             run_web.py
 
       - name: Get version
@@ -549,21 +424,8 @@ jobs:
             echo "VERSION=0.0.0-dev" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create DEB packages
+      - name: Create DEB package
         run: |
-          # GUI DEB
-          fpm -s dir -t deb \
-            -n "open-autoglm-gui" \
-            -v "${{ steps.version.outputs.VERSION }}" \
-            --description "AI-powered phone automation GUI" \
-            --maintainer "Zhipu AI" \
-            --url "https://github.com/OpenGLM/Open-AutoGLM-GUI" \
-            --prefix /opt/${{ env.APP_NAME }} \
-            --after-install .github/scripts/post-install.sh \
-            dist/${{ env.APP_NAME }}/=${{ env.APP_NAME }}
-          mv open-autoglm-gui*.deb "dist/${{ env.APP_NAME }}-Linux-GUI.deb"
-
-          # Web DEB
           mkdir -p web-pkg/usr/local/bin
           cp dist/${{ env.APP_NAME }}-web web-pkg/usr/local/bin/open-autoglm-web
           fpm -s dir -t deb \
@@ -574,10 +436,9 @@ jobs:
             -C web-pkg .
           mv open-autoglm-web*.deb "dist/${{ env.APP_NAME }}-Linux-Web.deb"
 
-      - name: Create tarballs
+      - name: Create tarball
         run: |
           cd dist
-          tar -czvf "${{ env.APP_NAME }}-Linux-GUI.tar.gz" "${{ env.APP_NAME }}"
           tar -czvf "${{ env.APP_NAME }}-Linux-Web.tar.gz" "${{ env.APP_NAME }}-web"
 
       - name: Upload Linux artifacts
@@ -612,24 +473,27 @@ jobs:
           body: |
             ## Download Options
 
-            ### GUI 桌面版 (Desktop App)
-            双击运行，提供完整图形界面
-            - **macOS (Apple Silicon M1/M2/M3)**: `*-macOS-ARM64-GUI.dmg`
-            - **macOS (Intel)**: `*-macOS-Intel-GUI.dmg`
-            - **Windows**: `*-Windows-GUI.zip`
-            - **Linux**: `*-Linux-GUI.deb` 或 `*-Linux-GUI.tar.gz`
-
             ### Web 版本 (Web Server)
-            启动 Web 服务，支持浏览器访问
-            - **macOS (Apple Silicon)**: `*-macOS-ARM64-Web.zip`
-            - **macOS (Intel)**: `*-macOS-Intel-Web.zip`
-            - **Windows**: `*-Windows-Web.zip`
-            - **Linux**: `*-Linux-Web.deb` 或 `*-Linux-Web.tar.gz`
+            启动 Web 服务，支持浏览器访问和 Telegram Bot 控制
+
+            | 平台 | 下载 |
+            |------|------|
+            | **macOS (Apple Silicon M1/M2/M3)** | `*-macOS-ARM64-Web.zip` |
+            | **macOS (Intel)** | `*-macOS-Intel-Web.zip` |
+            | **Windows** | `*-Windows-Web.zip` |
+            | **Linux (DEB)** | `*-Linux-Web.deb` |
+            | **Linux (通用)** | `*-Linux-Web.tar.gz` |
+
+            ### 使用说明
+            1. 下载对应平台的文件并解压
+            2. 运行可执行文件启动 Web 服务
+            3. 浏览器访问 http://localhost:8080
+            4. （可选）配置 Telegram Bot 进行远程控制
 
             ### macOS 首次打开提示
-            如果提示"无法验证开发者"，请右键点击应用 → 打开，或执行：
+            如果提示"无法验证开发者"，请执行：
             ```bash
-            xattr -cr /Applications/Open-AutoGLM-GUI.app
+            xattr -cr Open-AutoGLM-web
             ```
 
             ---
