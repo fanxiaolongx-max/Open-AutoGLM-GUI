@@ -1,6 +1,6 @@
 # Open-AutoGLM
 
-[Readme in English](README_en.md)
+[Readme in English](README_EN.md)
 
 <div align="center">
 <img src="resources/logo.svg" width="20%"/>
@@ -12,9 +12,6 @@
 <p align="center">
     🎤 在我们的产品 <a href="https://autoglm.zhipuai.cn/autotyper/" target="_blank">智谱 AI 输入法</a> 体验"用嘴发指令"
 </p>
-<p align="center">
-    <a href="https://mp.weixin.qq.com/s/wRp22dmRVF23ySEiATiWIQ" target="_blank">AutoGLM 实战派</a> 开发者激励活动火热进行中！
-</p>
 
 ---
 
@@ -24,8 +21,8 @@
 - [主要特性](#主要特性)
 - [快速开始](#快速开始)
 - [使用方式](#使用方式)
-  - [图形界面 (GUI)](#图形界面-gui)
   - [Web 界面](#web-界面)
+  - [Telegram Bot](#telegram-bot)
   - [命令行 (CLI)](#命令行-cli)
   - [Python API](#python-api)
 - [环境配置](#环境配置)
@@ -59,22 +56,24 @@ Open-AutoGLM 是一个基于视觉语言模型的**手机智能助理框架**，
 
 ## 主要特性
 
-### 三种使用方式
+### 两种使用方式
 
 | 方式 | 启动命令 | 适用场景 |
-|-----|---------|---------|
-| **🖥️ GUI 桌面应用** | `python run_gui.py` | 个人用户，功能最全面 |
-| **🌐 Web 服务器** | `python run_web.py` | 无头服务器、多用户访问 |
+|-----|---------|---------| 
+| **🌐 Web 服务器** | `python run_web.py` | 浏览器访问、多用户、远程控制 |
 | **⌨️ 命令行** | `python main.py` | 脚本自动化、开发调试 |
 
 ### 核心功能
 
 - 🤖 **AI 驱动** - 基于 AutoGLM 视觉语言模型，智能理解屏幕内容
 - 📱 **多设备支持** - 同时管理 Android、HarmonyOS、iOS 设备
+- 🤖 **Telegram Bot** - 远程控制，随时随地发送任务
 - ⏰ **定时任务** - 支持单次、每日、每周自动执行
+- 📧 **邮件报告** - 复杂任务完成后自动发送执行报告
 - 🔧 **规则引擎** - 自定义应用映射、动作规则和提示词
 - 🌐 **远程调试** - WiFi 无线连接和二维码配对
 - 📊 **实时预览** - 任务执行时实时显示手机屏幕
+- 💾 **数据持久化** - SQLite 数据库存储会话和消息历史
 
 ---
 
@@ -117,53 +116,22 @@ hdc list targets
 ### 3. 启动应用
 
 ```bash
-# 方式一：图形界面（推荐）
-python run_gui.py
-
-# 方式二：Web 服务器
+# 方式一：Web 服务器（推荐）
 python run_web.py
 
-# 方式三：命令行
+# 方式二：命令行
 python main.py --base-url https://open.bigmodel.cn/api/paas/v4 --model autoglm-phone --apikey YOUR_API_KEY
 ```
+
+启动后访问 http://localhost:8080
 
 ---
 
 ## 使用方式
 
-### 图形界面 (GUI)
-
-**鱼塘管理器** 是功能最完善的桌面应用，提供可视化的设备管理和任务执行界面。
-
-```bash
-python run_gui.py
-```
-
-#### 功能模块
-
-| 模块 | 功能说明 |
-|------|----------|
-| **控制台** | 系统仪表盘，显示设备状态、模型配置、任务统计 |
-| **设备中心** | 管理设备连接，支持 USB、WiFi、二维码配对 |
-| **模型服务** | 配置和切换多个 AI 模型服务 |
-| **任务执行** | 输入任务描述，AI 自动执行，支持实时预览 |
-| **定时任务** | 创建定时或周期性自动化任务 |
-| **应用安装** | 批量安装 APK 到多台设备 |
-| **文件管理** | 浏览和管理设备文件系统 |
-| **规则管理** | 管理应用映射、动作规则和系统提示词 |
-
-#### 界面特性
-
-- 🎨 支持暗色/亮色主题切换
-- 📱 任务执行时实时显示手机屏幕
-- 🔄 同时管理和操作多台设备
-- 📋 内置常用任务模板
-
----
-
 ### Web 界面
 
-Web 服务器适用于无图形界面的服务器环境，支持多用户远程访问。
+Web 服务器提供完整的管理界面，支持多用户远程访问。
 
 ```bash
 # 默认启动（端口 8080）
@@ -176,6 +144,17 @@ python run_web.py --host 0.0.0.0 --port 8000
 python run_web.py --reload
 ```
 
+#### 功能模块
+
+| 模块 | 功能说明 |
+|------|----------|
+| **控制台** | 系统仪表盘，显示设备状态、模型配置、任务统计 |
+| **设备中心** | 管理设备连接，支持 USB、WiFi、二维码配对 |
+| **模型服务** | 配置和切换多个 AI 模型服务 |
+| **对话执行** | 选择设备、输入任务描述，AI 自动执行 |
+| **定时任务** | 创建定时或周期性自动化任务 |
+| **规则管理** | 管理应用映射、动作规则和系统提示词 |
+
 #### 启动后访问
 
 | 地址 | 说明 |
@@ -184,16 +163,37 @@ python run_web.py --reload
 | `http://localhost:8080/docs` | API 文档 (Swagger) |
 | `http://localhost:8080/redoc` | API 文档 (ReDoc) |
 
-#### API 端点
+---
 
-| 端点 | 功能 |
-|-----|------|
-| `/api/devices` | 设备管理 |
-| `/api/tasks` | 任务执行 |
-| `/api/scheduler` | 定时任务 |
-| `/api/models` | 模型服务 |
-| `/api/settings` | 系统设置 |
-| `/ws` | WebSocket 实时通信 |
+### Telegram Bot
+
+通过 Telegram Bot 远程控制手机，随时随地发送任务。
+
+#### 配置步骤
+
+1. **创建 Bot**: 在 Telegram 中找到 @BotFather，发送 `/newbot` 创建机器人
+2. **获取 Token**: BotFather 会返回 Bot Token
+3. **配置**: 在 Web 界面的系统设置中填入 Token 和 Chat ID
+
+#### 支持的功能
+
+| 功能 | 说明 |
+|------|------|
+| 📱 **设备管理** | 查看设备状态、截图、选择操作设备 |
+| 🤖 **任务执行** | 直接发送文本消息执行任务 |
+| ⏰ **定时任务** | 查看和管理定时任务 |
+| 📊 **模型配置** | 选择 AI 模型、调整参数 |
+| ⚙️ **系统设置** | 邮件通知、系统诊断 |
+| 📈 **统计信息** | 查看使用统计 |
+
+#### 使用示例
+
+```
+/start          - 启动 Bot，显示主菜单
+/devices        - 查看已连接设备
+/screenshot     - 获取当前设备截图
+打开微信        - 直接发送任务指令
+```
 
 ---
 
@@ -405,7 +405,6 @@ hdc list targets
 
 ```
 Open-AutoGLM/
-├── run_gui.py           # GUI 启动入口
 ├── run_web.py           # Web 服务器入口
 ├── main.py              # 命令行入口
 ├── phone_agent/         # Agent 核心模块
@@ -416,16 +415,15 @@ Open-AutoGLM/
 │   ├── actions/         # 操作执行器
 │   ├── config/          # 配置（应用映射、提示词）
 │   └── model/           # AI 模型客户端
-├── gui_app/             # GUI 桌面应用
-│   ├── app.py           # 主窗口
-│   ├── pages/           # 功能页面模块
-│   ├── styles/          # 主题样式
-│   └── scheduler.py     # 定时任务调度
 ├── web_app/             # Web 服务器
 │   ├── main.py          # FastAPI 应用
 │   ├── routers/         # API 路由
 │   ├── services/        # 业务服务
-│   └── static/          # 静态资源
+│   │   ├── telegram_bot.py  # Telegram Bot 集成
+│   │   ├── scheduler_service.py  # 定时任务
+│   │   └── email_service.py  # 邮件服务
+│   ├── models/          # 数据模型和数据库
+│   └── static/          # 静态资源（Web UI）
 └── examples/            # 使用示例
 ```
 
@@ -462,6 +460,12 @@ set PYTHONIOENCODING=utf-8
 python main.py ...
 ```
 
+### Telegram Bot 无响应
+
+1. 检查 Bot Token 是否正确
+2. 确认 Chat ID 配置正确
+3. 确保服务器能访问 Telegram API（可能需要代理）
+
 ---
 
 ## 环境变量
@@ -474,6 +478,8 @@ python main.py ...
 | `PHONE_AGENT_MAX_STEPS` | 最大步数 | `100` |
 | `PHONE_AGENT_DEVICE_TYPE` | 设备类型 | `adb` |
 | `PHONE_AGENT_LANG` | 语言 | `cn` |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | - |
+| `TELEGRAM_CHAT_ID` | Telegram Chat ID | - |
 
 ---
 

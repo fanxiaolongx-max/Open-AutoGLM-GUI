@@ -3,254 +3,234 @@
 [中文阅读.](./README.md)
 
 <div align="center">
-<img src=resources/logo.svg width="20%"/>
+<img src="resources/logo.svg" width="20%"/>
 </div>
+
 <p align="center">
     👋 Join our <a href="resources/WECHAT.md" target="_blank">WeChat</a> or <a href="https://discord.gg/QR7SARHRxK" target="_blank">Discord</a> communities
 </p>
 
+---
+
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Key Features](#key-features)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Web Interface](#web-interface)
+  - [Telegram Bot](#telegram-bot)
+  - [Command Line (CLI)](#command-line-cli)
+  - [Python API](#python-api)
+- [Environment Setup](#environment-setup)
+- [Model Service](#model-service)
+- [Remote Debugging](#remote-debugging)
+- [Supported Apps](#supported-apps)
+- [FAQ](#faq)
+- [Citation](#citation)
+
+---
+
+## Introduction
+
+Open-AutoGLM is a **mobile intelligent assistant framework** based on vision-language models. It understands phone screen content and automatically executes operations. Users simply describe their needs in natural language, such as "Open eBay and search for wireless earphones", and the system will automatically complete the entire workflow.
+
+### How It Works
+
+```
+User Command → Screenshot → AI Understands Interface → Generate Action → Execute → Loop Until Complete
+```
+
+### Supported Devices
+
+| Device Type | Connection | Description |
+|-------------|------------|-------------|
+| **Android** | ADB | Android 7.0+ devices |
+| **HarmonyOS** | HDC | HarmonyOS NEXT and above |
+| **iOS** | WebDriverAgent | iPhone/iPad devices |
+
+---
+
+## Key Features
+
+### Two Ways to Use
+
+| Method | Command | Use Case |
+|--------|---------|----------|
+| **🌐 Web Server** | `python run_web.py` | Browser access, multi-user, remote control |
+| **⌨️ Command Line** | `python main.py` | Script automation, development/debugging |
+
+### Core Features
+
+- 🤖 **AI-Powered** - Based on AutoGLM vision-language model, intelligently understands screen content
+- 📱 **Multi-Device Support** - Manage Android, HarmonyOS, and iOS devices simultaneously
+- 🤖 **Telegram Bot** - Remote control, send tasks anytime, anywhere
+- ⏰ **Scheduled Tasks** - Support one-time, daily, and weekly automatic execution
+- 📧 **Email Reports** - Automatic execution reports after complex tasks
+- 🔧 **Rule Engine** - Custom app mappings, action rules, and prompts
+- 🌐 **Remote Debugging** - WiFi wireless connection and QR code pairing
+- 📊 **Real-time Preview** - Live phone screen display during task execution
+- 💾 **Data Persistence** - SQLite database stores sessions and message history
+
+---
+
 ## Quick Start
-
-You can use Claude Code with [GLM Coding Plan](https://z.ai/subscribe) and enter the following prompt to quickly deploy this project:
-
-```
-Access the documentation and install AutoGLM for me
-https://raw.githubusercontent.com/zai-org/Open-AutoGLM/refs/heads/main/README_en.md
-```
-
-## Project Introduction
-
-Phone Agent is a mobile intelligent assistant framework built on AutoGLM. It understands phone screen content in a multimodal manner and helps users complete tasks through automated operations. The system controls devices via ADB (Android Debug Bridge), perceives screens using vision-language models, and generates and executes operation workflows through intelligent planning. Users simply describe their needs in natural language, such as "Open eBay and search for wireless earphones." and Phone Agent will automatically parse the intent, understand the current interface, plan the next action, and complete the entire workflow. The system also includes a sensitive operation confirmation mechanism and supports manual takeover during login or verification code scenarios. Additionally, it provides remote ADB debugging capabilities, allowing device connection via WiFi or network for flexible remote control and development.
-
-> ⚠️ This project is for research and learning purposes only. It is strictly prohibited to use for illegal information acquisition, system interference, or any illegal activities. Please carefully review the [Terms of Use](resources/privacy_policy_en.txt).
-
-## Model Download Links
-
-| Model             | Download Links                                                                                                                                             |
-|-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| AutoGLM-Phone-9B  | [🤗 Hugging Face](https://huggingface.co/zai-org/AutoGLM-Phone-9B)<br>[🤖 ModelScope](https://modelscope.cn/models/ZhipuAI/AutoGLM-Phone-9B)               |
-| AutoGLM-Phone-9B-Multilingual | [🤗 Hugging Face](https://huggingface.co/zai-org/AutoGLM-Phone-9B-Multilingual)<br>[🤖 ModelScope](https://modelscope.cn/models/ZhipuAI/AutoGLM-Phone-9B-Multilingual) |
-
-`AutoGLM-Phone-9B` is optimized for Chinese mobile applications, while `AutoGLM-Phone-9B-Multilingual` supports English scenarios and is suitable for applications containing English or other language content.
-
-## Environment Setup
-
-### 1. Python Environment
-
-Python 3.10 or higher is recommended.
-
-### 2. Device Debug Tools
-
-Choose the appropriate tool based on your device type:
-
-#### For Android Devices - Using ADB
-
-1. Download the official ADB [installation package](https://developer.android.com/tools/releases/platform-tools) and extract it to a custom path
-2. Configure environment variables
-
-- MacOS configuration: In `Terminal` or any command line tool
-
-  ```bash
-  # Assuming the extracted directory is ~/Downloads/platform-tools. Adjust the command if different.
-  export PATH=${PATH}:~/Downloads/platform-tools
-  ```
-
-- Windows configuration: Refer to [third-party tutorials](https://blog.csdn.net/x2584179909/article/details/108319973) for configuration.
-
-#### For HarmonyOS Devices - Using HDC
-
-1. Download HDC tool:
-   - From [HarmonyOS SDK](https://developer.huawei.com/consumer/en/download/)
-2. Configure environment variables
-
-- MacOS/Linux configuration:
-
-  ```bash
-  # Assuming the extracted directory is ~/Downloads/harmonyos-sdk/toolchains. Adjust according to actual path.
-  export PATH=${PATH}:~/Downloads/harmonyos-sdk/toolchains
-  ```
-
-- Windows configuration: Add the HDC tool directory to the system PATH environment variable
-
-### 3. Android 7.0+ or HarmonyOS Device with `Developer Mode` and `USB Debugging` Enabled
-
-1. Enable Developer Mode: The typical method is to find `Settings > About Phone > Build Number` and tap it rapidly about 10 times until a popup shows "Developer mode has been enabled." This may vary slightly between phones; search online for tutorials if you can't find it.
-2. Enable USB Debugging: After enabling Developer Mode, go to `Settings > Developer Options > USB Debugging` and enable it
-3. Some devices may require a restart after setting developer options for them to take effect. You can test by connecting your phone to your computer via USB cable and running `adb devices` to see if device information appears. If not, the connection has failed.
-
-**Please carefully check the relevant permissions**
-
-![Permissions](resources/screenshot-20251210-120416.png)
-
-### 4. Install ADB Keyboard (Required for Android Devices Only, for Text Input)
-
-**Note: HarmonyOS devices use native input methods and do not require ADB Keyboard.**
-
-If you are using an Android device:
-
-Download the [installation package](https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk) and install it on the corresponding Android device.
-Note: After installation, you need to enable `ADB Keyboard` in `Settings > Input Method` or `Settings > Keyboard List` for it to work.(or use command `adb shell ime enable com.android.adbkeyboard/.AdbIME`[How-to-use](https://github.com/senzhk/ADBKeyBoard/blob/master/README.md#how-to-use))
-
-## Deployment Preparation
 
 ### 1. Install Dependencies
 
 ```bash
-pip install -r requirements.txt 
+# Clone repository
+git clone https://github.com/zai-org/Open-AutoGLM.git
+cd Open-AutoGLM
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Configure ADB or HDC
+### 2. Connect Device
 
-#### For Android Devices
-
-Make sure your **USB cable supports data transfer**, not just charging.
-
-Ensure ADB is installed and connect the device via **USB cable**:
-
+**Android Device:**
 ```bash
-# Check connected devices
+# Enable USB debugging on phone, connect via data cable
 adb devices
-
-# Output should show your device, e.g.:
-# List of devices attached
-# emulator-5554   device
+# Should show: List of devices attached
+#             XXXXXXXX    device
 ```
 
-#### For HarmonyOS Devices
-
-Make sure your **USB cable supports data transfer**, not just charging.
-
-Ensure HDC is installed and connect the device via **USB cable**:
-
+**HarmonyOS Device:**
 ```bash
-# Check connected devices
 hdc list targets
-
-# Output should show your device, e.g.:
-# 7001005458323933328a01bce01c2500
 ```
 
-### 3. Start Model Service
+**iOS Device:**
+See [iOS Setup Guide](docs/ios_setup/ios_setup.md)
 
-You can choose to deploy the model service yourself or use a third-party model service provider.
-
-#### Option A: Use Third-Party Model Services
-
-If you don't want to deploy the model yourself, you can use the following third-party services that have already deployed our model:
-
-**1. z.ai**
-
-- Documentation: https://docs.z.ai/api-reference/introduction
-- `--base-url`: `https://api.z.ai/api/paas/v4`
-- `--model`: `autoglm-phone-multilingual`
-- `--apikey`: Apply for your own API key on the z.ai platform
-
-**2. Novita AI**
-
-- Documentation: https://novita.ai/models/model-detail/zai-org-autoglm-phone-9b-multilingual
-- `--base-url`: `https://api.novita.ai/openai`
-- `--model`: `zai-org/autoglm-phone-9b-multilingual`
-- `--apikey`: Apply for your own API key on the Novita AI platform
-
-**3. Parasail**
-
-- Documentation: https://www.saas.parasail.io/serverless?name=auto-glm-9b-multilingual
-- `--base-url`: `https://api.parasail.io/v1`
-- `--model`: `parasail-auto-glm-9b-multilingual`
-- `--apikey`: Apply for your own API key on the Parasail platform
-
-Example usage with third-party services:
+### 3. Start Application
 
 ```bash
-# Using z.ai
-python main.py --base-url https://api.z.ai/api/paas/v4 --model "autoglm-phone-multilingual" --apikey "your-z-ai-api-key" "Open Chrome browser"
+# Option 1: Web Server (Recommended)
+python run_web.py
 
-# Using Novita AI
-python main.py --base-url https://api.novita.ai/openai --model "zai-org/autoglm-phone-9b-multilingual" --apikey "your-novita-api-key" "Open Chrome browser"
-
-# Using Parasail
-python main.py --base-url https://api.parasail.io/v1 --model "parasail-auto-glm-9b-multilingual" --apikey "your-parasail-api-key" "Open Chrome browser"
+# Option 2: Command Line
+python main.py --base-url https://open.bigmodel.cn/api/paas/v4 --model autoglm-phone --apikey YOUR_API_KEY
 ```
 
-#### Option B: Deploy Model Yourself
+After starting, visit http://localhost:8080
 
-If you prefer to deploy the model locally or on your own server:
+---
 
-1. Download the model and install the inference engine framework according to the `For Model Deployment` section in `requirements.txt`.
-2. Start via SGlang / vLLM to get an OpenAI-format service. Here's a vLLM deployment solution; please strictly follow the startup parameters we provide:
+## Usage
 
-- vLLM:
+### Web Interface
 
-```shell
-python3 -m vllm.entrypoints.openai.api_server \
- --served-model-name autoglm-phone-9b-multilingual \
- --allowed-local-media-path /   \
- --mm-encoder-tp-mode data \
- --mm_processor_cache_type shm \
- --mm_processor_kwargs "{\"max_pixels\":5000000}" \
- --max-model-len 25480  \
- --chat-template-content-format string \
- --limit-mm-per-prompt "{\"image\":10}" \
- --model zai-org/AutoGLM-Phone-9B-Multilingual \
- --port 8000
-```
-
-- This model has the same architecture as `GLM-4.1V-9B-Thinking`. For detailed information about model deployment, you can also check [GLM-V](https://github.com/zai-org/GLM-V) for model deployment and usage guides.
-
-- After successful startup, the model service will be accessible at `http://localhost:8000/v1`. If you deploy the model on a remote server, access it using that server's IP address.
-
-### 4. Check Model Deployment
-
-After starting the model service, you can use the following command to verify the deployment:
+The Web server provides a complete management interface with multi-user remote access support.
 
 ```bash
-python scripts/check_deployment_en.py --base-url http://localhost:8000/v1 --model autoglm-phone-9b-multilingual
+# Default start (port 8080)
+python run_web.py
+
+# Custom configuration
+python run_web.py --host 0.0.0.0 --port 8000
+
+# Development mode (auto-reload)
+python run_web.py --reload
 ```
 
-If using a third-party model service:
+#### Features
 
-```bash
-# Novita AI
-python scripts/check_deployment_en.py --base-url https://api.novita.ai/openai --model zai-org/autoglm-phone-9b-multilingual --apikey your-novita-api-key
+| Module | Description |
+|--------|-------------|
+| **Dashboard** | System dashboard showing device status, model config, task stats |
+| **Device Center** | Manage device connections, USB, WiFi, QR pairing |
+| **Model Service** | Configure and switch between AI model services |
+| **Chat Execution** | Select device, input task description, AI auto-executes |
+| **Scheduled Tasks** | Create scheduled or periodic automation tasks |
+| **Rule Management** | Manage app mappings, action rules, and system prompts |
 
-# Parasail
-python scripts/check_deployment_en.py --base-url https://api.parasail.io/v1 --model parasail-auto-glm-9b-multilingual --apikey your-parasail-api-key
+#### Access URLs
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:8080` | Web Interface |
+| `http://localhost:8080/docs` | API Documentation (Swagger) |
+| `http://localhost:8080/redoc` | API Documentation (ReDoc) |
+
+---
+
+### Telegram Bot
+
+Control your phone remotely via Telegram Bot, send tasks anytime, anywhere.
+
+#### Setup
+
+1. **Create Bot**: Find @BotFather in Telegram, send `/newbot` to create a bot
+2. **Get Token**: BotFather will return a Bot Token
+3. **Configure**: Enter the Token and Chat ID in Web interface system settings
+
+#### Supported Features
+
+| Feature | Description |
+|---------|-------------|
+| 📱 **Device Management** | View device status, screenshots, select devices |
+| 🤖 **Task Execution** | Send text messages directly to execute tasks |
+| ⏰ **Scheduled Tasks** | View and manage scheduled tasks |
+| 📊 **Model Config** | Select AI model, adjust parameters |
+| ⚙️ **System Settings** | Email notifications, system diagnostics |
+| 📈 **Statistics** | View usage statistics |
+
+#### Usage Examples
+
+```
+/start          - Start Bot, show main menu
+/devices        - View connected devices
+/screenshot     - Get current device screenshot
+Open WhatsApp   - Send task command directly
 ```
 
-Upon successful execution, the script will display the model's inference result and token statistics, helping you confirm whether the model deployment is working correctly.
+---
 
-## Using AutoGLM
+### Command Line (CLI)
 
-### Command Line
-
-Set the `--base-url` and `--model` parameters according to your deployed model. For example:
+Command line is suitable for script automation and quick testing.
 
 ```bash
-# Android device - Interactive mode
-python main.py --base-url http://localhost:8000/v1 --model "autoglm-phone-9b-multilingual"
+# Interactive mode
+python main.py --base-url http://localhost:8000/v1 --model autoglm-phone-9b-multilingual
 
-# Android device - Specify task
+# Execute single task
 python main.py --base-url http://localhost:8000/v1 "Open Maps and search for nearby coffee shops"
 
-# HarmonyOS device - Interactive mode
-python main.py --device-type hdc --base-url http://localhost:8000/v1 --model "autoglm-phone-9b-multilingual"
+# Use API Key
+python main.py --apikey sk-xxxxx "Open WhatsApp and send a message"
 
-# HarmonyOS device - Specify task
-python main.py --device-type hdc --base-url http://localhost:8000/v1 "Open Maps and search for nearby coffee shops"
+# HarmonyOS device
+python main.py --device-type hdc "Open Settings"
 
-# Use API key for authentication
-python main.py --apikey sk-xxxxx
+# iOS device
+python main.py --device-type ios --wda-url http://localhost:8100 "Open Safari"
 
-# Use English system prompt
-python main.py --lang en --base-url http://localhost:8000/v1 "Open Chrome browser"
-
-# List supported apps (Android)
+# List supported apps
 python main.py --list-apps
-
-# List supported apps (HarmonyOS)
-python main.py --device-type hdc --list-apps
 ```
+
+#### Common Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--base-url` | Model API URL | `http://localhost:8000/v1` |
+| `--model` | Model name | `autoglm-phone-9b` |
+| `--apikey` | API key | `EMPTY` |
+| `--device-type` | Device type (`adb`/`hdc`/`ios`) | `adb` |
+| `--device-id` | Specify device ID | Auto-detect |
+| `--lang` | Language (`cn`/`en`) | `en` |
+| `--max-steps` | Maximum execution steps | `100` |
+
+---
 
 ### Python API
 
@@ -260,8 +240,9 @@ from phone_agent.model import ModelConfig
 
 # Configure model
 model_config = ModelConfig(
-    base_url="http://localhost:8000/v1",
-    model_name="autoglm-phone-9b-multilingual",
+    base_url="https://open.bigmodel.cn/api/paas/v4",
+    model_name="autoglm-phone",
+    api_key="your-api-key",
 )
 
 # Create Agent
@@ -272,419 +253,241 @@ result = agent.run("Open eBay and search for wireless earphones")
 print(result)
 ```
 
+---
+
+## Environment Setup
+
+### Android Device
+
+1. **Enable Developer Mode**
+   - Settings → About Phone → Tap Build Number 7 times
+
+2. **Enable USB Debugging**
+   - Settings → Developer Options → USB Debugging ✓
+   - Some devices also need "USB Debugging (Security Settings)"
+
+3. **Install ADB Tools**
+   ```bash
+   # macOS
+   brew install android-platform-tools
+
+   # Verify installation
+   adb version
+   ```
+
+4. **Install ADB Keyboard** (for text input)
+   - Download [ADBKeyboard.apk](https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk)
+   - Enable it in system settings after installation
+
+### HarmonyOS Device
+
+1. Enable Developer Mode and USB Debugging
+2. Download [HDC Tool](https://developer.huawei.com/consumer/en/download/)
+3. Configure PATH environment variable
+
+### iOS Device
+
+See [iOS Setup Guide](docs/ios_setup/ios_setup.md)
+
+---
+
+## Model Service
+
+### Use Third-Party Services (Recommended)
+
+No local GPU needed, use cloud models directly:
+
+**z.ai:**
+```bash
+python main.py \
+  --base-url https://api.z.ai/api/paas/v4 \
+  --model autoglm-phone-multilingual \
+  --apikey YOUR_API_KEY \
+  "Open Chrome browser"
+```
+
+**Novita AI:**
+```bash
+python main.py \
+  --base-url https://api.novita.ai/openai \
+  --model zai-org/autoglm-phone-9b-multilingual \
+  --apikey YOUR_API_KEY \
+  "Open Chrome browser"
+```
+
+### Local Model Deployment
+
+Requires NVIDIA GPU with 24GB+ VRAM:
+
+```bash
+# Using vLLM
+python3 -m vllm.entrypoints.openai.api_server \
+  --served-model-name autoglm-phone-9b-multilingual \
+  --model zai-org/AutoGLM-Phone-9B-Multilingual \
+  --port 8000
+```
+
+### Model Downloads
+
+| Model | Download Links |
+|-------|----------------|
+| AutoGLM-Phone-9B | [Hugging Face](https://huggingface.co/zai-org/AutoGLM-Phone-9B) / [ModelScope](https://modelscope.cn/models/ZhipuAI/AutoGLM-Phone-9B) |
+| AutoGLM-Phone-9B-Multilingual | [Hugging Face](https://huggingface.co/zai-org/AutoGLM-Phone-9B-Multilingual) / [ModelScope](https://modelscope.cn/models/ZhipuAI/AutoGLM-Phone-9B-Multilingual) |
+
+---
+
 ## Remote Debugging
 
-Phone Agent supports remote ADB/HDC debugging via WiFi/network, allowing device control without a USB connection.
+Connect devices wirelessly via WiFi, no USB cable needed.
 
-### Configure Remote Debugging
-
-#### Enable Wireless Debugging on Phone
-
-##### Android Devices
-
-Ensure the phone and computer are on the same WiFi network, as shown below:
-
-![Enable Wireless Debugging](resources/screenshot-20251210-120630.png)
-
-##### HarmonyOS Devices
-
-Ensure the phone and computer are on the same WiFi network:
-1. Go to `Settings > System & Updates > Developer Options`
-2. Enable `USB Debugging` and `Wireless Debugging`
-3. Note the displayed IP address and port number
-
-#### Use Standard ADB/HDC Commands on Computer
+### Android Device
 
 ```bash
-# Android device - Connect via WiFi, replace with the IP address and port shown on your phone
+# 1. Enable Wireless Debugging on phone (Settings → Developer Options → Wireless Debugging)
+# 2. Get phone IP and port
+# 3. Connect from computer
 adb connect 192.168.1.100:5555
 
 # Verify connection
 adb devices
-# Should show: 192.168.1.100:5555    device
-
-# HarmonyOS device - Connect via WiFi
-hdc tconn 192.168.1.100:5555
-
-# Verify connection
-hdc list targets
-# Should show: 192.168.1.100:5555
 ```
 
-### Device Management Commands
-
-#### Android Devices (ADB)
+### HarmonyOS Device
 
 ```bash
-# List all connected devices
-adb devices
-
-# Connect to remote device
-adb connect 192.168.1.100:5555
-
-# Disconnect specific device
-adb disconnect 192.168.1.100:5555
-
-# Execute task on specific device
-python main.py --device-id 192.168.1.100:5555 --base-url http://localhost:8000/v1 --model "autoglm-phone-9b-multilingual" "Open TikTok and browse videos"
-```
-
-#### HarmonyOS Devices (HDC)
-
-```bash
-# List all connected devices
-hdc list targets
-
-# Connect to remote device
 hdc tconn 192.168.1.100:5555
-
-# Disconnect specific device
-hdc tdisconn 192.168.1.100:5555
-
-# Execute task on specific device
-python main.py --device-type hdc --device-id 192.168.1.100:5555 --base-url http://localhost:8000/v1 --model "autoglm-phone-9b-multilingual" "Open TikTok and browse videos"
+hdc list targets
 ```
 
-### Python API Remote Connection
-
-#### Android Devices (ADB)
-
-```python
-from phone_agent.adb import ADBConnection, list_devices
-
-# Create connection manager
-conn = ADBConnection()
-
-# Connect to remote device
-success, message = conn.connect("192.168.1.100:5555")
-print(f"Connection status: {message}")
-
-# List connected devices
-devices = list_devices()
-for device in devices:
-    print(f"{device.device_id} - {device.connection_type.value}")
-
-# Enable TCP/IP on USB device
-success, message = conn.enable_tcpip(5555)
-ip = conn.get_device_ip()
-print(f"Device IP: {ip}")
-
-# Disconnect
-conn.disconnect("192.168.1.100:5555")
-```
-
-#### HarmonyOS Devices (HDC)
-
-```python
-from phone_agent.hdc import HDCConnection, list_devices
-
-# Create connection manager
-conn = HDCConnection()
-
-# Connect to remote device
-success, message = conn.connect("192.168.1.100:5555")
-print(f"Connection status: {message}")
-
-# List connected devices
-devices = list_devices()
-for device in devices:
-    print(f"{device.device_id} - {device.connection_type.value}")
-
-# Disconnect
-conn.disconnect("192.168.1.100:5555")
-```
-
-### Remote Connection Troubleshooting
-
-**Connection Refused:**
-
-- Ensure the device and computer are on the same network
-- Check if the firewall is blocking port 5555
-- Confirm TCP/IP mode is enabled: `adb tcpip 5555`
-
-**Connection Dropped:**
-
-- WiFi may have disconnected; use `--connect` to reconnect
-- Some devices disable TCP/IP after restart; re-enable via USB
-
-**Multiple Devices:**
-
-- Use `--device-id` to specify which device to use
-- Or use `--list-devices` to view all connected devices
-
-## Configuration
-
-### Custom SYSTEM PROMPT
-
-The system provides both Chinese and English prompts, switchable via the `--lang` parameter:
-
-- `--lang cn` - Chinese prompt (default), config file: `phone_agent/config/prompts_zh.py`
-- `--lang en` - English prompt, config file: `phone_agent/config/prompts_en.py`
-
-You can directly modify the corresponding config files to enhance model capabilities in specific domains or disable certain apps by injecting app names.
-
-### Environment Variables
-
-| Variable                    | Description               | Default Value              |
-|-----------------------------|---------------------------|----------------------------|
-| `PHONE_AGENT_BASE_URL`      | Model API URL             | `http://localhost:8000/v1` |
-| `PHONE_AGENT_MODEL`         | Model name                | `autoglm-phone-9b`         |
-| `PHONE_AGENT_API_KEY`       | API key for authentication| `EMPTY`                    |
-| `PHONE_AGENT_MAX_STEPS`     | Maximum steps per task    | `100`                      |
-| `PHONE_AGENT_DEVICE_ID`     | ADB/HDC device ID         | (auto-detect)              |
-| `PHONE_AGENT_DEVICE_TYPE`   | Device type (`adb` or `hdc`)| `adb`                    |
-| `PHONE_AGENT_LANG`          | Language (`cn` or `en`)   | `en`                       |
-
-### Model Configuration
-
-```python
-from phone_agent.model import ModelConfig
-
-config = ModelConfig(
-    base_url="http://localhost:8000/v1",
-    api_key="EMPTY",  # API key (if required)
-    model_name="autoglm-phone-9b-multilingual",  # Model name
-    max_tokens=3000,  # Maximum output tokens
-    temperature=0.1,  # Sampling temperature
-    frequency_penalty=0.2,  # Frequency penalty
-)
-```
-
-### Agent Configuration
-
-```python
-from phone_agent.agent import AgentConfig
-
-config = AgentConfig(
-    max_steps=100,  # Maximum steps per task
-    device_id=None,  # ADB device ID (None for auto-detect)
-    lang="en",  # Language: cn (Chinese) or en (English)
-    verbose=True,  # Print debug info (including thinking process and actions)
-)
-```
-
-### Verbose Mode Output
-
-When `verbose=True`, the Agent outputs detailed information at each step:
-
-```
-==================================================
-💭 Thinking Process:
---------------------------------------------------
-Currently on the system desktop, need to launch eBay app first
---------------------------------------------------
-🎯 Executing Action:
-{
-  "_metadata": "do",
-  "action": "Launch",
-  "app": "eBay"
-}
-==================================================
-
-... (continues to next step after executing action)
-
-==================================================
-💭 Thinking Process:
---------------------------------------------------
-eBay is now open, need to tap the search box
---------------------------------------------------
-🎯 Executing Action:
-{
-  "_metadata": "do",
-  "action": "Tap",
-  "element": [499, 182]
-}
-==================================================
-
-🎉 ================================================
-✅ Task Completed: Successfully opened eBay and searched for 'wireless earphones'
-==================================================
-```
-
-This allows you to clearly see the AI's reasoning process and specific operations at each step.
+---
 
 ## Supported Apps
 
-### Android Apps
+### Android (50+ Apps)
 
-Phone Agent supports 50+ mainstream Chinese applications:
-
-| Category                 | Apps                                                                                   |
-|--------------------------|----------------------------------------------------------------------------------------|
-| Social & Messaging       | X, Tiktok, WhatsApp, Telegram, FacebookMessenger, GoogleChat, Quora, Reddit, Instagram |
-| Productivity & Office    | Gmail, GoogleCalendar, GoogleDrive, GoogleDocs, GoogleTasks, Joplin                    |
-| Life, Shopping & Finance | Amazon shopping, Temu, Bluecoins, Duolingo, GoogleFit, ebay                            |
-| Utilities & Media        | GoogleClock, Chrome, GooglePlayStore, GooglePlayBooks, FilesbyGoogle                   |
-| Travel & Navigation      | GoogleMaps, Booking.com, Trip.com, Expedia, OpenTracks                                 |
+| Category | Apps |
+|----------|------|
+| Social | X, TikTok, WhatsApp, Telegram, Instagram |
+| Shopping | Amazon, eBay, Temu |
+| Productivity | Gmail, Google Calendar, Google Drive |
+| Travel | Google Maps, Booking.com, Expedia |
+| Media | Chrome, YouTube, Google Play |
 
 Run `python main.py --list-apps` to see the complete list.
 
-### HarmonyOS Apps
-
-Phone Agent supports 60+ HarmonyOS native apps and system apps:
-
-| Category                 | Apps                                                                                   |
-|--------------------------|----------------------------------------------------------------------------------------|
-| Social & Messaging       | WeChat, QQ, Weibo, Feishu, Enterprise WeChat                                          |
-| E-commerce & Shopping    | Taobao, JD.com, Pinduoduo, Vipshop, Dewu, Xianyu                                      |
-| Food & Delivery          | Meituan, Meituan Waimai, Dianping, Haidilao                                           |
-| Travel & Navigation      | 12306, Didi, Tongcheng, Amap, Baidu Maps                                              |
-| Video & Entertainment    | Bilibili, Douyin, Kuaishou, Tencent Video, iQIYI, Mango TV                            |
-| Music & Audio            | QQ Music, Qishui Music, Ximalaya                                                       |
-| Lifestyle & Social       | Xiaohongshu, Zhihu, Toutiao, 58.com, China Mobile                                     |
-| AI & Tools               | Doubao, WPS, UC Browser, CamScanner, Meitu                                            |
-| System Apps              | Browser, Calendar, Camera, Clock, Cloud, File Manager, Gallery, Contacts, SMS, Settings |
-| Huawei Services          | AppGallery, Music, Video, Books, Themes, Weather                                       |
+### HarmonyOS (60+ Apps)
 
 Run `python main.py --device-type hdc --list-apps` to see the complete list.
 
+---
+
 ## Available Actions
 
-The Agent can perform the following actions:
+| Action | Description |
+|--------|-------------|
+| `Launch` | Launch an app |
+| `Tap` | Tap at coordinates |
+| `Type` | Input text |
+| `Swipe` | Swipe screen |
+| `Back` | Go back |
+| `Home` | Return to home screen |
+| `Long Press` | Long press |
+| `Double Tap` | Double tap |
+| `Wait` | Wait for page to load |
+| `Take_over` | Request manual takeover |
 
-| Action         | Description                              |
-|----------------|------------------------------------------|
-| `Launch`       | Launch an app                            |  
-| `Tap`          | Tap at specified coordinates             |
-| `Type`         | Input text                               |
-| `Swipe`        | Swipe the screen                         |
-| `Back`         | Go back to previous page                 |
-| `Home`         | Return to home screen                    |
-| `Long Press`   | Long press                               |
-| `Double Tap`   | Double tap                               |
-| `Wait`         | Wait for page to load                    |
-| `Take_over`    | Request manual takeover (login/captcha)  |
+---
 
-## Custom Callbacks
-
-Handle sensitive operation confirmation and manual takeover:
-
-```python
-def my_confirmation(message: str) -> bool:
-    """Sensitive operation confirmation callback"""
-    return input(f"Confirm execution of {message}? (y/n): ").lower() == "y"
-
-
-def my_takeover(message: str) -> None:
-    """Manual takeover callback"""
-    print(f"Please complete manually: {message}")
-    input("Press Enter after completion...")
-
-
-agent = PhoneAgent(
-    confirmation_callback=my_confirmation,
-    takeover_callback=my_takeover,
-)
-```
-
-## Examples
-
-Check the `examples/` directory for more usage examples:
-
-- `basic_usage.py` - Basic task execution
-- Single-step debugging mode
-- Batch task execution
-- Custom callbacks
-
-## Development
-
-### Set Up Development Environment
-
-Development requires dev dependencies:
-
-```bash
-pip install -e ".[dev]"
-```
-
-### Run Tests
-
-```bash
-pytest tests/
-```
-
-### Complete Project Structure
+## Project Structure
 
 ```
-phone_agent/
-├── __init__.py          # Package exports
-├── agent.py             # PhoneAgent main class
-├── adb/                 # ADB utilities
-│   ├── connection.py    # Remote/local connection management
-│   ├── screenshot.py    # Screen capture
-│   ├── input.py         # Text input (ADB Keyboard)
-│   └── device.py        # Device control (tap, swipe, etc.)
-├── actions/             # Action handling
-│   └── handler.py       # Action executor
-├── config/              # Configuration
-│   ├── apps.py          # Supported app mappings
-│   ├── prompts_zh.py    # Chinese system prompts
-│   └── prompts_en.py    # English system prompts
-└── model/               # AI model client
-    └── client.py        # OpenAI-compatible client
+Open-AutoGLM/
+├── run_web.py           # Web server entry
+├── main.py              # CLI entry
+├── phone_agent/         # Agent core module
+│   ├── agent.py         # PhoneAgent main class
+│   ├── adb/             # Android ADB utilities
+│   ├── hdc/             # HarmonyOS HDC utilities
+│   ├── xctest/          # iOS WebDriverAgent
+│   ├── actions/         # Action executors
+│   ├── config/          # Config (app mappings, prompts)
+│   └── model/           # AI model client
+├── web_app/             # Web server
+│   ├── main.py          # FastAPI application
+│   ├── routers/         # API routes
+│   ├── services/        # Business services
+│   │   ├── telegram_bot.py  # Telegram Bot integration
+│   │   ├── scheduler_service.py  # Scheduled tasks
+│   │   └── email_service.py  # Email service
+│   ├── models/          # Data models and database
+│   └── static/          # Static resources (Web UI)
+└── examples/            # Usage examples
 ```
+
+---
 
 ## FAQ
 
-Here are some common issues and their solutions:
-
 ### Device Not Found
 
-Try resolving by restarting the ADB service:
-
 ```bash
+# Restart ADB service
 adb kill-server
 adb start-server
 adb devices
 ```
 
-If the device is still not recognized, please check:
-1. Whether USB debugging is enabled
-2. Whether the USB cable supports data transfer (some cables only support charging)
-3. Whether you have tapped "Allow" on the authorization popup on your phone
-4. Try a different USB port or cable
+Check:
+- Is USB debugging enabled?
+- Does the cable support data transfer?
+- Did you tap "Allow USB debugging" on phone?
 
-### Can Open Apps but Cannot Tap
+### Can Open Apps But Cannot Tap
 
-Some devices require both debugging options to be enabled:
-- **USB Debugging**
-- **USB Debugging (Security Settings)**
-
-Please check in `Settings → Developer Options` that both options are enabled.
+Enable **Settings → Developer Options → USB Debugging (Security Settings)**
 
 ### Text Input Not Working
 
-1. Ensure ADB Keyboard is installed on the device
-2. Enable it in Settings > System > Language & Input > Virtual Keyboard
-3. The Agent will automatically switch to ADB Keyboard when input is needed
+Ensure ADB Keyboard is installed and enabled in system settings.
 
-### Screenshot Failed (Black Screen)
+### Telegram Bot Not Responding
 
-This usually means the app is displaying a sensitive page (payment, password, banking apps). The Agent will automatically detect this and request manual takeover.
+1. Check if Bot Token is correct
+2. Confirm Chat ID is configured correctly
+3. Ensure server can access Telegram API (may need proxy)
 
-### Windows Encoding Issues
-Error message like `UnicodeEncodeError gbk code`
+---
 
-Solution: Add the environment variable before running the code: `PYTHONIOENCODING=utf-8`
+## Environment Variables
 
-### Interactive Mode Not Working in Non-TTY Environment
-Error like: `EOF when reading a line`
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PHONE_AGENT_BASE_URL` | Model API URL | `http://localhost:8000/v1` |
+| `PHONE_AGENT_MODEL` | Model name | `autoglm-phone-9b` |
+| `PHONE_AGENT_API_KEY` | API key | `EMPTY` |
+| `PHONE_AGENT_MAX_STEPS` | Maximum steps | `100` |
+| `PHONE_AGENT_DEVICE_TYPE` | Device type | `adb` |
+| `PHONE_AGENT_LANG` | Language | `en` |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | - |
+| `TELEGRAM_CHAT_ID` | Telegram Chat ID | - |
 
-Solution: Use non-interactive mode to specify tasks directly, or switch to a TTY-mode terminal application.
+---
 
-### Citation
+## Citation
 
 If you find our work helpful, please cite the following papers:
 
 ```bibtex
 @article{liu2024autoglm,
   title={Autoglm: Autonomous foundation agents for guis},
-  author={Liu, Xiao and Qin, Bo and Liang, Dongzhu and Dong, Guang and Lai, Hanyu and Zhang, Hanchen and Zhao, Hanlin and Iong, Iat Long and Sun, Jiadai and Wang, Jiaqi and others},
+  author={Liu, Xiao and Qin, Bo and Liang, Dongzhu and others},
   journal={arXiv preprint arXiv:2411.00820},
   year={2024}
 }
+
 @article{xu2025mobilerl,
   title={MobileRL: Online Agentic Reinforcement Learning for Mobile GUI Agents},
-  author={Xu, Yifan and Liu, Xiao and Liu, Xinghan and Fu, Jiaqi and Zhang, Hanchen and Jing, Bohao and Zhang, Shudan and Wang, Yuting and Zhao, Wenyi and Dong, Yuxiao},
+  author={Xu, Yifan and Liu, Xiao and others},
   journal={arXiv preprint arXiv:2509.18119},
   year={2025}
 }
@@ -692,231 +495,8 @@ If you find our work helpful, please cite the following papers:
 
 ---
 
-## Automated Deployment Guide (For AI Assistants)
+## License
 
-> **This section is specifically designed for AI assistants (such as Claude Code) to automate the deployment of Open-AutoGLM.**
->
-> If you are a human reader, you can skip this section and follow the documentation above.
+This project is licensed under Apache 2.0. See [LICENSE](LICENSE) file.
 
----
-
-### Project Overview
-
-Open-AutoGLM is a phone agent framework:
-- **Input**: User's natural language instructions (e.g., "Open WhatsApp and send a message to John")
-- **Output**: Automatically operates the user's Android phone to complete tasks
-- **Mechanism**: Screenshot → Vision model understands interface → Outputs tap coordinates → ADB executes actions → Loop
-
-The architecture consists of two parts:
-1. **Agent Code** (this repository): Runs on the user's computer, responsible for calling models, parsing actions, and controlling the phone
-2. **Vision Model Service**: Can be a remote API or deployed locally
-
----
-
-### Pre-Deployment Checklist
-
-Before starting deployment, confirm the following items with the user:
-
-#### Hardware Requirements
-- [ ] User has an Android phone (Android 7.0+)
-- [ ] User has a USB cable that supports data transfer (not just charging)
-- [ ] Phone and computer can be connected via USB cable
-
-#### Phone Configuration
-- [ ] Phone has Developer Mode enabled (Settings → About Phone → Tap Build Number 7 times)
-- [ ] Phone has USB Debugging enabled (Settings → Developer Options → USB Debugging)
-- [ ] Some models require enabling "USB Debugging (Security Settings)" as well
-- [ ] ADB Keyboard app is installed (Download: https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk)
-- [ ] ADB Keyboard is enabled in system settings (Settings → Language & Input → Enable ADB Keyboard)
-
-#### Model Service Confirmation (Choose One)
-
-**Ask the user explicitly: Do you already have access to an AutoGLM model service?**
-
-- **Option A: Use an already-deployed model service (Recommended)**
-  - User provides the model service URL (e.g., `http://xxx.xxx.xxx.xxx:8000/v1`)
-  - No local GPU required, no model download needed
-  - Use this URL directly as the `--base-url` parameter
-
-- **Option B: Deploy model locally (High system requirements)**
-  - Requires NVIDIA GPU (24GB+ VRAM recommended)
-  - Requires installation of vLLM or SGLang
-  - Requires downloading approximately 20GB of model files
-  - **If the user is a beginner or unsure, strongly recommend Option A**
-
----
-
-### Deployment Process
-
-#### Phase 1: Environment Setup
-
-```bash
-# 1. Install ADB tools
-# MacOS:
-brew install android-platform-tools
-# Or download manually: https://developer.android.com/tools/releases/platform-tools
-
-# Windows: Download, extract, and add to PATH environment variable
-
-# 2. Verify ADB installation
-adb version
-# Should output version information
-
-# 3. Connect phone and verify
-# Connect phone via USB cable, tap "Allow USB debugging" on phone
-adb devices
-# Should output device list, e.g.:
-# List of devices attached
-# XXXXXXXX    device
-```
-
-**If `adb devices` shows empty list or unauthorized:**
-1. Check if authorization popup appeared on phone, tap "Allow"
-2. Check if USB debugging is enabled
-3. Try a different cable or USB port
-4. Run `adb kill-server && adb start-server` and retry
-
-#### Phase 2: Install Agent
-
-```bash
-# 1. Clone repository (if not already cloned)
-git clone https://github.com/zai-org/Open-AutoGLM.git
-cd Open-AutoGLM
-
-# 2. Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-pip install -e .
-```
-
-**Note: No need to clone model repository; models are called via API.**
-
-#### Phase 3: Configure Model Service
-
-**If user chooses Option A (using already-deployed model):**
-
-You can use the following third-party model services:
-
-1. **z.ai**
-   - Documentation: https://docs.z.ai/api-reference/introduction
-   - `--base-url`: `https://api.z.ai/api/paas/v4`
-   - `--model`: `autoglm-phone-multilingual`
-   - `--apikey`: Apply for your own API key on the z.ai platform
-
-2. **Novita AI**
-   - Documentation: https://novita.ai/models/model-detail/zai-org-autoglm-phone-9b-multilingual
-   - `--base-url`: `https://api.novita.ai/openai`
-   - `--model`: `zai-org/autoglm-phone-9b-multilingual`
-   - `--apikey`: Apply for your own API key on the Novita AI platform
-
-3. **Parasail**
-   - Documentation: https://www.saas.parasail.io/serverless?name=auto-glm-9b-multilingual
-   - `--base-url`: `https://api.parasail.io/v1`
-   - `--model`: `parasail-auto-glm-9b-multilingual`
-   - `--apikey`: Apply for your own API key on the Parasail platform
-
-Example usage:
-
-```bash
-# Using z.ai
-python main.py --base-url https://api.z.ai/api/paas/v4 --model "autoglm-phone-multilingual" --apikey "your-z-ai-api-key" "Open Chrome browser"
-
-# Using Novita AI
-python main.py --base-url https://api.novita.ai/openai --model "zai-org/autoglm-phone-9b-multilingual" --apikey "your-novita-api-key" "Open Chrome browser"
-
-# Using Parasail
-python main.py --base-url https://api.parasail.io/v1 --model "parasail-auto-glm-9b-multilingual" --apikey "your-parasail-api-key" "Open Chrome browser"
-```
-
-Or use the URL provided by the user directly and skip local model deployment steps.
-
-**If user chooses Option B (deploy model locally):**
-
-```bash
-# 1. Install vLLM
-pip install vllm
-
-# 2. Start model service (will auto-download model, ~20GB)
-python3 -m vllm.entrypoints.openai.api_server \
-  --served-model-name autoglm-phone-9b-multilingual \
-  --allowed-local-media-path / \
-  --mm-encoder-tp-mode data \
-  --mm_processor_cache_type shm \
-  --mm_processor_kwargs "{\"max_pixels\":5000000}" \
-  --max-model-len 25480 \
-  --chat-template-content-format string \
-  --limit-mm-per-prompt "{\"image\":10}" \
-  --model zai-org/AutoGLM-Phone-9B-Multilingual \
-  --port 8000
-
-# Model service URL: http://localhost:8000/v1
-```
-
-#### Phase 4: Verify Deployment
-
-```bash
-# Execute in the Open-AutoGLM directory
-# Replace {MODEL_URL} with the actual model service address
-
-python main.py --base-url {MODEL_URL} --model "autoglm-phone-9b-multilingual" "Open Gmail and send an email to File Transfer Assistant: Deployment successful"
-```
-
-**Expected Result:**
-- Phone automatically opens Gmail
-- Automatically searches for recipient
-- Automatically sends the message "Deployment successful"
-
----
-
-### Troubleshooting
-
-| Error Symptom | Possible Cause | Solution |
-|---------------|----------------|----------|
-| `adb devices` shows nothing | USB debugging not enabled or cable issue | Check developer options, replace cable |
-| `adb devices` shows unauthorized | Phone not authorized | Tap "Allow USB debugging" on phone |
-| Can open apps but cannot tap | Missing security debugging permission | Enable "USB Debugging (Security Settings)" |
-| Chinese/text input corrupted or missing | ADB Keyboard not enabled | Enable ADB Keyboard in system settings |
-| Screenshot returns black screen | Sensitive page (payment/banking) | Normal behavior, system will handle automatically |
-| Cannot connect to model service | Wrong URL or service not running | Check URL, confirm service is running |
-| `ModuleNotFoundError` | Dependencies not installed | Run `pip install -r requirements.txt` |
-
----
-
-### Deployment Key Points
-
-1. **Prioritize confirming phone connection**: Before installing any code, ensure `adb devices` can see the device
-2. **Don't skip ADB Keyboard**: Without it, text input will fail
-3. **Model service is an external dependency**: Agent code doesn't include the model; a separate model service is required
-4. **Check phone settings first for permission issues**: Most problems are due to incomplete phone-side configuration
-5. **Test with simple tasks after deployment**: Recommend using "Open Gmail and send message to File Transfer Assistant" as acceptance criteria
-
----
-
-### Command Quick Reference
-
-```bash
-# Check ADB connection
-adb devices
-
-# Restart ADB service
-adb kill-server && adb start-server
-
-# Install dependencies
-pip install -r requirements.txt && pip install -e .
-
-# Run Agent (interactive mode)
-python main.py --base-url {MODEL_URL} --model "autoglm-phone-9b-multilingual"
-
-# Run Agent (single task)
-python main.py --base-url {MODEL_URL} --model "autoglm-phone-9b-multilingual" "your task description"
-
-# View supported apps list
-python main.py --list-apps
-```
-
----
-
-**Deployment success indicator: The phone can automatically execute user's natural language instructions.**
+> ⚠️ **Disclaimer**: This project is for research and learning purposes only. It is strictly prohibited to use for illegal information acquisition, system interference, or any illegal activities. Please review the [Terms of Use](resources/privacy_policy_en.txt).
