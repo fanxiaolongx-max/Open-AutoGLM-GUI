@@ -117,7 +117,7 @@ jobs:
   # macOS 构建 (Web Server Only) - Intel
   # ============================================
   build-macos:
-    runs-on: macos-12  # Intel runner
+    runs-on: macos-15  # Intel runner (same as previous builds)
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
