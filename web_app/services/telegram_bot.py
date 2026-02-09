@@ -1566,11 +1566,20 @@ class TelegramBotService:
                         # Accumulate tokens
                         self._token_counters[chat_id] += tokens_total
                         
-                        # Save to database
+                        # Save to database (both session and message level)
                         try:
                             # chat_service is already imported in the outer scope
                             if session_id:
                                 chat_service.update_session_tokens(session_id, tokens_total)
+                                
+                                # Also update message-level tokens
+                                # Get message_id from task_service context (created during run_task)
+                                msg_id = task_service._chat_context.message_id if hasattr(task_service, '_chat_context') else None
+                                if msg_id:
+                                    # Accumulate tokens for this message
+                                    accumulated = self._token_counters.get(chat_id, 0)
+                                    chat_service.update_message(msg_id, tokens=accumulated)
+                                    logger.debug(f"Bot task: saved {tokens_total} tokens to message {msg_id[:8]} (total: {accumulated})")
                         except Exception as e:
                             logger.error(f"Failed to save token to database: {e}")
                     
