@@ -46,11 +46,13 @@ Open-AutoGLM 是一个基于视觉语言模型的**手机智能助理框架**，
 
 ### 支持的设备
 
-| 设备类型 | 连接方式 | 说明 |
-|---------|---------|------|
-| **Android** | ADB | Android 7.0+ 设备 |
-| **HarmonyOS** | HDC | 鸿蒙 NEXT 及以上版本 |
-| **iOS** | WebDriverAgent | iPhone/iPad 设备 |
+| 设备类型 | 连接方式 | Web 界面 | CLI 命令行 |
+|---------|---------|:--------:|:----------:|
+| **Android** | ADB | ✅ | ✅ |
+| **HarmonyOS** | HDC | ❌ | ✅ |
+| **iOS** | WebDriverAgent | ❌ | ✅ |
+
+> 💡 Web 界面目前仅支持 Android 设备，鸿蒙和 iOS 请使用命令行
 
 ---
 

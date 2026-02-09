@@ -43,11 +43,13 @@ User Command → Screenshot → AI Understands Interface → Generate Action →
 
 ### Supported Devices
 
-| Device Type | Connection | Description |
-|-------------|------------|-------------|
-| **Android** | ADB | Android 7.0+ devices |
-| **HarmonyOS** | HDC | HarmonyOS NEXT and above |
-| **iOS** | WebDriverAgent | iPhone/iPad devices |
+| Device Type | Connection | Web Interface | CLI |
+|-------------|------------|:-------------:|:---:|
+| **Android** | ADB | ✅ | ✅ |
+| **HarmonyOS** | HDC | ❌ | ✅ |
+| **iOS** | WebDriverAgent | ❌ | ✅ |
+
+> 💡 Web interface currently only supports Android. For HarmonyOS and iOS, use CLI.
 
 ---
 
