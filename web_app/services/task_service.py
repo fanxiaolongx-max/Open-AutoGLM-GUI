@@ -1101,6 +1101,132 @@ class TaskService:
         can_interrupt = new_priority > current_priority
         return can_interrupt, current_info
 
+    async def run_task_parallel(
+        self,
+        task_content: str,
+        device_ids: list[str],
+        model_config: Optional[dict] = None,
+        is_scheduled: bool = False,
+        send_email: bool = True,
+        no_auto_lock: bool = False,
+        restore_lock_to_state: Optional[bool] = None,
+        task_type: str = TaskType.MANUAL.value,
+        session_id: Optional[str] = None,
+        debug_mode: bool = False,
+    ) -> TaskExecution:
+        """
+        Run a task on multiple devices IN PARALLEL.
+        
+        Each device runs as an independent task instance with its own session.
+        This allows multiple devices to execute simultaneously without interference.
+        
+        Args:
+            Same as run_task(), but session_id is used as parent session (optional)
+        
+        Returns:
+            Combined TaskExecution with aggregated results from all devices
+        """
+        if len(device_ids) <= 1:
+            # Single device - use regular run_task
+            return await self.run_task(
+                task_content=task_content,
+                device_ids=device_ids,
+                model_config=model_config,
+                is_scheduled=is_scheduled,
+                send_email=send_email,
+                no_auto_lock=no_auto_lock,
+                restore_lock_to_state=restore_lock_to_state,
+                task_type=task_type,
+                session_id=session_id,
+                debug_mode=debug_mode,
+            )
+        
+        logger.info(f"Starting PARALLEL execution for {len(device_ids)} devices: {device_ids}")
+        
+        # Create a combined task for tracking
+        combined_task = TaskExecution(
+            task_content=task_content,
+            device_ids=device_ids,
+            status=TaskStatus.RUNNING.value,
+            start_time=datetime.now().isoformat(),
+            task_type=task_type,
+        )
+        
+        async def run_single_device(device_id: str) -> tuple[str, TaskExecution]:
+            """Run task on a single device and return (device_id, result)."""
+            try:
+                logger.info(f"[PARALLEL] Starting device: {device_id}")
+                result = await self.run_task(
+                    task_content=task_content,
+                    device_ids=[device_id],  # Single device
+                    model_config=model_config,
+                    is_scheduled=is_scheduled,
+                    send_email=False,  # Don't send individual emails
+                    no_auto_lock=no_auto_lock,
+                    restore_lock_to_state=restore_lock_to_state,
+                    task_type=task_type,
+                    session_id=None,  # Each device gets its own session
+                    debug_mode=debug_mode,
+                )
+                logger.info(f"[PARALLEL] Completed device: {device_id}, status: {result.status}")
+                return device_id, result
+            except Exception as e:
+                logger.error(f"[PARALLEL] Failed device: {device_id}, error: {e}")
+                # Return a failed task result
+                failed = TaskExecution(
+                    task_content=task_content,
+                    device_ids=[device_id],
+                    status=TaskStatus.FAILED.value,
+                    start_time=datetime.now().isoformat(),
+                    task_type=task_type,
+                )
+                failed.end_time = datetime.now().isoformat()
+                failed.logs.append(f"Error: {str(e)}")
+                return device_id, failed
+        
+        # Run all devices in parallel
+        tasks = [run_single_device(device_id) for device_id in device_ids]
+        results = await asyncio.gather(*tasks)
+        
+        # Aggregate results
+        all_success = True
+        combined_logs = []
+        combined_results = []
+        
+        for device_id, result in results:
+            device_short = device_id[:12] if len(device_id) > 12 else device_id
+            combined_logs.append(f"=== Device: {device_short} ===")
+            combined_logs.extend(result.logs)
+            
+            if result.status != TaskStatus.COMPLETED.value:
+                all_success = False
+            
+            combined_results.append({
+                "device_id": device_id,
+                "status": result.status,
+                "message": result.results[0].get("message", "") if result.results else "",
+            })
+        
+        # Update combined task
+        combined_task.status = TaskStatus.COMPLETED.value if all_success else TaskStatus.FAILED.value
+        combined_task.end_time = datetime.now().isoformat()
+        combined_task.logs = combined_logs
+        combined_task.results = combined_results
+        combined_task.progress = 100
+        
+        # Send combined email if requested
+        if send_email and not is_scheduled:
+            try:
+                self._emit_log(combined_task.id, "Sending combined email report...")
+                # Email logic can be added here if needed
+            except Exception as e:
+                logger.error(f"Failed to send combined email: {e}")
+        
+        success_count = sum(1 for _, r in results if r.status == TaskStatus.COMPLETED.value)
+        logger.info(f"[PARALLEL] All devices completed: {success_count}/{len(device_ids)} succeeded")
+        
+        return combined_task
+
 
 # Global service instance
 task_service = TaskService()

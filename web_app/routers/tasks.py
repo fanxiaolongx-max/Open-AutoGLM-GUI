@@ -38,6 +38,7 @@ class RunTaskRequest(BaseModel):
     session_id: Optional[str] = None  # 聊天会话 ID（用于在同一会话中发送多个消息）
     message_id: Optional[str] = None  # 消息 ID（用于绑定日志和截图）
     debug_mode: Optional[bool] = False  # 调试模式：点击前显示预览
+    parallel: Optional[bool] = False  # 多设备并行执行模式
 
 
 class DecomposeTaskRequest(BaseModel):
@@ -314,18 +315,35 @@ async def run_task(
     # Start task in background
     async def run_in_background():
         try:
-            result = await task_service.run_task(
-                task_content=request.task_content,
-                device_ids=request.device_ids,
-                model_config=request.model_settings,
-                send_email=request.send_email if request.send_email is not None else True,
-                no_auto_lock=request.no_auto_lock if request.no_auto_lock is not None else False,
-                restore_lock_to_state=request.restore_lock_to_state,
-                task_type=task_type,
-                session_id=request.session_id,
-                message_id=request.message_id,
-                debug_mode=request.debug_mode if request.debug_mode is not None else False,
-            )
+            # Choose parallel or serial execution based on request
+            use_parallel = request.parallel and len(request.device_ids) > 1
+            
+            if use_parallel:
+                logger.info(f"[PARALLEL MODE] Running task on {len(request.device_ids)} devices in parallel")
+                result = await task_service.run_task_parallel(
+                    task_content=request.task_content,
+                    device_ids=request.device_ids,
+                    model_config=request.model_settings,
+                    send_email=request.send_email if request.send_email is not None else True,
+                    no_auto_lock=request.no_auto_lock if request.no_auto_lock is not None else False,
+                    restore_lock_to_state=request.restore_lock_to_state,
+                    task_type=task_type,
+                    session_id=request.session_id,
+                    debug_mode=request.debug_mode if request.debug_mode is not None else False,
+                )
+            else:
+                result = await task_service.run_task(
+                    task_content=request.task_content,
+                    device_ids=request.device_ids,
+                    model_config=request.model_settings,
+                    send_email=request.send_email if request.send_email is not None else True,
+                    no_auto_lock=request.no_auto_lock if request.no_auto_lock is not None else False,
+                    restore_lock_to_state=request.restore_lock_to_state,
+                    task_type=task_type,
+                    session_id=request.session_id,
+                    message_id=request.message_id,
+                    debug_mode=request.debug_mode if request.debug_mode is not None else False,
+                )
             # Note: task_finished is already broadcast via _emit_finished callback in task_service
             # No need to call broadcast_task_finished here again
         except Exception as e:
