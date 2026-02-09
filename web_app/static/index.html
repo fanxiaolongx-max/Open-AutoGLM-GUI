@@ -1766,7 +1766,7 @@
                             <textarea v-model="taskContent" class="form-textarea"
                                 :placeholder="t('tasksInputPlaceholder')" rows="4" :disabled="taskRunning"></textarea>
                         </div>
-                        <div style="display: flex; gap: 12px;">
+                        <div style="display: flex; gap: 12px; align-items: center;">
                             <button class="btn btn-primary" @click="runTask"
                                 :disabled="taskRunning || selectedDevices.length === 0">
                                 ▶️ {{ t('tasksRun') }}
@@ -1774,6 +1774,13 @@
                             <button class="btn btn-danger" @click="stopTask" :disabled="!taskRunning">
                                 ⏹️ {{ t('tasksStop') }}
                             </button>
+                            <!-- Parallel execution toggle (only show when multiple devices selected) -->
+                            <label v-if="selectedDevices.length > 1" class="toggle-inline"
+                                style="display: flex; align-items: center; gap: 6px; margin-left: 12px; cursor: pointer;">
+                                <input type="checkbox" v-model="parallelExecution"
+                                    style="width: 16px; height: 16px; cursor: pointer;">
+                                <span style="font-size: 14px;">⚡ {{ t('tasksParallel') }}</span>
+                            </label>
                         </div>
 
                         <!-- Progress -->
@@ -3115,6 +3122,7 @@
                     const taskRunning = ref(false);
                     const taskProgress = ref(0);
                     const taskLogs = ref([]);
+                    const parallelExecution = ref(false);  // Parallel multi-device execution
                     const scheduledTasks = ref([]);
                     const modelServices = ref([]);
                     const activeModel = ref(null);
@@ -3289,7 +3297,7 @@
                             tasksSelectDevices: '选择设备', tasksSelectAll: '全选', tasksDeselectAll: '取消全选',
                             tasksNoDevices: '暂无已连接设备，请先连接设备', tasksOnline: '在线', tasksOffline: '离线',
                             tasksTask: '任务', tasksInputPlaceholder: '输入任务指令... (例如：打开微信并发送消息给...)',
-                            tasksRun: '执行任务', tasksStop: '停止', tasksRunning: '执行中...', tasksScreenshot: '当前截图',
+                            tasksRun: '执行任务', tasksStop: '停止', tasksRunning: '执行中...', tasksScreenshot: '当前截图', tasksParallel: '并行执行',
                             tasksNoScreenshot: '暂无截图', tasksExecutionLog: '执行日志', tasksClearLog: '清空',
                             tasksNoLogs: '暂无日志', tasksRunLog: '执行任务日志', tasksScheduledLog: '定时任务日志', tasksProgress: '进度', tasksCurrentScreenshot: '当前截图',
                             schedulerTitle: '定时任务列表', schedulerNewTask: '新建任务', schedulerAddTask: '添加任务', schedulerNoTasks: '暂无定时任务',
@@ -3370,7 +3378,7 @@
                             tasksSelectDevices: 'Select Devices', tasksSelectAll: 'Select All', tasksDeselectAll: 'Deselect All',
                             tasksNoDevices: 'No connected devices, please connect first', tasksOnline: 'Online', tasksOffline: 'Offline',
                             tasksTask: 'Task', tasksInputPlaceholder: 'Enter task instructions... (e.g., Open WeChat and send a message to...)',
-                            tasksRun: 'Run Task', tasksStop: 'Stop', tasksRunning: 'Running...', tasksScreenshot: 'Current Screenshot',
+                            tasksRun: 'Run Task', tasksStop: 'Stop', tasksRunning: 'Running...', tasksScreenshot: 'Current Screenshot', tasksParallel: 'Parallel',
                             tasksNoScreenshot: 'No screenshot', tasksExecutionLog: 'Execution Log', tasksClearLog: 'Clear',
                             tasksNoLogs: 'No logs', tasksRunLog: 'Run Task Log', tasksScheduledLog: 'Scheduled Task Log', tasksProgress: 'Progress', tasksCurrentScreenshot: 'Current Screenshot',
                             schedulerTitle: 'Scheduled Tasks List', schedulerNewTask: 'New Task', schedulerAddTask: 'Add Task', schedulerNoTasks: 'No scheduled tasks',
@@ -5645,6 +5653,7 @@
                                 body: JSON.stringify({
                                     task_content: taskContent.value,
                                     device_ids: selectedDevices.value,
+                                    parallel: parallelExecution.value,
                                 }),
                             });
                             taskRunning.value = true;
@@ -6557,6 +6566,7 @@
                         taskRunning,
                         taskProgress,
                         taskLogs,
+                        parallelExecution,
                         scheduledTasks,
                         modelServices,
                         activeModel,
