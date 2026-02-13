@@ -10,6 +10,7 @@ from web_app.routers.websocket import router as websocket_router
 from web_app.routers.chat import router as chat_router
 from web_app.routers.rules import router as rules_router
 from web_app.routers.telegram import router as telegram_router
+from web_app.routers.tunnel import router as tunnel_router
 
 __all__ = [
     "devices_router",
@@ -21,4 +22,5 @@ __all__ = [
     "chat_router",
     "rules_router",
     "telegram_router",
+    "tunnel_router",
 ]

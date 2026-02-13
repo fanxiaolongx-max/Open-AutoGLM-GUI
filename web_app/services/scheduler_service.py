@@ -48,7 +48,7 @@ class SchedulerService:
         """Save all tasks to database."""
         self._storage.save_all_tasks(self.tasks)
 
-    def add_task_log(self, task_id: str, success: bool, message: str, details: str = ""):
+    def add_task_log(self, task_id: str, success: bool, message: str, details: str = "", screenshots: dict = None):
         """Add a log entry for a task execution."""
         # Smart truncation: if details are too long, keep both beginning and end
         max_length = 50000
@@ -66,7 +66,7 @@ class SchedulerService:
         
         # Send notification to Telegram bot (async, non-blocking)
         if self._telegram_bot:
-            asyncio.create_task(self._send_task_notification(task_id, success, message, details))
+            asyncio.create_task(self._send_task_notification(task_id, success, message, details, screenshots))
 
     def get_task_logs(self, task_id: str, limit: int = 20) -> list[dict]:
         """Get execution logs for a task."""
@@ -270,31 +270,31 @@ class SchedulerService:
         self._telegram_bot = telegram_bot
         logger.info("Telegram bot reference set for scheduler notifications")
     
-    async def _send_task_notification(self, task_id: str, success: bool, message: str, details: str):
-        """Send task result notification to Telegram bot."""
+    async def _send_task_notification(self, task_id: str, success: bool, message: str, details: str, screenshots: dict = None):
+        """Send task result notification to Telegram bot, with optional screenshots."""
         try:
             task = self.tasks.get(task_id)
             if not task:
                 return
-            
+
             # Format notification message
             status_icon = "✅" if success else "❌"
             notification = f"{status_icon} **定时任务执行结果**\\n\\n"
             notification += f"任务名称: `{task.name}`\\n"
             notification += f"任务内容: {task.task_content[:50]}...\\n" if len(task.task_content) > 50 else f"任务内容: {task.task_content}\\n"
             notification += f"执行状态: {message}\\n"
-            
+
             if details:
                 # Truncate details for notification (keep it short)
                 summary = details[:300] + "..." if len(details) > 300 else details
                 # Escape markdown special characters in details
                 summary = summary.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
                 notification += f"\\n详情摘要:\\n```\\n{summary}\\n```"
-            
-            # Send to all authorized users
-            await self._telegram_bot.send_system_notification(notification)
+
+            # Send notification text + screenshots to all authorized groups
+            await self._telegram_bot.send_system_notification(notification, screenshots=screenshots)
             logger.info(f"Task notification sent for task {task_id}")
-            
+
         except Exception as e:
             logger.error(f"Error sending task notification for {task_id}: {e}")
 

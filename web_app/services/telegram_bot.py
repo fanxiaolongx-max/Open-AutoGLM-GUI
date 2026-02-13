@@ -180,6 +180,12 @@ class TelegramBotService:
             # Don't re-raise Conflict errors - they are handled
             return
         
+        # Network errors (ReadError, ConnectError, TimeoutError, etc.) are transient
+        # and auto-recovered by python-telegram-bot's retry loop - log as warning only
+        if isinstance(error, NetworkError):
+            logger.warning(f"Telegram network error (will auto-retry): {error.__class__.__name__}: {error}")
+            return
+
         # For other errors, log with traceback
         logger.error(f"Telegram error: {error}", exc_info=error)
 
@@ -2115,34 +2121,39 @@ class TelegramBotService:
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
 
-    async def send_system_notification(self, message: str):
+    async def send_system_notification(self, message: str, screenshots: dict = None):
         """
         Send system notification to all authorized GROUP chats (chat_id < 0).
         Individual users are not notified, only groups.
-        
+
         Args:
             message: The notification message to send
+            screenshots: Optional dict of {device_id: screenshot_data} to send as photos
         """
         if not self._application or not self._running:
             logger.warning("Cannot send system notification: bot not running")
             return
-        
+
         # Check if there are any authorized groups
         if not self._allowed_groups:
             logger.debug("No authorized group chats configured for system notifications")
             return
-        
+
         notification_text = f"🔔 *System Notification*\n\n{message}"
-        
+
         # Send to all authorized groups
         for chat_id in self._allowed_groups:
             if chat_id < 0:  # Double-check it's a group
                 try:
                     await self.send_message(chat_id, notification_text)
                     logger.info(f"System notification sent to group {chat_id}")
+
+                    # Send screenshots if available
+                    if screenshots:
+                        await self._send_screenshots_to_chat(chat_id, screenshots)
                 except Exception as e:
                     logger.error(f"Failed to send notification to group {chat_id}: {e}")
-        
+
         # Send welcome menu to all users after startup notification
         if "系统已启动" in message or "已就绪" in message:
             await self.send_welcome_menu_to_all()
@@ -3958,6 +3969,29 @@ Bot 界面已针对移动端优化，无需额外配置
             await self._application.bot.send_photo(chat_id=chat_id, photo=photo_data, caption=caption)
         except Exception as e:
             logger.error(f"Failed to send photo: {e}")
+
+    async def _send_screenshots_to_chat(self, chat_id: int, screenshots: dict):
+        """Send device screenshots to a chat as photos.
+
+        Args:
+            chat_id: Telegram chat ID to send to
+            screenshots: Dict of {device_id: screenshot_data (base64 str or bytes)}
+        """
+        import base64
+        for device_id, screenshot_data in screenshots.items():
+            try:
+                # Convert base64 string to bytes if needed
+                if isinstance(screenshot_data, str):
+                    photo_bytes = base64.b64decode(screenshot_data)
+                else:
+                    photo_bytes = screenshot_data
+
+                device_short = device_id[:12] if len(device_id) > 12 else device_id
+                caption = f"📱 设备 {device_short} 执行结果截图"
+                await self.send_photo(chat_id, photo_bytes, caption=caption)
+                logger.info(f"Screenshot sent to group {chat_id} for device {device_short}")
+            except Exception as e:
+                logger.error(f"Failed to send screenshot for device {device_id} to {chat_id}: {e}")
     
     # === TASK CREATION FLOW ===
     async def _handle_task_creation_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

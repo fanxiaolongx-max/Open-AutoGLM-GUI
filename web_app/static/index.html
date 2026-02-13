@@ -148,7 +148,7 @@
             opacity: 1;
         }
 
-        /* Chat Page Styles */
+        /* Chat Page Styles - Glassmorphism Premium Design */
         .chat-container {
             display: flex;
             flex-direction: column;
@@ -159,16 +159,32 @@
         .chat-messages {
             flex: 1;
             overflow-y: auto;
-            padding: 16px;
+            padding: 20px 24px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 16px;
+            background: linear-gradient(135deg,
+                rgba(59, 130, 246, 0.03) 0%,
+                rgba(16, 185, 129, 0.02) 50%,
+                rgba(139, 92, 246, 0.03) 100%);
         }
 
         .chat-message {
             display: flex;
             gap: 10px;
             max-width: 90%;
+            animation: messageSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes messageSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(16px) scale(0.97);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
         }
 
         .chat-message.user {
@@ -181,76 +197,174 @@
         }
 
         .chat-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 17px;
             flex-shrink: 0;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+        }
+
+        .chat-message:hover .chat-avatar {
+            transform: scale(1.1) rotate(5deg);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
         }
 
         .chat-message.user .chat-avatar {
-            background: #3b82f6;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.8), rgba(99, 102, 241, 0.8));
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
         .chat-message.assistant .chat-avatar {
-            background: #10b981;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.8), rgba(52, 211, 153, 0.8));
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
         .chat-bubble {
-            padding: 10px 14px;
-            border-radius: 12px;
+            padding: 12px 16px;
+            border-radius: 16px;
             font-size: 14px;
-            line-height: 1.5;
+            line-height: 1.6;
             word-break: break-word;
             width: 480px;
             min-width: 200px;
             max-width: 480px;
             overflow: hidden;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+        }
+
+        .chat-bubble:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
         }
 
         .chat-message.user .chat-bubble {
-            background: #3b82f6;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(99, 102, 241, 0.85));
             color: white;
             border-bottom-right-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 24px rgba(59, 130, 246, 0.2), 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+
+        .chat-message.user .chat-bubble:hover {
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3), 0 2px 4px rgba(0, 0, 0, 0.06);
         }
 
         .chat-message.assistant .chat-bubble {
-            background: var(--bg-tertiary);
+            background: rgba(var(--bg-tertiary-rgb, 245, 245, 245), 0.7);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(248, 250, 252, 0.6));
             color: var(--text-primary);
             border-bottom-left-radius: 4px;
         }
 
+        [data-theme="dark"] .chat-message.assistant .chat-bubble {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.7));
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
         .chat-bubble.running {
-            background: #fef3c7;
-            border: 1px solid #f59e0b;
+            background: linear-gradient(135deg, rgba(254, 243, 199, 0.85), rgba(253, 230, 138, 0.7)) !important;
+            border: 1px solid rgba(245, 158, 11, 0.3) !important;
+            animation: pulseGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% {
+                box-shadow: 0 4px 24px rgba(245, 158, 11, 0.1), 0 0 0 0 rgba(245, 158, 11, 0.15);
+            }
+            50% {
+                box-shadow: 0 4px 24px rgba(245, 158, 11, 0.2), 0 0 0 8px rgba(245, 158, 11, 0);
+            }
         }
 
         .chat-bubble.error,
         .chat-bubble.failed {
-            background: #fee2e2;
-            border: 1px solid #ef4444;
+            background: linear-gradient(135deg, rgba(254, 226, 226, 0.85), rgba(252, 165, 165, 0.5)) !important;
+            border: 1px solid rgba(239, 68, 68, 0.3) !important;
+            animation: shakeError 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+        }
+
+        @keyframes shakeError {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-6px); }
+            40% { transform: translateX(6px); }
+            60% { transform: translateX(-4px); }
+            80% { transform: translateX(4px); }
         }
 
         .chat-bubble.success,
         .chat-bubble.completed {
-            background: #d1fae5;
-            border: 1px solid #10b981;
+            background: linear-gradient(135deg, rgba(209, 250, 229, 0.85), rgba(167, 243, 208, 0.5)) !important;
+            border: 1px solid rgba(16, 185, 129, 0.3) !important;
+            animation: successPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
-        /* Compact task result */
+        @keyframes successPop {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        [data-theme="dark"] .chat-bubble.running {
+            background: linear-gradient(135deg, rgba(120, 53, 15, 0.5), rgba(146, 64, 14, 0.3)) !important;
+            border: 1px solid rgba(245, 158, 11, 0.25) !important;
+        }
+
+        [data-theme="dark"] .chat-bubble.error,
+        [data-theme="dark"] .chat-bubble.failed {
+            background: linear-gradient(135deg, rgba(127, 29, 29, 0.5), rgba(153, 27, 27, 0.3)) !important;
+            border: 1px solid rgba(239, 68, 68, 0.25) !important;
+        }
+
+        [data-theme="dark"] .chat-bubble.success,
+        [data-theme="dark"] .chat-bubble.completed {
+            background: linear-gradient(135deg, rgba(6, 78, 59, 0.5), rgba(6, 95, 70, 0.3)) !important;
+            border: 1px solid rgba(16, 185, 129, 0.25) !important;
+        }
+
+        /* Compact task result - Glass Card */
         .task-result {
             font-size: 12px;
-            margin-top: 6px;
-            padding: 8px;
-            background: rgba(0, 0, 0, 0.03);
-            border-radius: 6px;
+            margin-top: 8px;
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.04);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.05);
             max-height: 150px;
             overflow-y: auto;
             overflow-x: hidden;
             word-break: break-all;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .task-result:hover {
+            background: rgba(59, 130, 246, 0.06);
+            border-color: rgba(59, 130, 246, 0.15);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.08);
+        }
+
+        [data-theme="dark"] .task-result {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        [data-theme="dark"] .task-result:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.2);
         }
 
         .task-result-header {
@@ -314,13 +428,21 @@
             text-align: right;
         }
 
-        /* TodoList 样式 (复杂任务模式) */
+        /* TodoList Styles - Glass Cards */
         .todo-list-card {
             margin-top: 10px;
-            padding: 10px;
-            background: var(--bg-tertiary);
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+        }
+
+        [data-theme="dark"] .todo-list-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .todo-list-header {
@@ -333,36 +455,73 @@
         .todo-item {
             display: flex;
             align-items: flex-start;
-            /* 顶部对齐，文本换行时图标保持在顶部 */
             gap: 8px;
-            padding: 6px 8px;
-            border-radius: 4px;
+            padding: 8px 10px;
+            border-radius: 8px;
             font-size: 12px;
             margin-bottom: 4px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid transparent;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .todo-item:last-child {
             margin-bottom: 0;
         }
 
+        .todo-item:hover {
+            transform: translateX(3px);
+        }
+
         .todo-item.pending {
-            background: var(--bg-card);
+            background: rgba(255, 255, 255, 0.6);
             color: var(--text-secondary);
+            border: 1px solid rgba(0, 0, 0, 0.04);
+        }
+
+        [data-theme="dark"] .todo-item.pending {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.04);
         }
 
         .todo-item.running {
-            background: #fef3c7;
+            background: linear-gradient(135deg, rgba(254, 243, 199, 0.8), rgba(253, 230, 138, 0.5));
             color: #92400e;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            animation: todoRunPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes todoRunPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.12); }
+            50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+        }
+
+        [data-theme="dark"] .todo-item.running {
+            background: linear-gradient(135deg, rgba(120, 53, 15, 0.4), rgba(146, 64, 14, 0.2));
+            color: #fbbf24;
         }
 
         .todo-item.completed {
-            background: #d1fae5;
+            background: linear-gradient(135deg, rgba(209, 250, 229, 0.8), rgba(167, 243, 208, 0.5));
             color: #065f46;
+            border: 1px solid rgba(16, 185, 129, 0.15);
+        }
+
+        [data-theme="dark"] .todo-item.completed {
+            background: linear-gradient(135deg, rgba(6, 78, 59, 0.4), rgba(6, 95, 70, 0.2));
+            color: #34d399;
         }
 
         .todo-item.failed {
-            background: #fee2e2;
+            background: linear-gradient(135deg, rgba(254, 226, 226, 0.8), rgba(252, 165, 165, 0.5));
             color: #991b1b;
+            border: 1px solid rgba(239, 68, 68, 0.15);
+        }
+
+        [data-theme="dark"] .todo-item.failed {
+            background: linear-gradient(135deg, rgba(127, 29, 29, 0.4), rgba(153, 27, 27, 0.2));
+            color: #fca5a5;
         }
 
         .todo-status {
@@ -375,29 +534,25 @@
         .todo-content {
             flex: 1;
             min-width: 0;
-            /* 允许 flex 子元素缩小 */
             max-width: 100%;
-            /* 限制最大宽度 */
             word-wrap: break-word;
-            /* 长单词换行 */
             word-break: break-word;
-            /* 强制换行 */
             white-space: normal;
-            /* 允许换行 */
             overflow-wrap: break-word;
-            /* 在必要时断开单词 */
             color: inherit;
         }
 
-        /* TodoList Confirmation Styles */
+        /* TodoList Confirmation Styles - Glass */
         .todo-confirmation {
             margin-top: 12px;
-            border-top: 2px dashed #e5e7eb;
+            border-top: 2px dashed rgba(229, 231, 235, 0.6);
             padding-top: 12px;
         }
 
         .confirmation-banner {
-            background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+            background: linear-gradient(135deg, rgba(255, 247, 237, 0.9), rgba(254, 215, 170, 0.7));
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             border-left: 4px solid #f59e0b;
             padding: 12px 16px;
             border-radius: 8px;
@@ -425,39 +580,47 @@
         }
 
         .btn-confirm {
-            background: #10b981;
+            background: linear-gradient(135deg, #10b981, #059669);
             color: white;
             border: none;
             padding: 8px 16px;
-            border-radius: 6px;
+            border-radius: 10px;
             cursor: pointer;
             font-weight: 500;
             font-size: 14px;
-            transition: all 0.2s;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 2px 12px rgba(16, 185, 129, 0.25);
         }
 
         .btn-confirm:hover {
-            background: #059669;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+        }
+
+        .btn-confirm:active {
+            transform: translateY(0) scale(0.98);
         }
 
         .btn-cancel {
-            background: #ef4444;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
             color: white;
             border: none;
             padding: 8px 16px;
-            border-radius: 6px;
+            border-radius: 10px;
             cursor: pointer;
             font-weight: 500;
             font-size: 14px;
-            transition: all 0.2s;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 2px 12px rgba(239, 68, 68, 0.25);
         }
 
         .btn-cancel:hover {
-            background: #dc2626;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35);
+        }
+
+        .btn-cancel:active {
+            transform: translateY(0) scale(0.98);
         }
 
         .todo-input {
@@ -560,35 +723,54 @@
         }
 
         .chat-input-container {
-            padding: 12px 16px;
-            border-top: 1px solid #e5e5e5;
-            background: var(--bg-card);
+            padding: 16px 20px;
+            border-top: 1px solid rgba(229, 231, 235, 0.5);
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             display: flex;
             gap: 10px;
             align-items: flex-end;
         }
 
+        [data-theme="dark"] .chat-input-container {
+            background: rgba(15, 23, 42, 0.6);
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
         .chat-input {
             flex: 1;
-            padding: 10px 14px;
-            border: 1px solid #e5e5e5;
-            border-radius: 20px;
+            padding: 12px 18px;
+            border: 1px solid rgba(229, 229, 229, 0.6);
+            border-radius: 24px;
             font-size: 14px;
             resize: none;
             max-height: 100px;
             line-height: 1.4;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        [data-theme="dark"] .chat-input {
+            background: rgba(30, 41, 59, 0.6);
+            border-color: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
         }
 
         .chat-input:focus {
             outline: none;
-            border-color: #3b82f6;
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1), 0 2px 12px rgba(59, 130, 246, 0.08);
         }
 
         .chat-send-btn {
-            width: 40px;
-            height: 40px;
+            width: 42px;
+            height: 42px;
             border-radius: 50%;
-            background: #3b82f6;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
             color: white;
             border: none;
             cursor: pointer;
@@ -597,22 +779,30 @@
             justify-content: center;
             font-size: 18px;
             flex-shrink: 0;
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .chat-send-btn:disabled {
-            background: #d1d5db;
+            background: linear-gradient(135deg, #d1d5db, #9ca3af);
             cursor: not-allowed;
+            box-shadow: none;
         }
 
         .chat-send-btn:hover:not(:disabled) {
-            background: #2563eb;
+            transform: scale(1.1) translateY(-1px);
+            box-shadow: 0 6px 24px rgba(59, 130, 246, 0.4);
+        }
+
+        .chat-send-btn:active:not(:disabled) {
+            transform: scale(0.95);
         }
 
         .chat-stop-btn {
-            width: 40px;
-            height: 40px;
+            width: 42px;
+            height: 42px;
             border-radius: 50%;
-            background: #ef4444;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
             color: white;
             border: none;
             cursor: pointer;
@@ -622,10 +812,14 @@
             font-size: 16px;
             flex-shrink: 0;
             animation: pulse-red 1.5s infinite;
+            box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .chat-stop-btn:hover {
-            background: #dc2626;
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            transform: scale(1.1);
+            box-shadow: 0 6px 24px rgba(239, 68, 68, 0.4);
         }
 
         @keyframes pulse-red {
@@ -642,8 +836,10 @@
 
         .chat-device-selector {
             padding: 8px 16px;
-            background: var(--bg-tertiary);
-            border-bottom: 1px solid #e5e5e5;
+            background: rgba(245, 245, 245, 0.5);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(229, 229, 229, 0.4);
             display: flex;
             align-items: center;
             gap: 8px;
@@ -652,10 +848,30 @@
 
         .chat-device-selector select {
             padding: 4px 8px;
-            border: 1px solid #e5e5e5;
-            border-radius: 6px;
+            border: 1px solid rgba(229, 229, 229, 0.6);
+            border-radius: 8px;
             font-size: 12px;
             max-width: 200px;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            transition: all 0.2s ease;
+        }
+
+        .chat-device-selector select:focus {
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        [data-theme="dark"] .chat-device-selector {
+            background: rgba(15, 23, 42, 0.4);
+            border-bottom-color: rgba(255, 255, 255, 0.06);
+        }
+
+        [data-theme="dark"] .chat-device-selector select {
+            background: rgba(30, 41, 59, 0.6);
+            border-color: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
         }
 
         .mini-spinner {
@@ -669,14 +885,21 @@
             margin-right: 6px;
         }
 
-        /* Chat header with email toggle */
+        /* Chat header with email toggle - Glass */
         .chat-header {
-            padding: 8px 16px;
-            background: var(--bg-tertiary);
-            border-bottom: 1px solid #e5e5e5;
+            padding: 10px 16px;
+            background: rgba(245, 245, 245, 0.5);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(229, 229, 229, 0.4);
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+
+        [data-theme="dark"] .chat-header {
+            background: rgba(15, 23, 42, 0.5);
+            border-bottom-color: rgba(255, 255, 255, 0.06);
         }
 
         .chat-header-left {
@@ -1021,19 +1244,30 @@
         /* Chat Sessions Sidebar */
         .chat-sessions-sidebar {
             width: 220px;
-            background: var(--bg-tertiary);
-            border-right: 1px solid #e5e5e5;
+            background: rgba(245, 245, 245, 0.5);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(229, 229, 229, 0.4);
             display: flex;
             flex-direction: column;
             height: 100%;
         }
 
+        [data-theme="dark"] .chat-sessions-sidebar {
+            background: rgba(15, 23, 42, 0.5);
+            border-right-color: rgba(255, 255, 255, 0.06);
+        }
+
         .chat-sessions-header {
             padding: 12px;
-            border-bottom: 1px solid #e5e5e5;
+            border-bottom: 1px solid rgba(229, 229, 229, 0.4);
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+
+        [data-theme="dark"] .chat-sessions-header {
+            border-bottom-color: rgba(255, 255, 255, 0.06);
         }
 
         .chat-sessions-header h3 {
@@ -1043,20 +1277,27 @@
         }
 
         .chat-new-btn {
-            background: #3b82f6;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
             color: white;
             border: none;
-            padding: 4px 10px;
-            border-radius: 6px;
+            padding: 5px 12px;
+            border-radius: 8px;
             font-size: 12px;
             cursor: pointer;
             display: flex;
             align-items: center;
             gap: 4px;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .chat-new-btn:hover {
-            background: #2563eb;
+            transform: translateY(-1px) scale(1.03);
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+        }
+
+        .chat-new-btn:active {
+            transform: translateY(0) scale(0.97);
         }
 
         .chat-sessions-list {
@@ -1067,21 +1308,26 @@
 
         .chat-session-item {
             padding: 10px 12px;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
             margin-bottom: 4px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            transition: background 0.2s;
+            border: 1px solid transparent;
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .chat-session-item:hover {
-            background: var(--bg-tertiary);
+            background: rgba(59, 130, 246, 0.06);
+            border-color: rgba(59, 130, 246, 0.1);
+            transform: translateX(3px);
         }
 
         .chat-session-item.active {
-            background: var(--accent-primary);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.85), rgba(99, 102, 241, 0.8));
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
         }
 
         .chat-session-item.active .chat-session-title,
@@ -1115,9 +1361,9 @@
             color: var(--text-muted);
             cursor: pointer;
             padding: 4px;
-            border-radius: 4px;
+            border-radius: 6px;
             opacity: 0;
-            transition: opacity 0.2s;
+            transition: all 0.2s ease;
         }
 
         .chat-session-item:hover .chat-session-delete {
@@ -1125,7 +1371,7 @@
         }
 
         .chat-session-delete:hover {
-            background: #fee2e2;
+            background: rgba(239, 68, 68, 0.1);
             color: #ef4444;
         }
 
@@ -1139,6 +1385,150 @@
         .chat-with-sidebar {
             display: flex;
             height: calc(100vh - 48px);
+        }
+
+        /* Session Search & Toolbar */
+        .chat-sessions-toolbar {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(229, 229, 229, 0.4);
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        [data-theme="dark"] .chat-sessions-toolbar {
+            border-bottom-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .chat-search-box {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .chat-search-icon {
+            position: absolute;
+            left: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+
+        .chat-search-input {
+            width: 100%;
+            padding: 6px 28px 6px 28px;
+            border: 1px solid rgba(229, 229, 229, 0.5);
+            border-radius: 8px;
+            font-size: 12px;
+            background: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+
+        [data-theme="dark"] .chat-search-input {
+            background: rgba(30, 41, 59, 0.5);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .chat-search-input:focus {
+            outline: none;
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .chat-search-input::placeholder {
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .chat-search-clear {
+            position: absolute;
+            right: 4px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 2px 6px;
+            border-radius: 50%;
+            line-height: 1;
+            transition: all 0.2s ease;
+        }
+
+        .chat-search-clear:hover {
+            color: var(--text-primary);
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .chat-clear-all-btn {
+            background: none;
+            border: 1px solid rgba(229, 229, 229, 0.5);
+            border-radius: 8px;
+            padding: 5px 7px;
+            cursor: pointer;
+            font-size: 13px;
+            line-height: 1;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .chat-clear-all-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            transform: scale(1.1);
+        }
+
+        [data-theme="dark"] .chat-clear-all-btn {
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        [data-theme="dark"] .chat-clear-all-btn:hover {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        /* Session List Transitions */
+        .session-list-move,
+        .session-list-enter-active,
+        .session-list-leave-active {
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .session-list-enter-from {
+            opacity: 0;
+            transform: translateX(-20px) scale(0.95);
+        }
+
+        .session-list-leave-to {
+            opacity: 0;
+            transform: translateX(20px) scale(0.95);
+        }
+
+        .session-list-leave-active {
+            position: absolute;
+            width: calc(100% - 16px);
+        }
+
+        /* Session Switch Animation on Messages Area */
+        .chat-messages.session-switching {
+            animation: sessionFadeSwitch 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes sessionFadeSwitch {
+            0% {
+                opacity: 0;
+                transform: translateY(12px);
+                filter: blur(4px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+                filter: blur(0);
+            }
         }
 
         /* Bottom Controls Container - Premium Design */
@@ -1222,8 +1612,30 @@
             <!-- Sidebar -->
             <aside class="sidebar">
                 <div class="sidebar-header">
-                    <h1>{{ t('appTitle') }}</h1>
+                    <div class="sidebar-header-top">
+                        <h1>{{ t('appTitle') }}</h1>
+                        <!-- Cloudflare Tunnel Toggle -->
+                        <div class="tunnel-capsule" :class="{ active: tunnelStatus === 'running', starting: tunnelStatus === 'starting' }"
+                            @click="toggleTunnel" :title="tunnelUrl || (tunnelStatus === 'starting' ? '正在启动隧道...' : '开启公网访问')">
+                            <div class="tunnel-capsule-track">
+                                <div class="tunnel-capsule-thumb">
+                                    <span v-if="tunnelStatus === 'starting'" class="tunnel-spinner"></span>
+                                    <span v-else>{{ tunnelStatus === 'running' ? '🌐' : '🔒' }}</span>
+                                </div>
+                            </div>
+                            <span class="tunnel-capsule-label">{{ tunnelStatus === 'running' ? 'Public' : tunnelStatus === 'starting' ? '...' : 'LAN' }}</span>
+                        </div>
+                    </div>
                     <div class="subtitle">{{ t('appSubtitle') }}</div>
+                    <!-- Tunnel URL display -->
+                    <div v-if="tunnelUrl" class="tunnel-url-bar" @click="copyTunnelUrl">
+                        <span class="tunnel-url-dot"></span>
+                        <span class="tunnel-url-text">{{ tunnelUrl.replace('https://', '') }}</span>
+                        <span class="tunnel-url-copy" title="复制链接">📋</span>
+                    </div>
+                    <div v-if="tunnelError" class="tunnel-error-bar">
+                        {{ tunnelError }}
+                    </div>
                 </div>
 
                 <ul class="nav-menu">
@@ -1298,26 +1710,42 @@
                                 <span>+</span> {{ t('chatNewSession') }}
                             </button>
                         </div>
+                        <!-- Search & Actions Bar -->
+                        <div class="chat-sessions-toolbar">
+                            <div class="chat-search-box">
+                                <span class="chat-search-icon">🔍</span>
+                                <input v-model="sessionSearchQuery" type="text" class="chat-search-input"
+                                    placeholder="搜索会话..." @input="filterSessions" />
+                                <button v-if="sessionSearchQuery" class="chat-search-clear"
+                                    @click="sessionSearchQuery = ''">&times;</button>
+                            </div>
+                            <button class="chat-clear-all-btn" @click="clearAllSessions" title="清除所有会话">
+                                🗑️
+                            </button>
+                        </div>
                         <div class="chat-sessions-list">
-                            <div v-if="chatSessions.length === 0"
+                            <div v-if="filteredSessions.length === 0"
                                 style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">
-                                {{ t('chatNoSessions') }}
+                                <template v-if="sessionSearchQuery">无匹配会话</template>
+                                <template v-else>{{ t('chatNoSessions') }}</template>
                             </div>
-                            <div v-for="session in chatSessions" :key="session.id" class="chat-session-item"
-                                :class="{ active: currentSessionId === session.id }" @click="switchSession(session.id)">
-                                <div class="chat-session-info">
-                                    <div class="chat-session-title">
-                                        <span v-if="session.deviceId && session.deviceId.startsWith('bot_')"
-                                            title="来自 Telegram Bot" style="margin-right: 4px;">✈️</span>{{ session.title
-                                        || '新会话' }}
+                            <TransitionGroup name="session-list" tag="div">
+                                <div v-for="session in filteredSessions" :key="session.id" class="chat-session-item"
+                                    :class="{ active: currentSessionId === session.id }" @click="switchSession(session.id)">
+                                    <div class="chat-session-info">
+                                        <div class="chat-session-title">
+                                            <span v-if="session.deviceId && session.deviceId.startsWith('bot_')"
+                                                title="来自 Telegram Bot" style="margin-right: 4px;">✈️</span>{{ session.title
+                                            || '新会话' }}
+                                        </div>
+                                        <div class="chat-session-time">{{ formatSessionTime(session.updatedAt) }}</div>
                                     </div>
-                                    <div class="chat-session-time">{{ formatSessionTime(session.updatedAt) }}</div>
+                                    <button class="chat-session-delete" @click.stop="deleteSession(session.id)"
+                                        title="删除会话">
+                                        🗑️
+                                    </button>
                                 </div>
-                                <button class="chat-session-delete" @click.stop="deleteSession(session.id)"
-                                    title="删除会话">
-                                    🗑️
-                                </button>
-                            </div>
+                            </TransitionGroup>
                         </div>
                     </div>
 
@@ -3238,6 +3666,11 @@
                     const debugMode = ref(false);  // 调试模式：点击前显示预览
                     const darkMode = ref(false);  // 暗黑模式
                     const currentLanguage = ref('zh');  // 语言设置: 'zh' 或 'en'
+
+                    // Cloudflare Tunnel state
+                    const tunnelStatus = ref('stopped'); // stopped | starting | running | error
+                    const tunnelUrl = ref('');
+                    const tunnelError = ref('');
                     const awaitingTodoListConfirmation = ref(false);  // 是否正在等待用户确认todoList
                     const subtaskTimeoutSeconds = ref(180);  // 子任务超时时间（秒），默认3分钟
                     const subtaskCountdown = ref(0);  // 子任务剩余秒数（用于倒计时显示）
@@ -3265,6 +3698,77 @@
                         const theme = darkMode.value ? 'dark' : 'light';
                         applyTheme(theme);
                         localStorage.setItem('theme', theme);
+                    }
+
+                    // ── Cloudflare Tunnel Functions ──
+                    async function checkTunnelStatus() {
+                        try {
+                            const data = await apiCall('/api/tunnel/status');
+                            tunnelStatus.value = data.status;
+                            tunnelUrl.value = data.url || '';
+                            tunnelError.value = data.error || '';
+                            if (!data.installed && tunnelStatus.value === 'stopped') {
+                                tunnelError.value = '';
+                            }
+                        } catch (e) {
+                            console.warn('Failed to check tunnel status:', e);
+                        }
+                    }
+
+                    async function toggleTunnel() {
+                        if (tunnelStatus.value === 'starting') return; // Prevent double-click
+
+                        if (tunnelStatus.value === 'running') {
+                            // Stop tunnel
+                            tunnelStatus.value = 'stopping';
+                            try {
+                                await apiCall('/api/tunnel/stop', { method: 'POST' });
+                                tunnelStatus.value = 'stopped';
+                                tunnelUrl.value = '';
+                                tunnelError.value = '';
+                                showToast('公网隧道已关闭', 'info');
+                            } catch (e) {
+                                tunnelError.value = '关闭隧道失败: ' + e.message;
+                                tunnelStatus.value = 'error';
+                            }
+                        } else {
+                            // Start tunnel
+                            tunnelStatus.value = 'starting';
+                            tunnelError.value = '';
+                            try {
+                                const data = await apiCall('/api/tunnel/start', { method: 'POST' });
+                                if (data.success) {
+                                    tunnelStatus.value = 'running';
+                                    tunnelUrl.value = data.url;
+                                    tunnelError.value = '';
+                                    showToast('公网隧道已开启', 'success');
+                                } else {
+                                    tunnelStatus.value = 'error';
+                                    tunnelError.value = data.error || '启动失败';
+                                    setTimeout(() => { tunnelStatus.value = 'stopped'; }, 3000);
+                                }
+                            } catch (e) {
+                                tunnelStatus.value = 'error';
+                                tunnelError.value = '启动失败: ' + e.message;
+                                setTimeout(() => { tunnelStatus.value = 'stopped'; }, 3000);
+                            }
+                        }
+                    }
+
+                    function copyTunnelUrl() {
+                        if (!tunnelUrl.value) return;
+                        navigator.clipboard.writeText(tunnelUrl.value).then(() => {
+                            showToast('隧道 URL 已复制', 'success');
+                        }).catch(() => {
+                            // Fallback for older browsers
+                            const ta = document.createElement('textarea');
+                            ta.value = tunnelUrl.value;
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(ta);
+                            showToast('隧道 URL 已复制', 'success');
+                        });
                     }
 
                     // Translations Dictionary
@@ -3447,7 +3951,18 @@
                     // Chat sessions state
                     const chatSessions = ref([]);
                     const currentSessionId = ref('');
+                    const sessionSearchQuery = ref('');
                     const SESSIONS_STORAGE_KEY = 'autoglm_chat_sessions';
+
+                    // Filtered sessions (search)
+                    const filteredSessions = Vue.computed(() => {
+                        const q = sessionSearchQuery.value.trim().toLowerCase();
+                        if (!q) return chatSessions.value;
+                        return chatSessions.value.filter(s =>
+                            (s.title || '').toLowerCase().includes(q) ||
+                            (s.messages || []).some(m => (m.content || '').toLowerCase().includes(q))
+                        );
+                    });
 
                     // Task detail modal state
                     const showTaskDetail = ref(false);
@@ -3965,6 +4480,18 @@
                         if (session) {
                             currentSessionId.value = session.id;
 
+                            // Trigger session switch animation
+                            const messagesEl = chatMessagesRef.value;
+                            if (messagesEl) {
+                                messagesEl.classList.remove('session-switching');
+                                // Force reflow to restart animation
+                                void messagesEl.offsetWidth;
+                                messagesEl.classList.add('session-switching');
+                                messagesEl.addEventListener('animationend', () => {
+                                    messagesEl.classList.remove('session-switching');
+                                }, { once: true });
+                            }
+
                             // 优先从服务器加载完整的消息数据（包括 screenshots, tokens, model_name）
                             try {
                                 const detailData = await apiCall(`/api/chat/sessions/${sessionId}/detail`);
@@ -4040,6 +4567,28 @@
                                 }
                             }
                         }
+                    }
+
+                    async function clearAllSessions() {
+                        if (!confirm('确定要清除所有会话历史吗？此操作不可撤销。')) return;
+
+                        // 从服务器逐个删除
+                        for (const session of chatSessions.value) {
+                            try {
+                                await apiCall(`/api/chat/sessions/${session.id}`, { method: 'DELETE' });
+                            } catch (e) {
+                                console.warn(`Failed to delete session ${session.id} from server:`, e);
+                            }
+                        }
+
+                        // 清空本地
+                        chatSessions.value = [];
+                        saveSessions();
+                        sessionSearchQuery.value = '';
+
+                        // 创建新会话
+                        await createNewSession();
+                        showToast('所有会话已清除', 'success');
                     }
 
                     function formatSessionTime(isoString) {
@@ -6489,6 +7038,7 @@
                         loadModels();
                         loadDevicePins();
                         initChatSessions();  // Initialize chat sessions from localStorage
+                        checkTunnelStatus(); // Check if tunnel is already running
 
                         // Initialize dark mode
                         const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -6638,6 +7188,12 @@
                         debugMode,
                         darkMode,
                         toggleDarkMode,
+                        // Cloudflare Tunnel
+                        tunnelStatus,
+                        tunnelUrl,
+                        tunnelError,
+                        toggleTunnel,
+                        copyTunnelUrl,
                         currentLanguage,
                         toggleLanguage,
                         t,
@@ -6670,9 +7226,12 @@
                         // Chat sessions
                         chatSessions,
                         currentSessionId,
+                        sessionSearchQuery,
+                        filteredSessions,
                         createNewSession,
                         switchSession,
                         deleteSession,
+                        clearAllSessions,
                         formatSessionTime,
                         formatMsgTime,
                         // Phone preview

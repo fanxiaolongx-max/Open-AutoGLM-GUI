@@ -30,6 +30,7 @@ from web_app.routers import (
     chat_router,
     rules_router,
     telegram_router,
+    tunnel_router,
 )
 from web_app.services.scheduler_service import scheduler_service
 from web_app.services.device_service import device_service
@@ -93,7 +94,9 @@ async def lifespan(app: FastAPI):
                 success = result.status == "completed" and failed_count == 0
                 message = f"完成: {success_count} 成功, {failed_count} 失败"
                 details = "\n".join(result.logs) if result.logs else ""
-                scheduler_service.add_task_log(task_id, success, message, details)
+                # Collect screenshots from task result for Telegram notification
+                screenshots = getattr(result, '_device_screenshots', None)
+                scheduler_service.add_task_log(task_id, success, message, details, screenshots=screenshots)
             except Exception as e:
                 logger.error(f"Scheduled task {task_id} failed: {e}")
                 scheduler_service.add_task_log(task_id, False, f"执行失败: {str(e)}", "")
@@ -174,6 +177,14 @@ async def lifespan(app: FastAPI):
         logger.info("Telegram bot stopped")
     except Exception as e:
         logger.warning(f"Error stopping Telegram bot: {e}")
+
+    # Stop Cloudflare tunnel
+    try:
+        from web_app.routers.tunnel import shutdown_tunnel
+        await shutdown_tunnel()
+        logger.info("Cloudflare tunnel stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping tunnel: {e}")
     
     await scheduler_service.stop()
     logger.info("Scheduler stopped")
@@ -210,6 +221,7 @@ app.include_router(websocket_router)
 app.include_router(chat_router)
 app.include_router(rules_router)
 app.include_router(telegram_router)
+app.include_router(tunnel_router)
 
 # Mount static files
 if STATIC_DIR.exists():
