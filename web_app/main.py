@@ -9,17 +9,25 @@ supporting headless systems and multi-user web access.
 import logging
 import sys
 from contextlib import asynccontextmanager
+from http.cookies import SimpleCookie
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from web_app.config import config_manager
+from web_app.routers.tunnel import (
+    TUNNEL_TOKEN_COOKIE,
+    TUNNEL_TOKEN_PARAM,
+    should_require_tunnel_token,
+    validate_tunnel_access_token,
+)
 from web_app.routers import (
     devices_router,
     tasks_router,
@@ -31,6 +39,7 @@ from web_app.routers import (
     rules_router,
     telegram_router,
     tunnel_router,
+    scrcpy_router,
 )
 from web_app.services.scheduler_service import scheduler_service
 from web_app.services.device_service import device_service
@@ -39,6 +48,107 @@ logger = logging.getLogger(__name__)
 
 # Static files directory
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+class TunnelAccessTokenMiddleware:
+    """
+    Enforce tunnel token only for requests coming from active trycloudflare host.
+    This keeps local/LAN direct access unchanged.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    @staticmethod
+    def _header(scope, name: bytes) -> str:
+        for key, value in scope.get("headers", []):
+            if key == name:
+                return value.decode("utf-8", errors="ignore")
+        return ""
+
+    @staticmethod
+    def _host(scope) -> str:
+        host = TunnelAccessTokenMiddleware._header(scope, b"host").strip().lower()
+        if not host:
+            return ""
+        return host.split(":", 1)[0]
+
+    @staticmethod
+    def _query_token(scope) -> str:
+        query = scope.get("query_string", b"").decode("utf-8", errors="ignore")
+        values = parse_qs(query).get(TUNNEL_TOKEN_PARAM, [])
+        return values[0] if values else ""
+
+    @staticmethod
+    def _cookie_token(scope) -> str:
+        cookie_header = TunnelAccessTokenMiddleware._header(scope, b"cookie")
+        if not cookie_header:
+            return ""
+        cookie = SimpleCookie()
+        try:
+            cookie.load(cookie_header)
+        except Exception:
+            return ""
+        morsel = cookie.get(TUNNEL_TOKEN_COOKIE)
+        return morsel.value if morsel else ""
+
+    @staticmethod
+    def _header_token(scope) -> str:
+        return TunnelAccessTokenMiddleware._header(scope, b"x-tunnel-token")
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+
+        request_host = self._host(scope)
+        if not should_require_tunnel_token(request_host):
+            await self.app(scope, receive, send)
+            return
+
+        query_token = self._query_token(scope)
+        cookie_token = self._cookie_token(scope)
+        header_token = self._header_token(scope)
+
+        token = query_token or cookie_token or header_token
+        if not validate_tunnel_access_token(token):
+            if scope["type"] == "http":
+                response = PlainTextResponse(
+                    "Unauthorized: missing or invalid tunnel token",
+                    status_code=401,
+                )
+                await response(scope, receive, send)
+            else:
+                await send({
+                    "type": "websocket.close",
+                    "code": 4401,
+                    "reason": "Unauthorized",
+                })
+            return
+
+        should_set_cookie = (
+            scope["type"] == "http"
+            and bool(query_token)
+            and validate_tunnel_access_token(query_token)
+            and query_token != cookie_token
+        )
+        if not should_set_cookie:
+            await self.app(scope, receive, send)
+            return
+
+        cookie_value = (
+            f"{TUNNEL_TOKEN_COOKIE}={query_token}; "
+            f"Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax"
+        )
+
+        async def send_with_cookie(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"set-cookie", cookie_value.encode("latin-1")))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_cookie)
 
 
 @asynccontextmanager
@@ -53,6 +163,11 @@ async def lifespan(app: FastAPI):
     from web_app.routers.websocket import set_main_loop
     set_main_loop(asyncio.get_event_loop())
     logger.info("Main event loop registered for WebSocket callbacks")
+
+    # Set the main event loop for scrcpy service
+    from web_app.services.scrcpy_service import set_scrcpy_loop
+    set_scrcpy_loop(asyncio.get_event_loop())
+    logger.info("Main event loop registered for scrcpy callbacks")
 
     # Start the scheduler
     await scheduler_service.start()
@@ -157,6 +272,14 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down AutoGLM Web Server...")
     
+    # Stop scrcpy streams
+    try:
+        from web_app.services.scrcpy_service import scrcpy_service
+        await scrcpy_service.cleanup_all()
+        logger.info("Scrcpy streams stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping scrcpy streams: {e}")
+
     # Stop device monitoring
     try:
         from web_app.services.device_service import device_service
@@ -203,6 +326,7 @@ app = FastAPI(
 
 # Configure CORS
 config = config_manager.get_config()
+app.add_middleware(TunnelAccessTokenMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.cors_origins,
@@ -222,6 +346,7 @@ app.include_router(chat_router)
 app.include_router(rules_router)
 app.include_router(telegram_router)
 app.include_router(tunnel_router)
+app.include_router(scrcpy_router)
 
 # Mount static files
 if STATIC_DIR.exists():

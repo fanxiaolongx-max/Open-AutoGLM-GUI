@@ -85,12 +85,12 @@ class DeviceService:
         """Refresh and return the list of connected devices using phone_agent."""
         devices = []
         previous_count = len(self._devices)
-        self._devices.clear()
 
         try:
             # Use phone_agent's device factory (same as GUI)
             factory = get_device_factory()
             device_list = factory.list_devices()
+            new_devices: dict[str, DeviceInfo] = {}
 
             for device in device_list:
                 status = "connected" if device.status == "device" else device.status
@@ -106,7 +106,10 @@ class DeviceService:
                 )
 
                 devices.append(device_info)
-                self._devices[device.device_id] = device_info
+                new_devices[device.device_id] = device_info
+
+            # Replace cache only on successful refresh.
+            self._devices = new_devices
 
             # Only log if device count changed
             if len(devices) != previous_count:
@@ -114,6 +117,8 @@ class DeviceService:
 
         except Exception as e:
             logger.error(f"Error refreshing devices: {e}")
+            # Keep previous cache on transient ADB errors/timeouts.
+            devices = list(self._devices.values())
 
         return devices
 

@@ -23,6 +23,12 @@ fastapi>=0.100.0
 uvicorn[standard]>=0.22.0
 python-multipart>=0.0.6
 websockets>=11.0
+python-telegram-bot>=21.0
+
+# For Scrcpy streaming (optional - falls back to adb screencap if not installed)
+# scrcpy-client has build issues with modern ffmpeg/Cython, install from source if needed:
+#   pip install git+https://github.com/leng-yue/py-scrcpy-client.git
+# scrcpy-client>=0.4.0
 
 # Optional: for development
 # pytest>=7.0.0

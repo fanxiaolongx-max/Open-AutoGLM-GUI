@@ -164,9 +164,9 @@
             flex-direction: column;
             gap: 16px;
             background: linear-gradient(135deg,
-                rgba(59, 130, 246, 0.03) 0%,
-                rgba(16, 185, 129, 0.02) 50%,
-                rgba(139, 92, 246, 0.03) 100%);
+                    rgba(59, 130, 246, 0.03) 0%,
+                    rgba(16, 185, 129, 0.02) 50%,
+                    rgba(139, 92, 246, 0.03) 100%);
         }
 
         .chat-message {
@@ -181,6 +181,7 @@
                 opacity: 0;
                 transform: translateY(16px) scale(0.97);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0) scale(1);
@@ -279,9 +280,12 @@
         }
 
         @keyframes pulseGlow {
-            0%, 100% {
+
+            0%,
+            100% {
                 box-shadow: 0 4px 24px rgba(245, 158, 11, 0.1), 0 0 0 0 rgba(245, 158, 11, 0.15);
             }
+
             50% {
                 box-shadow: 0 4px 24px rgba(245, 158, 11, 0.2), 0 0 0 8px rgba(245, 158, 11, 0);
             }
@@ -295,11 +299,27 @@
         }
 
         @keyframes shakeError {
-            0%, 100% { transform: translateX(0); }
-            20% { transform: translateX(-6px); }
-            40% { transform: translateX(6px); }
-            60% { transform: translateX(-4px); }
-            80% { transform: translateX(4px); }
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            20% {
+                transform: translateX(-6px);
+            }
+
+            40% {
+                transform: translateX(6px);
+            }
+
+            60% {
+                transform: translateX(-4px);
+            }
+
+            80% {
+                transform: translateX(4px);
+            }
         }
 
         .chat-bubble.success,
@@ -310,9 +330,19 @@
         }
 
         @keyframes successPop {
-            0% { transform: scale(0.95); opacity: 0.8; }
-            50% { transform: scale(1.02); }
-            100% { transform: scale(1); opacity: 1; }
+            0% {
+                transform: scale(0.95);
+                opacity: 0.8;
+            }
+
+            50% {
+                transform: scale(1.02);
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         [data-theme="dark"] .chat-bubble.running {
@@ -493,8 +523,15 @@
         }
 
         @keyframes todoRunPulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.12); }
-            50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.12);
+            }
+
+            50% {
+                box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+            }
         }
 
         [data-theme="dark"] .todo-item.running {
@@ -1125,89 +1162,284 @@
         /* Phone Preview Window Styles */
         .phone-preview-window {
             position: fixed;
-            background: var(--bg-card);
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            background: #000;
+            border-radius: 0;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
             z-index: 1000;
-            overflow: hidden;
-            min-width: 180px;
-            min-height: 200px;
-            max-width: 350px;
-            /* 限制最大宽度 */
-            max-height: 70vh;
-            /* 限制最大高度为视口的70% */
+            overflow: visible;
             transform-origin: center;
         }
 
         .phone-preview-header {
+            position: absolute;
+            top: 12px;
+            right: -86px;
+            bottom: 12px;
+            width: 78px;
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
+            justify-content: flex-start;
             align-items: center;
-            padding: 8px 12px;
-            background: #18181b;
+            gap: 8px;
+            padding: 8px 6px;
+            background: rgba(0, 0, 0, 0.72);
+            border-radius: 10px;
             color: white;
             cursor: move;
             user-select: none;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .phone-preview-window:hover .phone-preview-header {
+            opacity: 1;
         }
 
         .phone-preview-title {
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 500;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            width: 100%;
         }
 
         .phone-preview-controls {
             display: flex;
-            gap: 6px;
+            gap: 8px;
             align-items: center;
+            flex-direction: column;
+            flex-wrap: nowrap;
+            justify-content: flex-start;
+            width: 100%;
         }
 
         .phone-preview-select {
-            background: #27272a;
+            background: rgba(39, 39, 42, 0.8);
             color: white;
             border: none;
             border-radius: 4px;
-            padding: 4px 8px;
+            padding: 4px 5px;
             font-size: 11px;
-            max-width: 100px;
+            max-width: 72px;
+            min-width: 72px;
+            height: 30px;
+            cursor: pointer;
+        }
+
+        .phone-preview-select-mini {
+            background: rgba(39, 39, 42, 0.8);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 5px;
+            font-size: 11px;
+            width: 72px;
+            height: 30px;
             cursor: pointer;
         }
 
         .phone-preview-btn {
-            background: #27272a;
+            background: rgba(39, 39, 42, 0.8);
             border: none;
             color: white;
-            width: 24px;
-            height: 24px;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .phone-preview-btn-text {
+            width: 72px;
+            height: 32px;
+            padding: 0 4px;
+            font-size: 10px;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
+        .phone-preview-btn-reconnect {
+            width: 44px;
+            font-size: 11px;
+        }
+
+        .phone-preview-btn:hover {
+            background: rgba(63, 63, 70, 0.9);
+        }
+
+        .phone-preview-body {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: block;
+            overflow: hidden;
+            position: relative;
+            line-height: 0;
+        }
+
+        .phone-preview-body canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        .phone-preview-image {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .phone-preview-fps {
+            font-size: 9px;
+            color: #a1a1aa;
+            margin-right: 3px;
+        }
+
+        .stream-status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+        }
+
+        .stream-status-dot.connected {
+            background: #22c55e;
+        }
+
+        .stream-status-dot.connecting {
+            background: #eab308;
+            animation: pulse-dot 1s infinite;
+        }
+
+        .stream-status-dot.disconnected {
+            background: #ef4444;
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        .phone-nav-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-right: 0;
+        }
+
+        .phone-nav-btn {
+            background: rgba(39, 39, 42, 0.8);
+            border: none;
+            color: white;
+            width: 28px;
+            height: 28px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 0;
         }
 
-        .phone-preview-btn:hover {
-            background: #3f3f46;
+        .phone-nav-btn:hover {
+            background: rgba(63, 63, 70, 0.9);
         }
 
-        .phone-preview-body {
-            width: 300px;
-            height: 540px;
-            background: #f4f4f5;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
+        .phone-nav-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
         }
 
-        .phone-preview-image {
-            max-width: 450px;
-            max-height: 60vh;
-            width: auto;
-            height: auto;
-            object-fit: contain;
-            display: block;
-            margin: 0 auto;
+        .phone-preview-placeholder {
+            color: #71717a;
+            font-size: 12px;
+            text-align: center;
+            padding: 20px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Resize handle - bottom-right corner */
+        .phone-preview-resize {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+            z-index: 11;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .phone-preview-window:hover .phone-preview-resize {
+            opacity: 0.6;
+        }
+
+        .phone-preview-resize-side {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 68px;
+            z-index: 11;
+            opacity: 0;
+            transition: opacity 0.2s;
+            cursor: ew-resize;
+        }
+
+        .phone-preview-resize-side.left {
+            left: 0;
+        }
+
+        .phone-preview-resize-side.right {
+            right: 0;
+        }
+
+        .phone-preview-resize-side::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 2px;
+            height: 22px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.7);
+        }
+
+        .phone-preview-window:hover .phone-preview-resize-side {
+            opacity: 0.6;
+        }
+
+        .phone-preview-resize::before {
+            content: '';
+            position: absolute;
+            bottom: 3px;
+            right: 3px;
+            width: 8px;
+            height: 8px;
+            border-right: 2px solid #fff;
+            border-bottom: 2px solid #fff;
         }
 
         .phone-preview-placeholder {
@@ -1215,6 +1447,41 @@
             font-size: 12px;
             text-align: center;
             padding: 20px;
+        }
+
+        .stream-loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: linear-gradient(180deg, rgba(10, 10, 12, 0.15), rgba(10, 10, 12, 0.55));
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .stream-loading-spinner {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            border-top-color: rgba(255, 255, 255, 0.95);
+            animation: stream-spin 0.8s linear infinite;
+        }
+
+        .stream-loading-text {
+            color: rgba(255, 255, 255, 0.92);
+            font-size: 12px;
+            letter-spacing: 0.2px;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        }
+
+        @keyframes stream-spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .phone-preview-toggle {
@@ -1524,6 +1791,7 @@
                 transform: translateY(12px);
                 filter: blur(4px);
             }
+
             100% {
                 opacity: 1;
                 transform: translateY(0);
@@ -1615,15 +1883,18 @@
                     <div class="sidebar-header-top">
                         <h1>{{ t('appTitle') }}</h1>
                         <!-- Cloudflare Tunnel Toggle -->
-                        <div class="tunnel-capsule" :class="{ active: tunnelStatus === 'running', starting: tunnelStatus === 'starting' }"
-                            @click="toggleTunnel" :title="tunnelUrl || (tunnelStatus === 'starting' ? '正在启动隧道...' : '开启公网访问')">
+                        <div class="tunnel-capsule"
+                            :class="{ active: tunnelStatus === 'running', starting: tunnelStatus === 'starting' }"
+                            @click="toggleTunnel"
+                            :title="tunnelUrl || (tunnelStatus === 'starting' ? '正在启动隧道...' : '开启公网访问')">
                             <div class="tunnel-capsule-track">
                                 <div class="tunnel-capsule-thumb">
                                     <span v-if="tunnelStatus === 'starting'" class="tunnel-spinner"></span>
                                     <span v-else>{{ tunnelStatus === 'running' ? '🌐' : '🔒' }}</span>
                                 </div>
                             </div>
-                            <span class="tunnel-capsule-label">{{ tunnelStatus === 'running' ? 'Public' : tunnelStatus === 'starting' ? '...' : 'LAN' }}</span>
+                            <span class="tunnel-capsule-label">{{ tunnelStatus === 'running' ? 'Public' : tunnelStatus
+                                === 'starting' ? '...' : 'LAN' }}</span>
                         </div>
                     </div>
                     <div class="subtitle">{{ t('appSubtitle') }}</div>
@@ -1731,11 +2002,13 @@
                             </div>
                             <TransitionGroup name="session-list" tag="div">
                                 <div v-for="session in filteredSessions" :key="session.id" class="chat-session-item"
-                                    :class="{ active: currentSessionId === session.id }" @click="switchSession(session.id)">
+                                    :class="{ active: currentSessionId === session.id }"
+                                    @click="switchSession(session.id)">
                                     <div class="chat-session-info">
                                         <div class="chat-session-title">
                                             <span v-if="session.deviceId && session.deviceId.startsWith('bot_')"
-                                                title="来自 Telegram Bot" style="margin-right: 4px;">✈️</span>{{ session.title
+                                                title="来自 Telegram Bot" style="margin-right: 4px;">✈️</span>{{
+                                            session.title
                                             || '新会话' }}
                                         </div>
                                         <div class="chat-session-time">{{ formatSessionTime(session.updatedAt) }}</div>
@@ -3390,29 +3663,91 @@
         <div v-if="showPhonePreview" class="phone-preview-window" :style="phonePreviewStyle"
             @mousedown="startDragPreview">
             <div class="phone-preview-header">
-                <span class="phone-preview-title">📱 Live Preview</span>
+                <span class="phone-preview-title">
+                    <span class="stream-status-dot"
+                        :class="streamConnected ? 'connected' : (streamConnecting ? 'connecting' : 'disconnected')"></span>
+                    {{ streamFps }}fps
+                </span>
                 <div class="phone-preview-controls">
-                    <select v-model="previewDeviceId" @change="refreshPreview" class="phone-preview-select"
+                    <div class="phone-nav-buttons">
+                        <button class="phone-nav-btn" @click.stop="sendKey(3)" title="Home">&#9679;</button>
+                        <button class="phone-nav-btn" @click.stop="sendKey(4)" title="Back">&#9664;</button>
+                        <button class="phone-nav-btn" @click.stop="unlockDevice(previewDeviceId)"
+                            :disabled="!previewDeviceId" title="解锁设备">U</button>
+                        <button class="phone-nav-btn" @click.stop="lockDevice(previewDeviceId)"
+                            :disabled="!previewDeviceId" title="锁定设备">L</button>
+                    </div>
+                    <select v-model.number="streamMaxSize" class="phone-preview-select-mini" @mousedown.stop
+                        title="分辨率(长边)">
+                        <option :value="540">540p</option>
+                        <option :value="720">720p</option>
+                        <option :value="960">960p</option>
+                        <option :value="1080">1080p</option>
+                    </select>
+                    <select v-model.number="streamTargetFps" class="phone-preview-select-mini" @mousedown.stop
+                        title="目标帧率">
+                        <option :value="15">15fps</option>
+                        <option :value="24">24fps</option>
+                        <option :value="30">30fps</option>
+                        <option :value="45">45fps</option>
+                    </select>
+                    <select v-model.number="streamBitRate" class="phone-preview-select-mini" @mousedown.stop title="码率">
+                        <option :value="2000000">2M</option>
+                        <option :value="4000000">4M</option>
+                        <option :value="6000000">6M</option>
+                        <option :value="8000000">8M</option>
+                    </select>
+                    <button class="phone-preview-btn" @click.stop="applyStreamSettings"
+                        title="应用清晰度参数并重连">&#10003;</button>
+                    <button class="phone-preview-btn phone-preview-btn-text"
+                        :style="{ background: streamAutoAdapt ? 'rgba(34,197,94,0.85)' : 'rgba(39,39,42,0.8)' }"
+                        @click.stop="streamAutoAdapt = !streamAutoAdapt" title="自动带宽适配：低帧率时自动降档并重连">
+                        自适应分辨率
+                    </button>
+                    <select v-model="previewDeviceId" @change="onPreviewDeviceChange" class="phone-preview-select"
                         @mousedown.stop>
-                        <option value="">Select Device</option>
+                        <option value="">设备</option>
                         <option v-for="d in devices" :key="d.id" :value="d.id">
-                            {{ d.name || d.id.substring(0, 15) }}
+                            {{ d.name || d.id.substring(0, 12) }}
                         </option>
                     </select>
-                    <button class="phone-preview-btn" @click.stop="refreshPreview" title="Refresh">🔄</button>
-                    <button class="phone-preview-btn" @click.stop="showPhonePreview = false" title="Close">✕</button>
+                    <button class="phone-preview-btn phone-preview-btn-reconnect" @click.stop="reconnectPreviewStream"
+                        title="重连（重新解锁并重启视频流）">重连</button>
+                    <button class="phone-preview-btn" @click.stop="showPhonePreview = false"
+                        title="Close">&#10005;</button>
                 </div>
             </div>
             <div class="phone-preview-body">
                 <div v-if="!previewDeviceId" class="phone-preview-placeholder">
-                    Select a device to preview
+                    Select a device
                 </div>
-                <img v-else-if="previewImage" :src="'data:image/png;base64,' + previewImage" class="phone-preview-image"
+                <!-- Streaming canvas -->
+                <canvas v-show="previewDeviceId && streamConnected && streamReady" ref="previewCanvas" tabindex="0"
+                    :width="canvasWidth" :height="canvasHeight" @mousedown="onCanvasMouseDown"
+                    @mousemove="onCanvasMouseMove" @mouseup="onCanvasMouseUp" @mouseleave="onCanvasMouseUp"
+                    @wheel.prevent="onCanvasWheel" @touchstart.prevent="onCanvasTouchStart"
+                    @touchmove.prevent="onCanvasTouchMove" @touchend.prevent="onCanvasTouchEnd">
+                </canvas>
+                <!-- Fallback static image -->
+                <img v-if="previewDeviceId && !streamConnected && previewImage"
+                    :src="'data:image/png;base64,' + previewImage" class="phone-preview-image"
                     @error="previewImage = null">
-                <div v-else class="phone-preview-placeholder">
+                <!-- Stream loading state -->
+                <div v-if="previewDeviceId && (streamConnecting || (streamConnected && !streamReady))"
+                    class="stream-loading-overlay">
+                    <div class="stream-loading-spinner"></div>
+                    <div class="stream-loading-text">{{ streamLoadingText }}</div>
+                </div>
+                <!-- No image yet -->
+                <div v-if="previewDeviceId && !streamConnected && !streamConnecting && !previewImage"
+                    class="phone-preview-placeholder">
                     Loading...
                 </div>
             </div>
+            <!-- Resize handle -->
+            <div class="phone-preview-resize-side left" @mousedown.stop="startResizePreview($event, 'left')"></div>
+            <div class="phone-preview-resize-side right" @mousedown.stop="startResizePreview($event, 'right')"></div>
+            <div class="phone-preview-resize" @mousedown.stop="startResizePreview"></div>
         </div>
 
         <!-- App Mapping Modal -->
@@ -3651,9 +3986,40 @@
                     const previewImage = ref(null);
                     const previewLoading = ref(false);
                     const previewPosition = ref({ x: 100, y: 100 });
+                    const previewWidth = ref(270);
+                    const previewAspect = ref(16 / 9);  // height/width ratio, updated from stream
+                    const PREVIEW_TOOLBAR_WIDTH = 92;
+                    const PREVIEW_SAFE_MARGIN = 28;
                     let previewInterval = null;
                     let isDragging = false;
+                    let isResizing = false;
                     let dragOffset = { x: 0, y: 0 };
+                    let resizeStart = { x: 0, w: 0, left: 0, top: 0, edge: 'right' };
+
+                    // Scrcpy stream state
+                    const streamConnected = ref(false);
+                    const streamConnecting = ref(false);
+                    const streamReady = ref(false);
+                    const streamLoadingText = ref('Connecting...');
+                    const streamFps = ref(0);
+                    const streamMaxSize = ref(960);
+                    const streamTargetFps = ref(24);
+                    const streamBitRate = ref(4000000);
+                    const streamAutoAdapt = ref(false);
+                    const canvasWidth = ref(300);
+                    const canvasHeight = ref(540);
+                    const deviceScreenWidth = ref(0);
+                    const deviceScreenHeight = ref(0);
+                    const previewCanvas = ref(null);
+                    let streamWs = null;
+                    let streamConnectToken = 0;
+                    let fpsCounter = 0;
+                    let fpsTimer = null;
+                    let autoAdaptLowFpsStreak = 0;
+                    let autoAdaptCooldownUntil = 0;
+                    let wheelDeltaAccum = 0;
+                    let wheelTimer = null;
+                    let touchState = { isDown: false, startX: 0, startY: 0, startTime: 0, lastX: 0, lastY: 0, longPressTimer: null, hasMoved: false };
 
                     // Chat state
                     const chatMessages = ref([]);
@@ -3755,20 +4121,46 @@
                         }
                     }
 
-                    function copyTunnelUrl() {
+                    async function copyTunnelUrl() {
                         if (!tunnelUrl.value) return;
-                        navigator.clipboard.writeText(tunnelUrl.value).then(() => {
+                        const copied = await copyTextToClipboard(tunnelUrl.value);
+                        if (copied) {
                             showToast('隧道 URL 已复制', 'success');
-                        }).catch(() => {
-                            // Fallback for older browsers
-                            const ta = document.createElement('textarea');
-                            ta.value = tunnelUrl.value;
+                        } else {
+                            showToast('复制失败，请手动复制', 'error');
+                        }
+                    }
+
+                    async function copyTextToClipboard(text) {
+                        if (navigator.clipboard && window.isSecureContext) {
+                            try {
+                                await navigator.clipboard.writeText(text);
+                                return true;
+                            } catch (e) {
+                                console.warn('Clipboard API copy failed, fallback to execCommand:', e);
+                            }
+                        }
+                        let ta = null;
+                        try {
+                            ta = document.createElement('textarea');
+                            ta.value = text;
+                            ta.setAttribute('readonly', '');
+                            ta.style.position = 'fixed';
+                            ta.style.top = '-9999px';
+                            ta.style.left = '-9999px';
+                            ta.style.opacity = '0';
                             document.body.appendChild(ta);
+                            ta.focus();
                             ta.select();
-                            document.execCommand('copy');
-                            document.body.removeChild(ta);
-                            showToast('隧道 URL 已复制', 'success');
-                        });
+                            return !!document.execCommand('copy');
+                        } catch (e) {
+                            console.warn('execCommand copy failed:', e);
+                            return false;
+                        } finally {
+                            if (ta && ta.parentNode) {
+                                ta.parentNode.removeChild(ta);
+                            }
+                        }
                     }
 
                     // Translations Dictionary
@@ -3968,14 +4360,52 @@
                     const showTaskDetail = ref(false);
                     const taskDetailData = ref({});
 
+                    function getPreviewViewportBounds(width = previewWidth.value, aspect = previewAspect.value) {
+                        const safeAspect = Math.max(0.2, aspect || (16 / 9));
+                        const pw = Math.max(1, Math.round(width));
+                        const ph = Math.max(1, Math.round(pw * safeAspect));
+                        const minX = PREVIEW_SAFE_MARGIN;
+                        const minY = PREVIEW_SAFE_MARGIN;
+                        const maxX = Math.max(minX, window.innerWidth - pw - PREVIEW_TOOLBAR_WIDTH - PREVIEW_SAFE_MARGIN);
+                        const maxY = Math.max(minY, window.innerHeight - ph - PREVIEW_SAFE_MARGIN);
+                        return { minX, maxX, minY, maxY };
+                    }
+
+                    function getPreviewWidthRange(left, top) {
+                        const minBase = 220;
+                        const maxBase = 600;
+                        const safeAspect = Math.max(0.2, previewAspect.value || (16 / 9));
+                        const maxByWidth = Math.floor(window.innerWidth - PREVIEW_SAFE_MARGIN - PREVIEW_TOOLBAR_WIDTH - left);
+                        const maxByHeight = Math.floor((window.innerHeight - PREVIEW_SAFE_MARGIN - top) / safeAspect);
+                        let maxAllowed = Math.min(maxBase, maxByWidth, maxByHeight);
+                        if (!Number.isFinite(maxAllowed)) maxAllowed = maxBase;
+                        maxAllowed = Math.max(120, maxAllowed);
+                        const minAllowed = Math.min(minBase, maxAllowed);
+                        return { minAllowed, maxAllowed };
+                    }
+
+                    function ensurePreviewInViewport() {
+                        const bounds = getPreviewViewportBounds();
+                        let nextX = Math.max(bounds.minX, Math.min(bounds.maxX, previewPosition.value.x));
+                        let nextY = Math.max(bounds.minY, Math.min(bounds.maxY, previewPosition.value.y));
+
+                        const { maxAllowed } = getPreviewWidthRange(nextX, nextY);
+                        if (previewWidth.value > maxAllowed) {
+                            previewWidth.value = maxAllowed;
+                        }
+
+                        const finalBounds = getPreviewViewportBounds();
+                        nextX = Math.max(finalBounds.minX, Math.min(finalBounds.maxX, nextX));
+                        nextY = Math.max(finalBounds.minY, Math.min(finalBounds.maxY, nextY));
+                        previewPosition.value = { x: nextX, y: nextY };
+                    }
+
                     // Calculate safe position for preview window
                     function updatePreviewPosition() {
-                        const windowWidth = 300;
-                        const windowHeight = 580; // 540 + header
-                        const margin = 20;
+                        const bounds = getPreviewViewportBounds();
                         previewPosition.value = {
-                            x: Math.max(margin, window.innerWidth - windowWidth - margin),
-                            y: Math.max(margin, window.innerHeight - windowHeight - margin)
+                            x: bounds.maxX,
+                            y: bounds.maxY,
                         };
                     }
 
@@ -6955,35 +7385,601 @@
                     const phonePreviewStyle = Vue.computed(() => ({
                         left: previewPosition.value.x + 'px',
                         top: previewPosition.value.y + 'px',
+                        width: previewWidth.value + 'px',
+                        height: Math.round(previewWidth.value * previewAspect.value) + 'px',
                     }));
 
-                    async function refreshPreview() {
-                        if (!previewDeviceId.value) return;
+                    function pickDefaultStreamSizeByLongEdge(longEdge) {
+                        if (longEdge >= 1080) return 1080;
+                        if (longEdge >= 960) return 960;
+                        if (longEdge >= 720) return 720;
+                        return 540;
+                    }
+
+                    function getDeviceById(deviceId) {
+                        if (!deviceId) return null;
+                        return devices.value.find((d) => d.id === deviceId) || null;
+                    }
+
+                    function isEmulatorDevice(deviceId) {
+                        const dev = getDeviceById(deviceId);
+                        const idText = String(deviceId || '').toLowerCase();
+                        const nameText = String(dev?.name || '').toLowerCase();
+                        return (
+                            idText.startsWith('emulator-')
+                            || idText.includes('sdk_gphone')
+                            || nameText.includes('sdk_gphone')
+                            || nameText.includes('emulator')
+                            || nameText.includes('android sdk built for')
+                        );
+                    }
+
+                    function decodePngBase64Dimensions(imageBase64) {
+                        return new Promise((resolve, reject) => {
+                            const img = new window.Image();
+                            img.onload = () => resolve({ width: img.width, height: img.height });
+                            img.onerror = () => reject(new Error('decode screenshot size failed'));
+                            img.src = 'data:image/png;base64,' + imageBase64;
+                        });
+                    }
+
+                    async function refreshPreview(options = {}) {
+                        const targetDeviceId = options.deviceId || previewDeviceId.value;
+                        if (!targetDeviceId) return null;
                         // Don't set loading state - keep showing old image for smooth transition
                         try {
-                            const response = await fetch(`/api/devices/${previewDeviceId.value}/screenshot/base64`);
+                            const response = await fetch(`/api/devices/${encodeURIComponent(targetDeviceId)}/screenshot/base64`);
                             if (response.ok) {
                                 const data = await response.json();
+                                if (previewDeviceId.value !== targetDeviceId) return null;
                                 if (data.image) {
                                     previewImage.value = data.image;
+                                    try {
+                                        const dims = await decodePngBase64Dimensions(data.image);
+                                        if (previewDeviceId.value !== targetDeviceId) return null;
+                                        if (dims.width > 0 && dims.height > 0) {
+                                            previewAspect.value = dims.height / dims.width;
+                                            return dims;
+                                        }
+                                    } catch (e) { }
                                 }
                             }
                         } catch (e) {
                             // Silently fail, keep old image
                         }
+                        return null;
                     }
 
-                    function openPhonePreview() {
+                    async function autoTuneStreamSizeFromScreenshot(deviceId) {
+                        const dims = await refreshPreview({ deviceId });
+                        const emulatorPreferred = isEmulatorDevice(deviceId);
+                        if (emulatorPreferred) {
+                            streamMaxSize.value = 1080;
+                            streamTargetFps.value = 45;
+                            streamBitRate.value = 8000000;
+                            return;
+                        }
+                        if (!dims) return;
+                        const longEdge = Math.max(dims.width, dims.height);
+                        streamMaxSize.value = pickDefaultStreamSizeByLongEdge(longEdge);
+                    }
+
+                    async function openPhonePreview() {
                         updatePreviewPosition();
                         showPhonePreview.value = true;
+                        Vue.nextTick(() => ensurePreviewInViewport());
                         if (!previewDeviceId.value && devices.value.length) {
                             previewDeviceId.value = devices.value[0].id;
                         }
-                        refreshPreview();
+                        if (previewDeviceId.value) {
+                            await autoTuneStreamSizeFromScreenshot(previewDeviceId.value);
+                            if (previewDeviceId.value) {
+                                connectStream(previewDeviceId.value);
+                            }
+                        }
+                    }
+
+                    async function onPreviewDeviceChange() {
+                        disconnectStream();
+                        previewImage.value = null;
+                        previewAspect.value = 16 / 9;
+                        if (previewDeviceId.value) {
+                            await autoTuneStreamSizeFromScreenshot(previewDeviceId.value);
+                            if (previewDeviceId.value) {
+                                connectStream(previewDeviceId.value);
+                            }
+                        }
+                    }
+
+                    // --- Scrcpy Streaming Functions ---
+
+                    function getStreamAuthHeaders() {
+                        const headers = {};
+                        const config = window._appConfig;
+                        if (config && config.auth_enabled && config.token) {
+                            headers['X-API-Key'] = config.token;
+                        }
+                        return headers;
+                    }
+
+                    function getStreamQueryParams(includeRestart = false) {
+                        const params = new URLSearchParams({
+                            max_size: String(streamMaxSize.value),
+                            frame_rate: String(streamTargetFps.value),
+                            bit_rate: String(streamBitRate.value),
+                        });
+                        if (includeRestart) {
+                            params.set('restart', 'true');
+                        }
+                        return params;
+                    }
+
+                    async function startStreamWithSettings(deviceId, restart = true) {
+                        const params = getStreamQueryParams(restart);
+                        try {
+                            await fetch(`/api/scrcpy/${encodeURIComponent(deviceId)}/start?${params.toString()}`, {
+                                method: 'POST',
+                                headers: getStreamAuthHeaders(),
+                            });
+                        } catch (e) { }
+                    }
+
+                    function lowerStreamProfileStep() {
+                        const bitRates = [2000000, 4000000, 6000000, 8000000];
+                        const fpsLevels = [15, 24, 30, 45];
+                        const sizeLevels = [540, 720, 960, 1080];
+
+                        const brIdx = bitRates.indexOf(streamBitRate.value);
+                        if (brIdx > 0) {
+                            streamBitRate.value = bitRates[brIdx - 1];
+                            return true;
+                        }
+                        const fpsIdx = fpsLevels.indexOf(streamTargetFps.value);
+                        if (fpsIdx > 0) {
+                            streamTargetFps.value = fpsLevels[fpsIdx - 1];
+                            return true;
+                        }
+                        const sizeIdx = sizeLevels.indexOf(streamMaxSize.value);
+                        if (sizeIdx > 0) {
+                            streamMaxSize.value = sizeLevels[sizeIdx - 1];
+                            return true;
+                        }
+                        return false;
+                    }
+
+                    function maybeAutoAdaptByFps(measuredFps) {
+                        if (!streamAutoAdapt.value || !streamConnected.value || streamConnecting.value || !previewDeviceId.value) {
+                            autoAdaptLowFpsStreak = 0;
+                            return;
+                        }
+                        const now = Date.now();
+                        if (now < autoAdaptCooldownUntil) return;
+                        const target = Math.max(10, streamTargetFps.value);
+                        if (measuredFps < target * 0.55) {
+                            autoAdaptLowFpsStreak += 1;
+                        } else {
+                            autoAdaptLowFpsStreak = 0;
+                            return;
+                        }
+                        if (autoAdaptLowFpsStreak < 3) return;
+                        autoAdaptLowFpsStreak = 0;
+                        if (lowerStreamProfileStep()) {
+                            autoAdaptCooldownUntil = now + 12000;
+                            showToast(`网络波动，已自动降档: ${streamMaxSize.value}p / ${streamTargetFps.value}fps / ${(streamBitRate.value / 1000000).toFixed(0)}M`, 'warning');
+                            applyStreamSettings();
+                        }
+                    }
+
+                    async function connectStream(deviceId, forceRestart = false) {
+                        disconnectStream();
+                        stopPreviewAutoRefresh();
+                        if (!deviceId) return;
+                        const connectToken = ++streamConnectToken;
+
+                        streamConnecting.value = true;
+                        streamReady.value = false;
+                        streamLoadingText.value = 'Connecting...';
+                        await startStreamWithSettings(deviceId, forceRestart);
+                        if (connectToken !== streamConnectToken) return;
+                        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                        const wsParams = getStreamQueryParams(false);
+                        let wsUrl = `${wsProtocol}//${location.host}/api/scrcpy/ws/${encodeURIComponent(deviceId)}?${wsParams.toString()}`;
+                        const config = window._appConfig;
+                        if (config && config.auth_enabled && config.token) {
+                            wsUrl += `&token=${encodeURIComponent(config.token)}`;
+                        }
+
+                        const ws = new WebSocket(wsUrl);
+                        ws.binaryType = 'arraybuffer';
+                        streamWs = ws;
+
+                        // FPS counter
+                        fpsCounter = 0;
+                        if (fpsTimer) clearInterval(fpsTimer);
+                        fpsTimer = setInterval(() => {
+                            if (connectToken !== streamConnectToken || ws !== streamWs) return;
+                            const measuredFps = fpsCounter;
+                            streamFps.value = measuredFps;
+                            fpsCounter = 0;
+                            maybeAutoAdaptByFps(measuredFps);
+                        }, 1000);
+
+                        ws.onopen = () => {
+                            if (connectToken !== streamConnectToken || ws !== streamWs) return;
+                            streamConnecting.value = false;
+                            streamConnected.value = true;
+                            streamLoadingText.value = 'Syncing stream metadata...';
+                            // Stop polling when stream connects
+                            stopPreviewAutoRefresh();
+                        };
+
+                        ws.onmessage = (event) => {
+                            if (connectToken !== streamConnectToken || ws !== streamWs) return;
+                            if (event.data instanceof ArrayBuffer) {
+                                // Binary: JPEG frame
+                                renderFrame(event.data);
+                                fpsCounter++;
+                            } else {
+                                // Text: JSON control message
+                                try {
+                                    const msg = JSON.parse(event.data);
+                                    handleStreamMessage(msg);
+                                } catch (e) { }
+                            }
+                        };
+
+                        ws.onclose = () => {
+                            if (connectToken !== streamConnectToken || ws !== streamWs) return;
+                            streamConnected.value = false;
+                            streamConnecting.value = false;
+                            streamReady.value = false;
+                            streamLoadingText.value = 'Connecting...';
+                            streamWs = null;
+                            autoAdaptLowFpsStreak = 0;
+                            if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
+                            streamFps.value = 0;
+                            // Fallback to polling if preview is still open
+                            if (showPhonePreview.value && previewDeviceId.value === deviceId) {
+                                startPreviewAutoRefresh();
+                            }
+                        };
+
+                        ws.onerror = () => {
+                            // onclose will fire after this
+                        };
+                    }
+
+                    function disconnectStream() {
+                        streamConnectToken += 1;
+                        if (streamWs) {
+                            try { streamWs.close(); } catch (e) { }
+                            streamWs = null;
+                        }
+                        streamConnected.value = false;
+                        streamConnecting.value = false;
+                        streamReady.value = false;
+                        streamLoadingText.value = 'Connecting...';
+                        autoAdaptLowFpsStreak = 0;
+                        if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
+                        streamFps.value = 0;
+                    }
+
+                    function applyStreamSettings() {
+                        if (!previewDeviceId.value) return;
+                        connectStream(previewDeviceId.value, true);
+                    }
+
+                    async function reconnectPreviewStream() {
+                        if (!previewDeviceId.value) {
+                            showToast('请先选择设备', 'warning');
+                            return;
+                        }
+                        streamReady.value = false;
+                        streamLoadingText.value = 'Reconnecting...';
+                        await connectStream(previewDeviceId.value, true);
+                    }
+
+                    function renderFrame(arrayBuffer) {
+                        const canvas = previewCanvas.value;
+                        if (!canvas) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+
+                        const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+                        const url = URL.createObjectURL(blob);
+                        const img = new window.Image();
+                        img.onload = () => {
+                            // Update aspect ratio and canvas dimensions from actual frame
+                            if (img.width > 0 && img.height > 0) {
+                                const ratio = img.height / img.width;
+                                if (Math.abs(ratio - previewAspect.value) > 0.01) {
+                                    previewAspect.value = ratio;
+                                }
+                                if (img.width !== canvasWidth.value || img.height !== canvasHeight.value) {
+                                    canvasWidth.value = img.width;
+                                    canvasHeight.value = img.height;
+                                }
+                                if (canvas.width !== img.width || canvas.height !== img.height) {
+                                    canvas.width = img.width;
+                                    canvas.height = img.height;
+                                }
+                            }
+                            ctx.drawImage(img, 0, 0, img.width, img.height);
+                            if (!streamReady.value) {
+                                streamReady.value = true;
+                                streamLoadingText.value = '';
+                            }
+                            URL.revokeObjectURL(url);
+                        };
+                        img.onerror = () => {
+                            URL.revokeObjectURL(url);
+                        };
+                        img.src = url;
+                    }
+
+                    function handleStreamMessage(msg) {
+                        if (msg.type === 'stream_info') {
+                            deviceScreenWidth.value = msg.width || 0;
+                            deviceScreenHeight.value = msg.height || 0;
+                            if (msg.width && msg.height) {
+                                const ratio = msg.height / msg.width;
+                                previewAspect.value = ratio;
+                                canvasWidth.value = msg.width;
+                                canvasHeight.value = msg.height;
+                                streamLoadingText.value = 'Waiting for first frame...';
+                            }
+                        } else if (msg.type === 'ping') {
+                            if (streamWs && streamWs.readyState === WebSocket.OPEN) {
+                                streamWs.send(JSON.stringify({ type: 'pong' }));
+                            }
+                        }
+                    }
+
+                    // --- Touch / Mouse Interaction ---
+
+                    function _getCanvasCoords(event) {
+                        const canvas = previewCanvas.value;
+                        if (!canvas) return null;
+                        const rect = canvas.getBoundingClientRect();
+                        const scaleX = canvas.width / rect.width;
+                        const scaleY = canvas.height / rect.height;
+                        return {
+                            x: (event.clientX - rect.left) * scaleX,
+                            y: (event.clientY - rect.top) * scaleY,
+                            w: canvas.width,
+                            h: canvas.height,
+                        };
+                    }
+
+                    function _sendTouch(action, x, y, w, h) {
+                        if (streamWs && streamWs.readyState === WebSocket.OPEN) {
+                            streamWs.send(JSON.stringify({
+                                type: 'touch',
+                                action: action,
+                                x: Math.round(x),
+                                y: Math.round(y),
+                                width: w,
+                                height: h,
+                            }));
+                        }
+                    }
+
+                    function _sendScroll(x, y, w, h, deltaY) {
+                        if (streamWs && streamWs.readyState === WebSocket.OPEN) {
+                            streamWs.send(JSON.stringify({
+                                type: 'scroll',
+                                x: Math.round(x),
+                                y: Math.round(y),
+                                width: w,
+                                height: h,
+                                deltaY: deltaY,
+                            }));
+                        }
+                    }
+
+                    function onCanvasMouseDown(e) {
+                        if (!streamConnected.value) return;
+                        const canvas = previewCanvas.value;
+                        if (canvas) {
+                            try { canvas.focus({ preventScroll: true }); } catch (err) { }
+                        }
+                        const coords = _getCanvasCoords(e);
+                        if (!coords) return;
+                        touchState.isDown = true;
+                        touchState.startX = coords.x;
+                        touchState.startY = coords.y;
+                        touchState.lastX = coords.x;
+                        touchState.lastY = coords.y;
+                        touchState.startTime = Date.now();
+                        touchState.hasMoved = false;
+                        _sendTouch('down', coords.x, coords.y, coords.w, coords.h);
+                    }
+
+                    function onCanvasMouseMove(e) {
+                        if (!touchState.isDown || !streamConnected.value) return;
+                        const coords = _getCanvasCoords(e);
+                        if (!coords) return;
+                        const dx = coords.x - touchState.startX;
+                        const dy = coords.y - touchState.startY;
+                        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                            touchState.hasMoved = true;
+                        }
+                        touchState.lastX = coords.x;
+                        touchState.lastY = coords.y;
+                        _sendTouch('move', coords.x, coords.y, coords.w, coords.h);
+                    }
+
+                    function onCanvasMouseUp(e) {
+                        if (!touchState.isDown) return;
+                        touchState.isDown = false;
+                        if (!streamConnected.value) return;
+                        const coords = _getCanvasCoords(e);
+                        if (coords) {
+                            _sendTouch('up', coords.x, coords.y, coords.w, coords.h);
+                        } else {
+                            // Mouse left canvas - use last known position
+                            const canvas = previewCanvas.value;
+                            if (canvas) {
+                                _sendTouch('up', touchState.lastX, touchState.lastY, canvas.width, canvas.height);
+                            }
+                        }
+                    }
+
+                    function onCanvasTouchStart(e) {
+                        if (!streamConnected.value || !e.touches.length) return;
+                        const canvasFocus = previewCanvas.value;
+                        if (canvasFocus) {
+                            try { canvasFocus.focus({ preventScroll: true }); } catch (err) { }
+                        }
+                        const touch = e.touches[0];
+                        const canvas = previewCanvas.value;
+                        if (!canvas) return;
+                        const rect = canvas.getBoundingClientRect();
+                        const scaleX = canvas.width / rect.width;
+                        const scaleY = canvas.height / rect.height;
+                        const x = (touch.clientX - rect.left) * scaleX;
+                        const y = (touch.clientY - rect.top) * scaleY;
+                        touchState.isDown = true;
+                        touchState.startX = x;
+                        touchState.startY = y;
+                        touchState.lastX = x;
+                        touchState.lastY = y;
+                        touchState.hasMoved = false;
+                        _sendTouch('down', x, y, canvas.width, canvas.height);
+                    }
+
+                    function onCanvasTouchMove(e) {
+                        if (!touchState.isDown || !streamConnected.value || !e.touches.length) return;
+                        const touch = e.touches[0];
+                        const canvas = previewCanvas.value;
+                        if (!canvas) return;
+                        const rect = canvas.getBoundingClientRect();
+                        const scaleX = canvas.width / rect.width;
+                        const scaleY = canvas.height / rect.height;
+                        const x = (touch.clientX - rect.left) * scaleX;
+                        const y = (touch.clientY - rect.top) * scaleY;
+                        touchState.lastX = x;
+                        touchState.lastY = y;
+                        touchState.hasMoved = true;
+                        _sendTouch('move', x, y, canvas.width, canvas.height);
+                    }
+
+                    function onCanvasTouchEnd(e) {
+                        if (!touchState.isDown) return;
+                        touchState.isDown = false;
+                        if (!streamConnected.value) return;
+                        const canvas = previewCanvas.value;
+                        if (canvas) {
+                            _sendTouch('up', touchState.lastX, touchState.lastY, canvas.width, canvas.height);
+                        }
+                    }
+
+                    function onCanvasWheel(e) {
+                        if (!streamConnected.value) return;
+                        const coords = _getCanvasCoords(e);
+                        if (!coords) return;
+                        wheelDeltaAccum += e.deltaY;
+                        if (wheelTimer) return;
+                        wheelTimer = setTimeout(() => {
+                            _sendScroll(coords.x, coords.y, coords.w, coords.h, wheelDeltaAccum);
+                            wheelDeltaAccum = 0;
+                            wheelTimer = null;
+                        }, 80);
+                    }
+
+                    function sendKey(keycode) {
+                        if (streamWs && streamWs.readyState === WebSocket.OPEN) {
+                            streamWs.send(JSON.stringify({ type: 'key', keycode: keycode }));
+                        } else if (previewDeviceId.value) {
+                            // Fallback via REST (not ideal but works)
+                            startStreamWithSettings(previewDeviceId.value, false);
+                        }
+                    }
+
+                    function mapBrowserKeyToAndroidKeycode(event) {
+                        const code = event.code || '';
+                        const directMap = {
+                            Backspace: 67,
+                            Enter: 66,
+                            NumpadEnter: 66,
+                            Tab: 61,
+                            Escape: 111,
+                            Space: 62,
+                            ArrowUp: 19,
+                            ArrowDown: 20,
+                            ArrowLeft: 21,
+                            ArrowRight: 22,
+                            Delete: 112,
+                            Home: 122,
+                            End: 123,
+                            PageUp: 92,
+                            PageDown: 93,
+                            Insert: 124,
+                            Minus: 69,
+                            Equal: 70,
+                            BracketLeft: 71,
+                            BracketRight: 72,
+                            Backslash: 73,
+                            Semicolon: 74,
+                            Quote: 75,
+                            Slash: 76,
+                            Comma: 55,
+                            Period: 56,
+                            Backquote: 68,
+                        };
+                        if (Object.prototype.hasOwnProperty.call(directMap, code)) {
+                            return directMap[code];
+                        }
+                        if (code.startsWith('Key') && code.length === 4) {
+                            const ch = code.charCodeAt(3);
+                            if (ch >= 65 && ch <= 90) {
+                                return 29 + (ch - 65); // KEYCODE_A ... KEYCODE_Z
+                            }
+                        }
+                        if (code.startsWith('Digit') && code.length === 6) {
+                            const digit = Number(code[5]);
+                            if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
+                                return 7 + digit; // KEYCODE_0 ... KEYCODE_9
+                            }
+                        }
+                        if (code.startsWith('Numpad') && code.length === 7) {
+                            const digit = Number(code[6]);
+                            if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
+                                return 7 + digit;
+                            }
+                        }
+                        return null;
+                    }
+
+                    function handlePreviewKeyboard(event) {
+                        if (
+                            !showPhonePreview.value
+                            || !streamConnected.value
+                            || !previewDeviceId.value
+                            || !previewCanvas.value
+                        ) {
+                            return;
+                        }
+                        if (document.activeElement !== previewCanvas.value) {
+                            return;
+                        }
+                        if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
+                            return;
+                        }
+                        const keycode = mapBrowserKeyToAndroidKeycode(event);
+                        if (keycode === null) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        sendKey(keycode);
                     }
 
                     function startDragPreview(e) {
-                        if (e.target.closest('.phone-preview-controls') || e.target.closest('.phone-preview-body')) return;
+                        if (
+                            e.target.closest('.phone-preview-controls')
+                            || e.target.closest('.phone-preview-body')
+                            || e.target.closest('.phone-preview-resize')
+                            || e.target.closest('.phone-preview-resize-side')
+                        ) return;
                         isDragging = true;
                         dragOffset.x = e.clientX - previewPosition.value.x;
                         dragOffset.y = e.clientY - previewPosition.value.y;
@@ -6993,10 +7989,9 @@
 
                     function onDragPreview(e) {
                         if (!isDragging) return;
-                        const maxX = window.innerWidth - 320;
-                        const maxY = window.innerHeight - 600;
-                        previewPosition.value.x = Math.max(0, Math.min(maxX, e.clientX - dragOffset.x));
-                        previewPosition.value.y = Math.max(0, Math.min(maxY, e.clientY - dragOffset.y));
+                        const bounds = getPreviewViewportBounds();
+                        previewPosition.value.x = Math.max(bounds.minX, Math.min(bounds.maxX, e.clientX - dragOffset.x));
+                        previewPosition.value.y = Math.max(bounds.minY, Math.min(bounds.maxY, e.clientY - dragOffset.y));
                     }
 
                     function stopDragPreview() {
@@ -7005,10 +8000,63 @@
                         document.removeEventListener('mouseup', stopDragPreview);
                     }
 
+                    function startResizePreview(e, edge = 'right') {
+                        isResizing = true;
+                        resizeStart.x = e.clientX;
+                        resizeStart.w = previewWidth.value;
+                        resizeStart.left = previewPosition.value.x;
+                        resizeStart.top = previewPosition.value.y;
+                        resizeStart.edge = edge;
+                        document.addEventListener('mousemove', onResizePreview);
+                        document.addEventListener('mouseup', stopResizePreview);
+                    }
+
+                    function onResizePreview(e) {
+                        if (!isResizing) return;
+                        const top = resizeStart.top;
+                        const safeLeft = PREVIEW_SAFE_MARGIN;
+
+                        if (resizeStart.edge === 'left') {
+                            const rightAnchor = resizeStart.left + resizeStart.w;
+                            const candidateLeft = Math.max(safeLeft, resizeStart.left + (e.clientX - resizeStart.x));
+                            let newW = rightAnchor - candidateLeft;
+                            let newLeft = candidateLeft;
+                            let { minAllowed, maxAllowed } = getPreviewWidthRange(newLeft, top);
+                            newW = Math.max(minAllowed, Math.min(maxAllowed, newW));
+                            newLeft = rightAnchor - newW;
+                            if (newLeft < safeLeft) {
+                                newLeft = safeLeft;
+                                ({ minAllowed, maxAllowed } = getPreviewWidthRange(newLeft, top));
+                                newW = Math.max(minAllowed, Math.min(maxAllowed, rightAnchor - newLeft));
+                                newLeft = rightAnchor - newW;
+                            }
+                            previewPosition.value.x = newLeft;
+                            previewWidth.value = newW;
+                        } else {
+                            const { minAllowed, maxAllowed } = getPreviewWidthRange(resizeStart.left, top);
+                            let newW = resizeStart.w + (e.clientX - resizeStart.x);
+                            newW = Math.max(minAllowed, Math.min(maxAllowed, newW));
+                            previewWidth.value = newW;
+                        }
+
+                        ensurePreviewInViewport();
+                    }
+
+                    function stopResizePreview() {
+                        isResizing = false;
+                        document.removeEventListener('mousemove', onResizePreview);
+                        document.removeEventListener('mouseup', stopResizePreview);
+                    }
+
                     function startPreviewAutoRefresh() {
                         stopPreviewAutoRefresh();
                         previewInterval = setInterval(() => {
-                            if (showPhonePreview.value && previewDeviceId.value) {
+                            if (
+                                showPhonePreview.value
+                                && previewDeviceId.value
+                                && !streamConnected.value
+                                && !streamConnecting.value
+                            ) {
                                 refreshPreview();
                             }
                         }, 2000); // Refresh every 2 seconds
@@ -7021,12 +8069,26 @@
                         }
                     }
 
+                    function handleWindowResize() {
+                        if (showPhonePreview.value) {
+                            ensurePreviewInViewport();
+                        }
+                    }
+
                     // Watch showPhonePreview to start/stop auto refresh
                     watch(showPhonePreview, (show) => {
                         if (show) {
-                            startPreviewAutoRefresh();
+                            // openPhonePreview/onclose will decide whether to start fallback polling.
+                            Vue.nextTick(() => ensurePreviewInViewport());
                         } else {
+                            disconnectStream();
                             stopPreviewAutoRefresh();
+                        }
+                    });
+
+                    watch([previewWidth, previewAspect], () => {
+                        if (showPhonePreview.value && !isDragging && !isResizing) {
+                            ensurePreviewInViewport();
                         }
                     });
 
@@ -7050,6 +8112,8 @@
                         // Initialize language from localStorage
                         const savedLanguage = localStorage.getItem('language');
                         currentLanguage.value = savedLanguage || 'zh';
+                        window.addEventListener('resize', handleWindowResize);
+                        document.addEventListener('keydown', handlePreviewKeyboard, true);
 
                         // Listen for system theme changes
                         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
@@ -7063,6 +8127,8 @@
                     onUnmounted(() => {
                         if (ws) ws.close();
                         if (reconnectTimer) clearTimeout(reconnectTimer);
+                        window.removeEventListener('resize', handleWindowResize);
+                        document.removeEventListener('keydown', handlePreviewKeyboard, true);
                     });
 
                     // Watch page changes to load data
@@ -7242,7 +8308,34 @@
                         phonePreviewStyle,
                         refreshPreview,
                         openPhonePreview,
+                        onPreviewDeviceChange,
                         startDragPreview,
+                        startResizePreview,
+                        // Scrcpy stream
+                        streamConnected,
+                        streamConnecting,
+                        streamReady,
+                        streamLoadingText,
+                        streamFps,
+                        streamMaxSize,
+                        streamTargetFps,
+                        streamBitRate,
+                        streamAutoAdapt,
+                        canvasWidth,
+                        canvasHeight,
+                        previewCanvas,
+                        connectStream,
+                        disconnectStream,
+                        applyStreamSettings,
+                        reconnectPreviewStream,
+                        onCanvasMouseDown,
+                        onCanvasMouseMove,
+                        onCanvasMouseUp,
+                        onCanvasWheel,
+                        onCanvasTouchStart,
+                        onCanvasTouchMove,
+                        onCanvasTouchEnd,
+                        sendKey,
                         // Functions
                         showToast,
                         systemAlerts,

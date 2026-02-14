@@ -8,7 +8,9 @@ via a temporary *.trycloudflare.com URL. No account required.
 import asyncio
 import logging
 import re
+import secrets
 import shutil
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fastapi import APIRouter, Depends
 from web_app.auth import verify_token
@@ -22,11 +24,46 @@ _process: asyncio.subprocess.Process | None = None
 _tunnel_url: str = ""
 _status: str = "stopped"  # stopped | starting | running | error
 _error_msg: str = ""
+_access_token: str = ""
+
+TUNNEL_TOKEN_PARAM = "tunnel_token"
+TUNNEL_TOKEN_COOKIE = "autoglm_tunnel_token"
+
+
+def _build_tunnel_url_with_token(base_url: str, token: str) -> str:
+    """Append tunnel token as query parameter to the public URL."""
+    if not base_url or not token:
+        return base_url
+    parsed = urlparse(base_url)
+    query_items = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k != TUNNEL_TOKEN_PARAM]
+    query_items.append((TUNNEL_TOKEN_PARAM, token))
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
+
+
+def get_public_tunnel_url() -> str:
+    """Get tunnel URL with access token included."""
+    return _build_tunnel_url_with_token(_tunnel_url, _access_token)
+
+
+def should_require_tunnel_token(request_host: str) -> bool:
+    """
+    Require tunnel token only when request host equals current public tunnel host.
+    Local/LAN direct access will not be affected.
+    """
+    if not _tunnel_url or not _access_token or not request_host:
+        return False
+    tunnel_host = (urlparse(_tunnel_url).hostname or "").lower()
+    return request_host.lower() == tunnel_host
+
+
+def validate_tunnel_access_token(token: str) -> bool:
+    """Validate tunnel access token."""
+    return bool(token) and bool(_access_token) and token == _access_token
 
 
 async def _stop_process():
     """Terminate the cloudflared subprocess if running."""
-    global _process, _status, _tunnel_url, _error_msg
+    global _process, _status, _tunnel_url, _error_msg, _access_token
     if _process and _process.returncode is None:
         try:
             _process.terminate()
@@ -41,6 +78,7 @@ async def _stop_process():
     _tunnel_url = ""
     _status = "stopped"
     _error_msg = ""
+    _access_token = ""
 
 
 async def shutdown_tunnel():
@@ -50,7 +88,7 @@ async def shutdown_tunnel():
 
 async def _read_tunnel_url(proc: asyncio.subprocess.Process):
     """Read stderr from cloudflared to extract the tunnel URL."""
-    global _tunnel_url, _status, _error_msg
+    global _tunnel_url, _status, _error_msg, _access_token
     url_pattern = re.compile(r"(https://[a-zA-Z0-9\-]+\.trycloudflare\.com)")
 
     try:
@@ -64,8 +102,10 @@ async def _read_tunnel_url(proc: asyncio.subprocess.Process):
                 m = url_pattern.search(text)
                 if m:
                     _tunnel_url = m.group(1)
+                    if not _access_token:
+                        _access_token = secrets.token_urlsafe(24)
                     _status = "running"
-                    logger.info(f"Cloudflare Tunnel URL: {_tunnel_url}")
+                    logger.info(f"Cloudflare Tunnel URL: {_tunnel_url} (token enabled)")
     except asyncio.CancelledError:
         pass
     except Exception as e:
@@ -86,7 +126,8 @@ async def tunnel_status(_: bool = Depends(verify_token)):
     return {
         "installed": installed,
         "status": _status,
-        "url": _tunnel_url,
+        "url": get_public_tunnel_url(),
+        "base_url": _tunnel_url,
         "error": _error_msg,
     }
 
@@ -94,7 +135,7 @@ async def tunnel_status(_: bool = Depends(verify_token)):
 @router.post("/start")
 async def tunnel_start(_: bool = Depends(verify_token)):
     """Start a cloudflared quick tunnel."""
-    global _process, _status, _tunnel_url, _error_msg
+    global _process, _status, _tunnel_url, _error_msg, _access_token
 
     # Check if cloudflared is installed
     if not shutil.which("cloudflared"):
@@ -106,7 +147,7 @@ async def tunnel_start(_: bool = Depends(verify_token)):
 
     # Already running
     if _status == "running" and _process and _process.returncode is None:
-        return {"success": True, "url": _tunnel_url, "status": "running"}
+        return {"success": True, "url": get_public_tunnel_url(), "status": "running"}
 
     # Clean up any previous process
     await _stop_process()
@@ -114,6 +155,7 @@ async def tunnel_start(_: bool = Depends(verify_token)):
     _status = "starting"
     _error_msg = ""
     _tunnel_url = ""
+    _access_token = ""
 
     # Determine port from config
     try:
@@ -137,7 +179,7 @@ async def tunnel_start(_: bool = Depends(verify_token)):
         for _ in range(30):
             await asyncio.sleep(0.5)
             if _tunnel_url:
-                return {"success": True, "url": _tunnel_url, "status": "running"}
+                return {"success": True, "url": get_public_tunnel_url(), "status": "running"}
             if _process.returncode is not None:
                 _status = "error"
                 _error_msg = f"cloudflared exited with code {_process.returncode}"

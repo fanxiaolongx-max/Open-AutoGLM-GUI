@@ -11,6 +11,7 @@ from web_app.routers.chat import router as chat_router
 from web_app.routers.rules import router as rules_router
 from web_app.routers.telegram import router as telegram_router
 from web_app.routers.tunnel import router as tunnel_router
+from web_app.routers.scrcpy import router as scrcpy_router
 
 __all__ = [
     "devices_router",
@@ -23,4 +24,5 @@ __all__ = [
     "rules_router",
     "telegram_router",
     "tunnel_router",
+    "scrcpy_router",
 ]
