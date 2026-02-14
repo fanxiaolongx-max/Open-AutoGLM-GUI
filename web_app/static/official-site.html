@@ -695,7 +695,7 @@
                         <div class="kpis">
                             <div class="kpi">
                                 <div class="n">scrcpy</div>
-                                <div class="t">主链路实时预览 + 低延迟交互（失败自动降级）</div>
+                                <div class="t">主链路实时预览 + 低延迟交互（纯 scrcpy）</div>
                             </div>
                             <div class="kpi">
                                 <div class="n">CI 开关</div>
@@ -777,9 +777,9 @@
             <div class="wrap">
                 <div class="sec-head">
                     <div>
-                        <h2>为什么更稳：三层预览链路 + 双注入路径</h2>
+                        <h2>为什么更稳：纯 scrcpy 链路 + 双注入路径</h2>
                         <p class="sec-desc">
-                            <b>scrcpy 主链路</b>失败会自动降级到 screenrecord/screencap；
+                            <b>预览链路仅使用 scrcpy</b>，减少多链路分支复杂度；
                             输入默认走 ADB，高级开关可切 scrcpy 控制注入，失败自动回退。
                         </p>
                     </div>
@@ -789,11 +789,11 @@
                     <div class="card">
                         <div class="icon">📺</div>
                         <img class="card-ill" src="/static/official-assets/stream-chain.svg" alt="预览链路" />
-                        <h3>预览链路（优先级）</h3>
+                        <h3>预览链路（单链路）</h3>
                         <p>
-                            1) scrcpy + ffmpeg（主链路）<br />
-                            2) adb screenrecord + ffmpeg（兼容链路）<br />
-                            3) adb screencap loop（兜底链路）
+                            scrcpy + ffmpeg（视频）<br />
+                            scrcpy control socket（控制）<br />
+                            scrcpy audio socket（音频直通）
                         </p>
                     </div>
                     <div class="card">

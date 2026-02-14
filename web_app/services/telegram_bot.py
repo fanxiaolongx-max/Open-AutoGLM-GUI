@@ -5,6 +5,7 @@ Telegram Bot service for remote task execution and monitoring.
 
 import asyncio
 import logging
+import socket
 from typing import Optional, Dict, Any
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -229,6 +230,57 @@ class TelegramBotService:
         if not text:
             return ""
         return text.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+
+    def _get_local_api_base_url(self) -> str:
+        """Get local API base URL used by Telegram bot."""
+        try:
+            from web_app.config import config_manager
+            port = int(config_manager.get_config().port or 8080)
+        except Exception:
+            port = 8080
+        return f"http://127.0.0.1:{port}"
+
+    def _get_local_api_headers(self) -> dict:
+        """Build auth headers for local API calls if web auth is enabled."""
+        headers: dict[str, str] = {}
+        try:
+            from web_app.config import config_manager
+            cfg = config_manager.get_config()
+            if cfg.auth_enabled and cfg.auth_token:
+                headers["X-API-Key"] = cfg.auth_token
+        except Exception:
+            pass
+        return headers
+
+    async def _call_local_api(self, method: str, path: str, *, timeout: float = 12.0, json_body: Any = None):
+        """Call local web API from Telegram bot."""
+        import httpx
+
+        url = f"{self._get_local_api_base_url()}{path}"
+        async with httpx.AsyncClient() as client:
+            return await client.request(
+                method,
+                url,
+                headers=self._get_local_api_headers(),
+                json=json_body,
+                timeout=timeout,
+            )
+
+    @staticmethod
+    def _detect_lan_ip() -> str:
+        """Best-effort LAN IP detection for user guidance."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                sock.connect(("8.8.8.8", 80))
+                ip = sock.getsockname()[0]
+            finally:
+                sock.close()
+            if ip and not ip.startswith("127."):
+                return ip
+        except Exception:
+            pass
+        return ""
 
     async def _cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
@@ -1150,6 +1202,24 @@ class TelegramBotService:
             if callback_data == "advanced_diagnostic":
                 await self._show_system_diagnostic(query)
                 return
+
+            # === NETWORK / TUNNEL FEATURES ===
+            if callback_data == "advanced_network":
+                await self._show_network_access_menu(query)
+                return
+
+            if callback_data == "tunnel_status":
+                await self._show_network_access_menu(query)
+                return
+
+            if callback_data == "tunnel_start":
+                await self._toggle_tunnel(query, enable=True)
+                return
+
+            if callback_data == "tunnel_stop":
+                await self._toggle_tunnel(query, enable=False)
+                return
+            # === END NETWORK / TUNNEL ===
             
             # Refresh diagnostic
             if callback_data == "refresh_diagnostic":
@@ -2392,6 +2462,7 @@ class TelegramBotService:
         
         keyboard = [
             [InlineKeyboardButton("📏 规则配置", callback_data="advanced_rules")],
+            [InlineKeyboardButton("🌐 LAN / 公网访问", callback_data="advanced_network")],
             [InlineKeyboardButton("🔍 系统诊断", callback_data="advanced_diagnostic")],
             [InlineKeyboardButton("📈 统计信息", callback_data="advanced_stats")],
         ]
@@ -3661,6 +3732,113 @@ class TelegramBotService:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def _show_network_access_menu(self, query):
+        """Show LAN/Public network access status and controls."""
+        installed = False
+        status = "stopped"
+        public_url = ""
+        error_msg = ""
+
+        try:
+            response = await self._call_local_api("GET", "/api/tunnel/status", timeout=8.0)
+            if response.status_code == 200:
+                data = response.json()
+                installed = bool(data.get("installed", False))
+                status = str(data.get("status", "stopped"))
+                public_url = str(data.get("url", "") or "")
+                error_msg = str(data.get("error", "") or "")
+            else:
+                error_msg = f"status api http {response.status_code}"
+        except Exception as e:
+            logger.error(f"Failed to query tunnel status: {e}")
+            error_msg = str(e)
+
+        try:
+            from web_app.config import config_manager
+            port = int(config_manager.get_config().port or 8080)
+        except Exception:
+            port = 8080
+        lan_ip = self._detect_lan_ip()
+        lan_url = f"http://{lan_ip}:{port}" if lan_ip else f"http://<LAN-IP>:{port}"
+
+        status_map = {
+            "running": "✅ 运行中",
+            "starting": "⏳ 启动中",
+            "error": "❌ 异常",
+            "stopped": "⏹️ 已关闭",
+        }
+        status_text = status_map.get(status, status)
+
+        text = (
+            "🌐 **LAN / 公网访问**\n\n"
+            f"• LAN 访问: `{self._escape_markdown(lan_url)}`\n"
+            f"• 公网状态: {status_text}\n"
+        )
+        if public_url:
+            text += f"• 公网 URL(含 token): `{self._escape_markdown(public_url)}`\n"
+        if not installed:
+            text += "\n⚠️ `cloudflared` 未安装，无法开启公网。\n"
+        if error_msg:
+            text += f"\n⚠️ 错误: `{self._escape_markdown(error_msg)}`\n"
+
+        keyboard = []
+        if status == "running":
+            keyboard.append([InlineKeyboardButton("🛑 关闭公网", callback_data="tunnel_stop")])
+        else:
+            keyboard.append([InlineKeyboardButton("🚀 开启公网", callback_data="tunnel_start")])
+        keyboard.append([InlineKeyboardButton("🔄 刷新状态", callback_data="tunnel_status")])
+        self._add_back_button(keyboard, "menu_advanced")
+
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown',
+            disable_web_page_preview=True,
+        )
+
+    async def _toggle_tunnel(self, query, enable: bool):
+        """Enable/disable public tunnel and send friendly status reply."""
+        action = "start" if enable else "stop"
+        path = "/api/tunnel/start" if enable else "/api/tunnel/stop"
+        ok = False
+        detail = ""
+        public_url = ""
+
+        try:
+            response = await self._call_local_api("POST", path, timeout=25.0)
+            data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+            if response.status_code == 200:
+                ok = bool(data.get("success", False))
+                detail = str(data.get("error", "") or "")
+                public_url = str(data.get("url", "") or "")
+            else:
+                detail = f"http {response.status_code}"
+        except Exception as e:
+            detail = str(e)
+            logger.error(f"Tunnel {action} failed: {e}")
+
+        if ok and enable:
+            await query.answer("✅ 公网已开启", show_alert=False)
+            if public_url:
+                await query.message.reply_text(
+                    "✅ **公网访问已开启**\n\n"
+                    f"URL(含 token): `{self._escape_markdown(public_url)}`",
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True,
+                )
+        elif ok and not enable:
+            await query.answer("✅ 已关闭公网，切回 LAN", show_alert=False)
+            await query.message.reply_text("🔒 公网访问已关闭，当前仅 LAN 可访问。")
+        else:
+            await query.answer(f"❌ {'开启' if enable else '关闭'}失败", show_alert=True)
+            if detail:
+                await query.message.reply_text(
+                    f"❌ 公网{ '开启' if enable else '关闭' }失败: `{self._escape_markdown(detail)}`",
+                    parse_mode='Markdown',
+                )
+
+        await self._show_network_access_menu(query)
     
     async def _show_help_section(self, query, section: str):
         """Show help and documentation sections."""

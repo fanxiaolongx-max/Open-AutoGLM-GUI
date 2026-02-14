@@ -2,14 +2,15 @@
 """
 Scrcpy streaming service for real-time device screen mirroring and touch control.
 
-Supports three modes (auto-selected in priority order):
-1. scrcpy mode (scrcpy-server v3 JAR + ffmpeg): raw H.264 via socket → ffmpeg → rawvideo → PIL JPEG, ~24fps
-2. screenrecord mode (adb screenrecord + ffmpeg): true real-time H.264 stream → rawvideo → PIL JPEG, ~24fps
-3. screencap mode (adb screencap loop): per-frame screenshots, ~10fps
+Pure scrcpy mode:
+1. scrcpy-server v3 JAR + ffmpeg: raw H.264 via socket → ffmpeg → rawvideo → PIL JPEG
+2. scrcpy control socket injection for touch/scroll/key
+3. independent scrcpy audio passthrough channel
 """
 
 import asyncio
 import io
+import json
 import logging
 import os
 import shutil
@@ -46,7 +47,7 @@ _ffmpeg_available = bool(shutil.which("ffmpeg"))
 if _ffmpeg_available:
     logger.info("ffmpeg found, H.264 decoding available")
 else:
-    logger.info("ffmpeg not found, will use screencap fallback")
+    logger.warning("ffmpeg not found, scrcpy streaming will be unavailable")
 
 try:
     _scrcpy_first_frame_timeout = float(os.getenv("SCRCPY_FIRST_FRAME_TIMEOUT", "40"))
@@ -72,7 +73,33 @@ if _scrcpy_auto_nudge_delay_ms < 0:
     _scrcpy_auto_nudge_delay_ms = 0
 
 _scrcpy_auto_unlock_on_start = os.getenv("SCRCPY_AUTO_UNLOCK_ON_START", "1") == "1"
-_scrcpy_control_debug = os.getenv("SCRCPY_CONTROL_DEBUG", "1") == "1"
+_scrcpy_control_debug = os.getenv("SCRCPY_CONTROL_DEBUG", "0") == "1"
+try:
+    _scrcpy_rotation_check_interval_sec = float(os.getenv("SCRCPY_ROTATION_CHECK_INTERVAL_SEC", "0.8"))
+except ValueError:
+    _scrcpy_rotation_check_interval_sec = 0.8
+if _scrcpy_rotation_check_interval_sec < 0.5:
+    _scrcpy_rotation_check_interval_sec = 0.5
+try:
+    _scrcpy_recover_cooldown_sec = float(os.getenv("SCRCPY_RECOVER_COOLDOWN_SEC", "3"))
+except ValueError:
+    _scrcpy_recover_cooldown_sec = 3.0
+if _scrcpy_recover_cooldown_sec < 1.0:
+    _scrcpy_recover_cooldown_sec = 1.0
+try:
+    _scrcpy_stale_frame_watchdog_sec = float(os.getenv("SCRCPY_STALE_FRAME_WATCHDOG_SEC", "45"))
+except ValueError:
+    _scrcpy_stale_frame_watchdog_sec = 45.0
+if _scrcpy_stale_frame_watchdog_sec < 5.0:
+    _scrcpy_stale_frame_watchdog_sec = 5.0
+try:
+    _scrcpy_decode_error_streak_threshold = int(
+        os.getenv("SCRCPY_DECODE_ERROR_STREAK_THRESHOLD", "32")
+    )
+except ValueError:
+    _scrcpy_decode_error_streak_threshold = 32
+if _scrcpy_decode_error_streak_threshold < 8:
+    _scrcpy_decode_error_streak_threshold = 8
 
 # Main event loop reference for thread-safe scheduling
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -90,8 +117,9 @@ class ScrcpySession:
     device_id: str
     is_streaming: bool = False
     is_scrcpy: bool = False
-    stream_mode: str = ""  # "scrcpy", "screenrecord", "screencap"
+    stream_mode: str = ""  # "scrcpy"
     last_frame: Optional[bytes] = None  # Latest JPEG frame
+    last_frame_ts: float = 0.0
     connected_websockets: Set = field(default_factory=set)
     connected_audio_websockets: Set = field(default_factory=set)
     screen_width: int = 0
@@ -102,9 +130,9 @@ class ScrcpySession:
     audio_codec: str = ""
     audio_sample_rate: int = 48_000
     audio_channels: int = 2
+    display_rotation: int = -1
     frame_rate: int = 15
     client: Optional[object] = None  # unused, kept for compatibility
-    _fallback_task: Optional[asyncio.Task] = None
     _client_thread: Optional[threading.Thread] = None
     _stop_event: Optional[threading.Event] = None
     _auto_stop_task: Optional[asyncio.Task] = None
@@ -118,6 +146,13 @@ class ScrcpySession:
     _control_lock: threading.Lock = field(default_factory=threading.Lock)
     _scrcpy_scid: Optional[str] = None
     _local_port: int = 0
+    max_size: int = 960
+    bit_rate: int = 4_000_000
+    _recover_task: Optional[object] = None
+    _last_recover_ts: float = 0.0
+    _last_rotation_check_ts: float = 0.0
+    _prefer_no_meta: bool = False
+    _current_frame_meta: bool = False
 
 
 class ScrcpyService:
@@ -127,6 +162,14 @@ class ScrcpyService:
 
     def __init__(self):
         self._sessions: dict[str, ScrcpySession] = {}
+        self._start_locks: dict[str, asyncio.Lock] = {}
+
+    def _get_start_lock(self, device_id: str) -> asyncio.Lock:
+        lock = self._start_locks.get(device_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._start_locks[device_id] = lock
+        return lock
 
     def get_session(self, device_id: str) -> Optional[ScrcpySession]:
         """Get existing session for a device."""
@@ -338,74 +381,243 @@ class ScrcpyService:
             session._control_socket = None
             return False
 
+    def _schedule_stream_recovery(
+        self,
+        device_id: str,
+        reason: str,
+        *,
+        max_size: Optional[int] = None,
+        bit_rate: Optional[int] = None,
+        frame_rate: Optional[int] = None,
+        control_enabled: Optional[bool] = None,
+        audio_enabled: Optional[bool] = None,
+    ) -> bool:
+        session = self._sessions.get(device_id)
+        if not session or not session.is_streaming:
+            return False
+
+        now = time.monotonic()
+        if session._recover_task and not session._recover_task.done():
+            return False
+        if now - float(session._last_recover_ts or 0.0) < _scrcpy_recover_cooldown_sec:
+            return False
+
+        restart_size = int(max_size if max_size is not None else (session.max_size or 960))
+        restart_br = int(bit_rate if bit_rate is not None else (session.bit_rate or 4_000_000))
+        restart_fps = int(frame_rate if frame_rate is not None else (session.frame_rate or 24))
+        restart_control = bool(
+            session.control_enabled if control_enabled is None else control_enabled
+        )
+        restart_audio = bool(
+            session.audio_enabled if audio_enabled is None else audio_enabled
+        )
+
+        async def _recover():
+            try:
+                logger.warning(
+                    f"[SCRCPY-RECOVER] 🔧 restarting stream for {device_id}: reason={reason} "
+                    f"control={restart_control} audio={restart_audio} "
+                    f"max_size={restart_size} fps={restart_fps} bit_rate={restart_br}"
+                )
+                await self.start_stream(
+                    device_id,
+                    max_size=restart_size,
+                    bit_rate=restart_br,
+                    frame_rate=restart_fps,
+                    restart=True,
+                    control_enabled=restart_control,
+                    audio_enabled=restart_audio,
+                )
+                logger.info(f"[SCRCPY-RECOVER] 🔧 stream recovered for {device_id}: reason={reason}")
+                session_after = self._sessions.get(device_id)
+                if session_after and reason.startswith("orientation_"):
+                    await self._broadcast_control(
+                        session_after,
+                        {"type": "rotation_recovery_done", "reason": reason},
+                    )
+            except Exception as e:
+                logger.warning(f"[SCRCPY-RECOVER] 🔧 restart failed for {device_id}: reason={reason}, error={e}")
+                session_after = self._sessions.get(device_id)
+                if session_after and reason.startswith("orientation_"):
+                    await self._broadcast_control(
+                        session_after,
+                        {"type": "rotation_recovery_failed", "reason": reason, "error": str(e)},
+                    )
+            finally:
+                s = self._sessions.get(device_id)
+                if s:
+                    s._recover_task = None
+
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop and not running_loop.is_closed():
+            session._last_recover_ts = now
+            session._recover_task = running_loop.create_task(_recover())
+            return True
+
+        loop = _main_loop
+        if not loop or loop.is_closed():
+            return False
+        session._last_recover_ts = now
+        session._recover_task = asyncio.run_coroutine_threadsafe(_recover(), loop)
+        return True
+
+    def watchdog_recover_if_stale(
+        self,
+        device_id: str,
+        *,
+        max_size: Optional[int] = None,
+        bit_rate: Optional[int] = None,
+        frame_rate: Optional[int] = None,
+        control_enabled: Optional[bool] = None,
+        audio_enabled: Optional[bool] = None,
+    ) -> bool:
+        session = self._sessions.get(device_id)
+        if not session or not session.is_streaming or not session.is_scrcpy:
+            return False
+        if not session.connected_websockets:
+            return False
+
+        thread_alive = bool(session._client_thread and session._client_thread.is_alive())
+        if not thread_alive:
+            return self._schedule_stream_recovery(
+                device_id,
+                "video_thread_dead",
+                max_size=max_size,
+                bit_rate=bit_rate,
+                frame_rate=frame_rate,
+                control_enabled=control_enabled,
+                audio_enabled=audio_enabled,
+            )
+
+        if session.last_frame_ts > 0:
+            frame_age = time.monotonic() - float(session.last_frame_ts)
+            if frame_age >= _scrcpy_stale_frame_watchdog_sec and not session._control_socket:
+                return self._schedule_stream_recovery(
+                    device_id,
+                    f"stale_frame_{frame_age:.1f}s_control_socket_lost",
+                    max_size=max_size,
+                    bit_rate=bit_rate,
+                    frame_rate=frame_rate,
+                    control_enabled=control_enabled,
+                    audio_enabled=audio_enabled,
+                )
+
+        return False
+
+    async def watchdog_check_rotation(self, device_id: str):
+        """Low-frequency rotation check for active scrcpy sessions."""
+        session = self._sessions.get(device_id)
+        if not session or not session.is_streaming or not session.is_scrcpy:
+            return
+        if not session.connected_websockets:
+            return
+        await self._check_rotation_and_recover(device_id, session, "ws_timeout")
+
     async def start_stream(self, device_id: str, max_size: int = 960,
                            bit_rate: int = 4_000_000, frame_rate: int = 24,
                            restart: bool = False, control_enabled: bool = False,
                            audio_enabled: bool = False) -> dict:
         """
         Start streaming for a device.
-        Tries scrcpy → screenrecord+ffmpeg → screencap in priority order.
+        Pure scrcpy mode only.
         """
-        session = self.get_or_create_session(device_id)
-
-        if (
-            session.is_streaming
-            and session.is_scrcpy
-            and (session.control_enabled != control_enabled or session.audio_enabled != audio_enabled)
-        ):
-            restart = True
-
-        if session.is_streaming and restart:
-            try:
-                await self.stop_stream(device_id)
-            except Exception as e:
-                # ADB may be temporarily busy; continue and try to start a fresh stream.
-                logger.warning(f"restart stop_stream failed for {device_id}: {e}")
+        start_lock = self._get_start_lock(device_id)
+        lock_wait_start = time.monotonic()
+        async with start_lock:
+            lock_wait_ms = (time.monotonic() - lock_wait_start) * 1000.0
+            if lock_wait_ms >= 120.0:
+                logger.warning(
+                    f"[SCRCPY-START] start lock waited {lock_wait_ms:.0f}ms for {device_id}"
+                )
             session = self.get_or_create_session(device_id)
-
-        if session.is_streaming:
-            return {
-                "status": "already_running",
-                "mode": session.stream_mode,
-                "width": session.screen_width,
-                "height": session.screen_height,
-                "fps": session.frame_rate,
-                "control": session.control_enabled,
-                "audio": session.audio_enabled,
-                "audio_codec": session.audio_codec,
-            }
-
-        # Cancel any pending auto-stop
-        if session._auto_stop_task and not session._auto_stop_task.done():
-            session._auto_stop_task.cancel()
-            session._auto_stop_task = None
-
-        # 1. Try scrcpy-server v3 + ffmpeg (best quality, supports Android 15)
-        if _scrcpy_server_jar and _ffmpeg_available:
-            # Retry order:
-            # 1) requested profile
-            # 2) same profile restart once (helps transient encoder/socket hiccups)
-            # 3) conservative fallback (prefer frame_meta=False)
-            frame_meta_default = os.getenv("SCRCPY_FRAME_META", "1") == "1"
-            scrcpy_profiles = [
-                ("requested", max_size, bit_rate, frame_rate, frame_meta_default),
-                ("same-retry", max_size, bit_rate, frame_rate, frame_meta_default),
-            ]
-            low_profile = (
-                min(max_size, 540),
-                min(bit_rate, 2_000_000),
-                min(frame_rate, 15),
+            logger.info(
+                f"[SCRCPY-START] request: device={device_id} restart={restart} "
+                f"control={control_enabled} audio={audio_enabled} "
+                f"max_size={max_size} fps={frame_rate} bit_rate={bit_rate} "
+                f"session_streaming={session.is_streaming} session_mode={session.stream_mode or 'none'} "
+                f"prefer_no_meta={session._prefer_no_meta}"
             )
-            if low_profile != (max_size, bit_rate, frame_rate):
-                # On retry prefer no frame-meta path to avoid device-specific frame-meta corruption.
-                scrcpy_profiles.append(("low-retry", low_profile[0], low_profile[1], low_profile[2], False))
-            elif frame_meta_default:
-                # Same profile: still retry once with frame-meta disabled.
-                scrcpy_profiles.append(("no-meta-retry", max_size, bit_rate, frame_rate, False))
+            session.max_size = int(max_size)
+            session.bit_rate = int(bit_rate)
+            session.frame_rate = int(frame_rate)
 
-            scrcpy_errors = []
+            if (
+                session.is_streaming
+                and session.is_scrcpy
+                and (session.control_enabled != control_enabled or session.audio_enabled != audio_enabled)
+            ):
+                restart = True
+
+            if session.is_streaming and restart:
+                logger.info(
+                    f"[SCRCPY-START] restart requested: device={device_id} "
+                    f"current_control={session.control_enabled} current_audio={session.audio_enabled}"
+                )
+                try:
+                    await self.stop_stream(device_id)
+                except Exception as e:
+                    # ADB may be temporarily busy; continue and try to start a fresh stream.
+                    logger.warning(f"restart stop_stream failed for {device_id}: {e}")
+                session = self.get_or_create_session(device_id)
+
+            if session.is_streaming:
+                logger.info(
+                    f"[SCRCPY-START] already running: device={device_id} "
+                    f"control={session.control_enabled} audio={session.audio_enabled} "
+                    f"video={session.video_width}x{session.video_height} "
+                    f"screen={session.screen_width}x{session.screen_height} "
+                    f"rotation={session.display_rotation}"
+                )
+                return {
+                    "status": "already_running",
+                    "mode": session.stream_mode,
+                    "width": session.screen_width,
+                    "height": session.screen_height,
+                    "fps": session.frame_rate,
+                    "control": session.control_enabled,
+                    "audio": session.audio_enabled,
+                    "audio_codec": session.audio_codec,
+                }
+
+            # Cancel any pending auto-stop
+            if session._auto_stop_task and not session._auto_stop_task.done():
+                session._auto_stop_task.cancel()
+                session._auto_stop_task = None
+
+            if not _scrcpy_server_jar:
+                raise RuntimeError("scrcpy-server JAR not found; install scrcpy first")
+            if not _ffmpeg_available:
+                raise RuntimeError("ffmpeg not found; scrcpy streaming requires ffmpeg")
+
+            frame_meta_default = os.getenv("SCRCPY_FRAME_META", "1") == "1"
+            if session._prefer_no_meta:
+                # Device remembered as frame-meta unstable: start directly with no-meta.
+                logger.warning(
+                    f"[SCRCPY-META] force no-meta profile for {device_id} (remembered unstable meta)"
+                )
+                scrcpy_profiles = [
+                    ("preferred-no-meta", max_size, bit_rate, frame_rate, False),
+                    ("no-meta-retry", max_size, bit_rate, frame_rate, False),
+                ]
+            else:
+                # Retry order:
+                # 1) requested profile
+                # 2) same profile retry once (helps transient encoder/socket hiccups)
+                # 3) requested profile with frame_meta disabled
+                scrcpy_profiles = [
+                    ("requested", max_size, bit_rate, frame_rate, frame_meta_default),
+                    ("same-retry", max_size, bit_rate, frame_rate, frame_meta_default),
+                ]
+                if frame_meta_default:
+                    scrcpy_profiles.append(("no-meta-retry", max_size, bit_rate, frame_rate, False))
+
+            last_error: Optional[Exception] = None
             for idx, (tag, size_i, br_i, fps_i, frame_meta_i) in enumerate(scrcpy_profiles, start=1):
-                if tag != "requested":
+                if idx > 1:
                     logger.warning(
                         f"scrcpy retry for {device_id}: profile={tag}, max_size={size_i}, "
                         f"frame_rate={fps_i}, bit_rate={br_i}, frame_meta={frame_meta_i}, audio={audio_enabled}"
@@ -416,16 +628,21 @@ class ScrcpyService:
                         frame_meta=frame_meta_i, control_enabled=control_enabled,
                         audio_enabled=audio_enabled,
                     )
+                    if not frame_meta_i and not session._prefer_no_meta:
+                        session._prefer_no_meta = True
+                        logger.warning(
+                            f"[SCRCPY-META] remember no-meta for {device_id}: "
+                            "stream started only after frame_meta disabled"
+                        )
                     self._schedule_start_nudge(device_id, session)
                     return result
                 except Exception as e:
-                    scrcpy_errors.append((tag, size_i, br_i, fps_i, frame_meta_i, e))
+                    last_error = e
                     logger.warning(
                         f"scrcpy attempt {idx}/{len(scrcpy_profiles)} failed for {device_id} "
                         f"(profile={tag}, max_size={size_i}, frame_rate={fps_i}, "
                         f"bit_rate={br_i}, frame_meta={frame_meta_i}, audio={audio_enabled}): {e}"
                     )
-                    # Ensure any partial resources from this attempt are cleaned up before retry/fallback.
                     try:
                         if session._stop_event:
                             session._stop_event.set()
@@ -441,25 +658,12 @@ class ScrcpyService:
                     session.audio_codec = ""
                     session._audio_socket = None
                     session.last_frame = None
+                    session.last_frame_ts = 0.0
+                    session._current_frame_meta = False
                     if idx < len(scrcpy_profiles):
                         await asyncio.sleep(0.4)
 
-            if scrcpy_errors:
-                logger.warning(f"scrcpy stream failed for {device_id}: {scrcpy_errors[-1][5]}")
-
-        # 2. Try screenrecord + ffmpeg
-        if _ffmpeg_available:
-            try:
-                result = await self._start_screenrecord_stream(session, device_id, frame_rate)
-                self._schedule_start_nudge(device_id, session)
-                return result
-            except Exception as e:
-                logger.warning(f"screenrecord stream failed for {device_id}: {e}, falling back to screencap")
-
-        # 3. Fall back to screencap loop (always works)
-        result = await self._start_screencap_stream(session, device_id, frame_rate)
-        self._schedule_start_nudge(device_id, session)
-        return result
+            raise RuntimeError(f"scrcpy stream failed for {device_id}: {last_error}")
 
     # ──────────────────────────────────────────────────────────────────────
     # Mode 1: scrcpy-server v3.3.4 JAR + ffmpeg H.264 decode
@@ -592,6 +796,7 @@ class ScrcpyService:
         import socket as socket_mod
 
         loop = asyncio.get_event_loop()
+        stream_begin_ts = time.monotonic()
         session._stop_event = threading.Event()
         stop_event = session._stop_event
         session.frame_rate = frame_rate
@@ -605,9 +810,16 @@ class ScrcpyService:
         session._scrcpy_scid = scid
         session._local_port = local_port
 
-        # Output scale width for rawvideo frames
-        out_width = 360
+        # Output size for rawvideo frames (long edge follows requested max_size).
+        out_width = 0
         out_height = [0]
+        target_long_edge = int(max(240, min(1440, max_size)))
+
+        def _ensure_even(v: int) -> int:
+            iv = int(max(2, round(v)))
+            if iv % 2:
+                iv += 1
+            return iv
 
         def _deploy_and_connect():
             """Push JAR, start server, connect socket (blocking)."""
@@ -649,7 +861,7 @@ class ScrcpyService:
             )
             # Drain server stdout in background to prevent blocking
             threading.Thread(target=lambda: server_proc.stdout.read(), daemon=True).start()
-            time.sleep(2)
+            time.sleep(0.15)
 
             # Connect video socket
             sock = socket_mod.socket(socket_mod.AF_INET, socket_mod.SOCK_STREAM)
@@ -774,6 +986,11 @@ class ScrcpyService:
             return server_proc, sock, audio_sock, control_sock, video_w, video_h, audio_codec
 
         server_proc, video_socket, audio_socket, control_socket, video_w, video_h, audio_codec = await loop.run_in_executor(None, _deploy_and_connect)
+        connect_ready_ms = (time.monotonic() - stream_begin_ts) * 1000.0
+        logger.info(
+            f"[SCRCPY-START] transport ready: device={device_id} meta={use_frame_meta} "
+            f"control={control_enabled} audio={audio_enabled} connect_ms={connect_ready_ms:.0f}"
+        )
 
         session._server_proc = server_proc
         session._video_socket = video_socket
@@ -789,17 +1006,55 @@ class ScrcpyService:
         session.stream_mode = "scrcpy"
         session.is_scrcpy = True
         session.is_streaming = True
+        session._current_frame_meta = bool(use_frame_meta)
 
-        # Get screen size
-        w, h = await self._get_screen_size(device_id)
+        # Get logical screen size for ADB coordinate mapping (rotation-aware).
+        base_w, base_h = await self._get_screen_size(device_id)
+        rotation = await self._get_display_rotation(device_id)
+        session.display_rotation = rotation
+        w, h = self._apply_rotation_to_size(base_w, base_h, rotation)
+        if w <= 0 or h <= 0:
+            w, h = base_w, base_h
         session.screen_width = w
         session.screen_height = h
-        if w > 0 and h > 0:
-            out_height[0] = int(h * out_width / w)
-            if out_height[0] % 2:
-                out_height[0] += 1
+        src_w = int(session.video_width or w or 0)
+        src_h = int(session.video_height or h or 0)
+        if src_w > 0 and src_h > 0:
+            src_long = max(src_w, src_h)
+            long_edge = min(target_long_edge, src_long)
+            if src_w >= src_h:
+                out_width = long_edge
+                out_height[0] = int(round(src_h * long_edge / src_w))
+            else:
+                out_height[0] = long_edge
+                out_width = int(round(src_w * long_edge / src_h))
+            out_width = _ensure_even(out_width)
+            out_height[0] = _ensure_even(out_height[0])
+        else:
+            out_width = _ensure_even(min(target_long_edge, 960))
+            if w > 0 and h > 0:
+                out_height[0] = _ensure_even(int(round(h * out_width / w)))
+            else:
+                out_height[0] = _ensure_even(800)
+        logger.info(
+            f"scrcpy output target: source={src_w}x{src_h} long_edge={target_long_edge} "
+            f"scaled={out_width}x{out_height[0]}"
+        )
 
         _valid_frame_event = threading.Event()
+
+        def _switch_no_meta_and_recover(reason: str) -> bool:
+            if not use_frame_meta:
+                return False
+            if not session._prefer_no_meta:
+                session._prefer_no_meta = True
+                logger.warning(
+                    f"[SCRCPY-META] mark device as no-meta preferred: {device_id}, reason={reason}"
+                )
+            scheduled = self._schedule_stream_recovery(device_id, reason)
+            if scheduled:
+                stop_event.set()
+            return scheduled
 
         def audio_thread():
             """Audio socket (PCM packets) -> WebSocket broadcast."""
@@ -818,6 +1073,8 @@ class ScrcpyService:
                         if not chunk:
                             return None
                         buf.extend(chunk)
+                    except socket_mod.timeout:
+                        continue
                     except Exception:
                         return None
                 return bytes(buf) if len(buf) == n else None
@@ -834,6 +1091,7 @@ class ScrcpyService:
                             logger.warning(
                                 f"[SCRCPY-AUDIO] invalid packet length for {device_id}: {payload_len}"
                             )
+                            _switch_no_meta_and_recover("audio_invalid_packet_len")
                             break
                         payload = read_exact(session._audio_socket, payload_len)
                         if not payload:
@@ -846,7 +1104,10 @@ class ScrcpyService:
                                 self._broadcast_audio(session, payload), _main_loop
                             )
                     else:
-                        data = session._audio_socket.recv(8192)
+                        try:
+                            data = session._audio_socket.recv(8192)
+                        except socket_mod.timeout:
+                            continue
                         if not data:
                             break
                         if _main_loop and not _main_loop.is_closed():
@@ -956,13 +1217,26 @@ class ScrcpyService:
 
                 # Parse ffmpeg stderr to detect output dimensions
                 stderr_tail = deque(maxlen=50)
+                decode_error_streak = 0
+                decode_recover_triggered = False
+                decode_error_markers = (
+                    "error while decoding",
+                    "failed to parse header of nalu",
+                    "invalid data found when processing input",
+                    "mb_skip_run",
+                    "concealing ",
+                )
 
                 def parse_stderr():
+                    nonlocal decode_error_streak, decode_recover_triggered
                     try:
                         for line in ffmpeg_proc.stderr:
+                            if stop_event.is_set():
+                                break
                             decoded = line.decode('utf-8', errors='replace').strip()
-                            if decoded:
-                                stderr_tail.append(decoded)
+                            if not decoded:
+                                continue
+                            stderr_tail.append(decoded)
                             if 'Stream #0:0' in decoded and 'Video:' in decoded:
                                 m = re.search(r'(\d+)x(\d+)', decoded)
                                 if m:
@@ -970,8 +1244,39 @@ class ScrcpyService:
                                     if pw == out_width and out_height[0] == 0:
                                         out_height[0] = ph
                                         logger.info(f"scrcpy ffmpeg output: {pw}x{ph}")
-                            if 'error' in decoded.lower() or 'invalid' in decoded.lower():
+                            lower = decoded.lower()
+                            is_decode_error = any(marker in lower for marker in decode_error_markers)
+                            if is_decode_error:
+                                decode_error_streak += 1
                                 logger.warning(f"scrcpy ffmpeg stderr: {decoded}")
+                                if (
+                                    not decode_recover_triggered
+                                    and decode_error_streak >= _scrcpy_decode_error_streak_threshold
+                                ):
+                                    decode_recover_triggered = True
+                                    if use_frame_meta and not session._prefer_no_meta:
+                                        session._prefer_no_meta = True
+                                        logger.warning(
+                                            f"[SCRCPY-META] mark device as no-meta preferred: {device_id}, "
+                                            "reason=decode_error_streak"
+                                        )
+                                    logger.warning(
+                                        f"[SCRCPY-DECODE] decode error streak hit {decode_error_streak} "
+                                        f"for {device_id}, forcing stream rebuild "
+                                        f"(rotation={session.display_rotation}, "
+                                        f"video={session.video_width}x{session.video_height}, "
+                                        f"screen={session.screen_width}x{session.screen_height}, "
+                                        f"meta={session._current_frame_meta})"
+                                    )
+                                    scheduled = self._schedule_stream_recovery(
+                                        device_id, f"decode_error_streak_{decode_error_streak}"
+                                    )
+                                    if scheduled:
+                                        stop_event.set()
+                            else:
+                                decode_error_streak = 0
+                                if 'error' in lower or 'invalid' in lower:
+                                    logger.warning(f"scrcpy ffmpeg stderr: {decoded}")
                     except Exception:
                         pass
 
@@ -1127,11 +1432,11 @@ class ScrcpyService:
                                             if status == "need_more":
                                                 break
                                             if status != "ok" or not parsed:
-                                                parser_mode = "resync"
                                                 logger.warning(
-                                                    "scrcpy frame-meta fixed12 header invalid, switching to resync"
+                                                    "scrcpy frame-meta fixed12 header invalid, forcing no-meta restart"
                                                 )
-                                                continue
+                                                _switch_no_meta_and_recover("frame_meta_fixed12_invalid")
+                                                break
                                         else:
                                             status, parsed = try_parse_frame(buf)
                                             if status == "need_more":
@@ -1317,10 +1622,12 @@ class ScrcpyService:
                     jpeg_bytes = buf.getvalue()
 
                     if first_frame:
-                        logger.info("scrcpy first frame decoded ✅")
+                        first_frame_ms = (time.monotonic() - stream_begin_ts) * 1000.0
+                        logger.info(f"scrcpy first frame decoded ✅ ({first_frame_ms:.0f}ms)")
                         first_frame = False
                     _valid_frame_event.set()
                     session.last_frame = jpeg_bytes
+                    session.last_frame_ts = time.monotonic()
                     if _main_loop and not _main_loop.is_closed():
                         _main_loop.call_soon_threadsafe(
                             lambda data=jpeg_bytes: asyncio.ensure_future(
@@ -1391,8 +1698,17 @@ class ScrcpyService:
         self._schedule_auto_unlock(device_id)
 
         # Wait for first valid frame (older/slower devices may need longer startup).
+        def _wait_first_frame_or_stop() -> bool:
+            deadline = time.monotonic() + _scrcpy_first_frame_timeout
+            while time.monotonic() < deadline:
+                if _valid_frame_event.wait(timeout=0.2):
+                    return True
+                if stop_event.is_set():
+                    return False
+            return _valid_frame_event.is_set()
+
         got_valid = await loop.run_in_executor(
-            None, lambda: _valid_frame_event.wait(timeout=_scrcpy_first_frame_timeout)
+            None, _wait_first_frame_or_stop
         )
 
         if not got_valid:
@@ -1403,9 +1719,16 @@ class ScrcpyService:
             session.is_scrcpy = False
             session.stream_mode = ""
             session.last_frame = None
+            session.last_frame_ts = 0.0
             raise RuntimeError(f"scrcpy+ffmpeg produced no frames for {device_id}")
 
         logger.info(f"scrcpy stream started for {device_id} ({w}x{h} @{frame_rate}fps) ✅ ✅")
+        logger.info(
+            f"[SCRCPY-START] ready summary: device={device_id} "
+            f"screen={w}x{h} video_meta={session.video_width}x{session.video_height} "
+            f"output={out_width}x{out_height[0]} rotation={session.display_rotation} "
+            f"meta={use_frame_meta} total_ms={(time.monotonic() - stream_begin_ts) * 1000.0:.0f}"
+        )
         return {
             "status": "started",
             "mode": "scrcpy",
@@ -1457,6 +1780,7 @@ class ScrcpyService:
         session.control_enabled = False
         session.video_width = 0
         session.video_height = 0
+        session._current_frame_meta = False
 
         if session._server_proc:
             try:
@@ -1481,10 +1805,6 @@ class ScrcpyService:
                 logger.warning(f"adb forward remove failed for {device_id}: {e}")
             session._local_port = 0
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Mode 2: adb screenrecord + ffmpeg pipeline
-    # ──────────────────────────────────────────────────────────────────────
-
     async def _get_screen_size(self, device_id: str) -> tuple[int, int]:
         """Get device screen dimensions via adb."""
         loop = asyncio.get_event_loop()
@@ -1506,290 +1826,161 @@ class ScrcpyService:
 
         return await loop.run_in_executor(None, _get)
 
-    async def _detect_screenrecord_caps(self, device_id: str) -> dict:
-        """Detect screenrecord capabilities on the device."""
+    async def _get_display_rotation(self, device_id: str) -> int:
+        """Get current display rotation (0/1/2/3). Returns -1 if unavailable."""
         loop = asyncio.get_event_loop()
 
-        def _detect():
-            caps = {"supported": False, "output_format": False, "formats": [], "version": ""}
-            try:
-                result = subprocess.run(
-                    ["adb", "-s", device_id, "exec-out", "screenrecord", "--help"],
-                    capture_output=True, text=True, timeout=5
+        def _get():
+            import re
+
+            def parse_rotation(text: str) -> int:
+                if not text:
+                    return -1
+                patterns = (
+                    r"SurfaceOrientation:\s*([0-3])",
+                    r"Surface orientation:\s*([0-3])",
+                    r"SurfaceOrientation(?:=|\s+)([0-3])",
+                    r"mCurrentRotation(?:=|:\s*)([0-3])",
+                    r"mRotation(?:=|:\s*)([0-3])",
+                    r"mCurrentOrientation(?:=|:\s*)([0-3])",
+                    r"orientation(?:=|:\s*|\s+)([0-3])",
+                    r"rotation(?:=|:\s*)([0-3])",
                 )
-                help_text = result.stdout + result.stderr
+                for pattern in patterns:
+                    m = re.search(pattern, text, re.IGNORECASE)
+                    if not m:
+                        continue
+                    try:
+                        value = int(m.group(1))
+                    except Exception:
+                        continue
+                    if 0 <= value <= 3:
+                        return value
 
-                if "screenrecord" not in help_text.lower():
-                    return caps
+                # Some devices print symbolic rotation names.
+                symbolic_patterns = (
+                    r"mCurrentRotation(?:=|:\s*)ROTATION_(0|90|180|270)",
+                    r"mRotation(?:=|:\s*)ROTATION_(0|90|180|270)",
+                    r"rotation(?:=|:\s*)ROTATION_(0|90|180|270)",
+                )
+                symbolic_map = {0: 0, 90: 1, 180: 2, 270: 3}
+                for pattern in symbolic_patterns:
+                    m = re.search(pattern, text, re.IGNORECASE)
+                    if not m:
+                        continue
+                    try:
+                        deg = int(m.group(1))
+                    except Exception:
+                        continue
+                    if deg in symbolic_map:
+                        return symbolic_map[deg]
 
-                caps["supported"] = True
+                m = re.search(r"^\s*([0-3])\s*$", text.strip())
+                if m:
+                    try:
+                        return int(m.group(1))
+                    except Exception:
+                        pass
+                return -1
 
-                import re
-                ver_match = re.search(r'screenrecord v([\d.]+)', help_text)
-                if ver_match:
-                    caps["version"] = ver_match.group(1)
+            cmds = [
+                ["adb", "-s", device_id, "shell", "dumpsys", "input"],
+                ["adb", "-s", device_id, "shell", "dumpsys", "window", "displays"],
+                ["adb", "-s", device_id, "shell", "dumpsys", "display"],
+                ["adb", "-s", device_id, "shell", "settings", "get", "system", "user_rotation"],
+                ["adb", "-s", device_id, "shell", "settings", "get", "secure", "user_rotation"],
+            ]
 
-                if "--output-format" in help_text:
-                    caps["output_format"] = True
-                    fmt_match = re.search(r'(?:format|fmt)[s]?[:\s]+([\w\-]+(?:,\s*[\w\-]+)*)', help_text, re.IGNORECASE)
-                    if fmt_match:
-                        caps["formats"] = [f.strip() for f in fmt_match.group(1).split(',')]
-                    else:
-                        caps["formats"] = ["h264"]
-
-            except Exception as e:
-                logger.debug(f"screenrecord detection error: {e}")
-
-            return caps
-
-        caps = await loop.run_in_executor(None, _detect)
-        logger.info(f"screenrecord caps for {device_id}: version={caps['version']}, "
-                     f"output_format={caps['output_format']}, formats={caps['formats']}")
-        return caps
-
-    async def _start_screenrecord_stream(self, session: ScrcpySession,
-                                          device_id: str, frame_rate: int) -> dict:
-        """Start real-time stream: adb screenrecord → H.264 → ffmpeg → rawvideo → JPEG."""
-        import re
-
-        caps = await self._detect_screenrecord_caps(device_id)
-
-        if not caps["output_format"]:
-            raise RuntimeError(
-                f"screenrecord on {device_id} (v{caps['version']}) does not support "
-                f"--output-format (required for stdout streaming)")
-
-        if "h264" in caps["formats"]:
-            output_format = "h264"
-            ffmpeg_input_fmt = "h264"
-        elif caps["formats"]:
-            output_format = caps["formats"][0]
-            ffmpeg_input_fmt = output_format
-        else:
-            output_format = "h264"
-            ffmpeg_input_fmt = "h264"
-
-        w, h = await self._get_screen_size(device_id)
-        session.screen_width = w
-        session.screen_height = h
-        session.video_width = 0
-        session.video_height = 0
-        session.is_scrcpy = False
-        session.control_enabled = False
-        session._control_socket = None
-        session.audio_enabled = False
-        session.audio_codec = ""
-        session._audio_socket = None
-        session.stream_mode = "screenrecord"
-        session.frame_rate = frame_rate
-        session.is_streaming = True
-        session._stop_event = threading.Event()
-
-        # Output scale width for rawvideo frames
-        out_width = 800 if w <= 0 else min(800, w)
-        out_height = [0]
-        if w > 0 and h > 0:
-            out_height[0] = int(h * out_width / w)
-            if out_height[0] % 2:
-                out_height[0] += 1
-
-        def stream_thread():
-            while not session._stop_event.is_set():
-                adb_proc = None
-                ffmpeg_proc = None
+            for cmd in cmds:
                 try:
-                    adb_proc = subprocess.Popen(
-                        ["adb", "-s", device_id, "exec-out", "screenrecord",
-                         f"--output-format={output_format}", "--bit-rate", "2000000", "-"],
-                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0
-                    )
-                    ffmpeg_proc = subprocess.Popen(
-                        ["ffmpeg",
-                         "-flags", "low_delay",
-                         "-probesize", "500000",
-                         "-analyzeduration", "1000000",
-                         "-f", ffmpeg_input_fmt, "-i", "pipe:0", "-an",
-                         "-vf", f"fps={frame_rate},scale={out_width}:-2",
-                         "-f", "rawvideo", "-pix_fmt", "rgb24",
-                         "-flush_packets", "1",
-                         "-threads", "1",
-                         "pipe:1"],
-                        stdin=adb_proc.stdout, stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE, bufsize=0
-                    )
-                    adb_proc.stdout.close()
-                    session._adb_proc = adb_proc
-                    session._ffmpeg_proc = ffmpeg_proc
-                    # If size not known, parse stderr to detect output dimensions.
-                    # Otherwise, drain stderr to avoid pipe blocking.
-                    if out_height[0] == 0:
-                        def parse_stderr():
-                            try:
-                                for line in ffmpeg_proc.stderr:
-                                    decoded = line.decode('utf-8', errors='replace').strip()
-                                    if 'Stream #0:0' in decoded and 'rawvideo' in decoded:
-                                        m = re.search(r'(\d+)x(\d+)', decoded)
-                                        if m:
-                                            pw, ph = int(m.group(1)), int(m.group(2))
-                                            if pw == out_width:
-                                                out_height[0] = ph
-                                                logger.info(
-                                                    f"screenrecord ffmpeg output: {pw}x{ph}")
-                            except Exception:
-                                pass
-
-                        threading.Thread(target=parse_stderr, daemon=True,
-                                         name=f"screenrecord-stderr-{device_id}").start()
-
-                        for _ in range(100):
-                            if out_height[0] > 0 or session._stop_event.is_set():
-                                break
-                            time.sleep(0.1)
-
-                        if out_height[0] == 0:
-                            out_height[0] = 800
-                            logger.debug("screenrecord output height not detected, "
-                                         f"using {out_width}x{out_height[0]}")
-                    else:
-                        threading.Thread(
-                            target=lambda: ffmpeg_proc.stderr.read(),
-                            daemon=True,
-                            name=f"screenrecord-stderr-{device_id}",
-                        ).start()
-
-                    frame_size = out_width * out_height[0] * 3  # RGB24
-
-                    while not session._stop_event.is_set():
-                        raw = b''
-                        while len(raw) < frame_size:
-                            remaining = frame_size - len(raw)
-                            chunk = ffmpeg_proc.stdout.read(remaining)
-                            if not chunk:
-                                break
-                            raw += chunk
-
-                        if len(raw) < frame_size:
-                            break
-
-                        img = Image.frombytes('RGB', (out_width, out_height[0]), raw)
-                        buf = io.BytesIO()
-                        img.save(buf, format='JPEG', quality=65)
-                        jpeg_bytes = buf.getvalue()
-
-                        session.last_frame = jpeg_bytes
-                        if _main_loop and not _main_loop.is_closed():
-                            _main_loop.call_soon_threadsafe(
-                                lambda data=jpeg_bytes: asyncio.ensure_future(
-                                    self._broadcast_frame(session, data)
-                                )
-                            )
-
-                    if not session._stop_event.is_set():
-                        logger.debug(f"screenrecord cycle ended for {device_id}, restarting")
-
-                except Exception as e:
-                    if not session._stop_event.is_set():
-                        logger.error(f"screenrecord error for {device_id}: {e}")
-                finally:
-                    for proc in [ffmpeg_proc, adb_proc]:
-                        if proc:
-                            try:
-                                proc.terminate()
-                                proc.wait(timeout=3)
-                            except Exception:
-                                try:
-                                    proc.kill()
-                                except Exception:
-                                    pass
-                    session._adb_proc = None
-                    session._ffmpeg_proc = None
-                    if not session._stop_event.is_set():
-                        time.sleep(0.3)
-
-        session._client_thread = threading.Thread(
-            target=stream_thread, daemon=True, name=f"screenrecord-{device_id}")
-        session._client_thread.start()
-        self._schedule_auto_unlock(device_id)
-        await asyncio.sleep(2.0)
-
-        if session.last_frame is None:
-            session._stop_event.set()
-            session.is_streaming = False
-            session.stream_mode = ""
-            raise RuntimeError(f"screenrecord produced no frames for {device_id}")
-
-        logger.info(f"screenrecord stream started for {device_id} ({w}x{h} @{frame_rate}fps)")
-        return {"status": "started", "mode": "screenrecord", "width": w, "height": h, "fps": frame_rate}
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Mode 3: adb screencap loop (last resort)
-    # ──────────────────────────────────────────────────────────────────────
-
-    async def _start_screencap_stream(self, session: ScrcpySession,
-                                       device_id: str, frame_rate: int) -> dict:
-        """Start screenshot-based fallback streaming."""
-        session.is_scrcpy = False
-        session.video_width = 0
-        session.video_height = 0
-        session.control_enabled = False
-        session._control_socket = None
-        session.audio_enabled = False
-        session.audio_codec = ""
-        session._audio_socket = None
-        session.stream_mode = "screencap"
-        session.frame_rate = min(frame_rate, 10)
-        session.is_streaming = True
-        session._fallback_task = asyncio.create_task(self._screencap_loop(session, device_id))
-        self._schedule_auto_unlock(device_id)
-        logger.info(f"screencap stream started for {device_id} @{session.frame_rate}fps")
-        return {
-            "status": "started", "mode": "screencap",
-            "width": session.screen_width, "height": session.screen_height,
-            "fps": session.frame_rate,
-        }
-
-    async def _screencap_loop(self, session: ScrcpySession, device_id: str):
-        """Capture screenshots in a loop."""
-        interval = 1.0 / session.frame_rate
-        loop = asyncio.get_event_loop()
-        while session.is_streaming:
-            try:
-                t0 = time.monotonic()
-
-                def capture():
                     result = subprocess.run(
-                        ["adb", "-s", device_id, "exec-out", "screencap", "-p"],
-                        capture_output=True, timeout=5
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
                     )
-                    return result.stdout if result.returncode == 0 else None
+                    text = (result.stdout or "") + "\n" + (result.stderr or "")
+                    rotation = parse_rotation(text)
+                    if rotation >= 0:
+                        return rotation
+                except Exception:
+                    continue
 
-                png_data = await loop.run_in_executor(None, capture)
-                if png_data and len(png_data) > 100:
-                    def process(data):
-                        img = Image.open(io.BytesIO(data))
-                        if img.mode == 'RGBA':
-                            img = img.convert('RGB')
-                        session.screen_width = img.width
-                        session.screen_height = img.height
-                        if img.width > 800:
-                            ratio = 800 / img.width
-                            img = img.resize((800, int(img.height * ratio)), Image.LANCZOS)
-                        buf = io.BytesIO()
-                        img.save(buf, format='JPEG', quality=65)
-                        return buf.getvalue()
+            return -1
 
-                    jpeg_bytes = await loop.run_in_executor(None, process, png_data)
-                    session.last_frame = jpeg_bytes
-                    await self._broadcast_frame(session, jpeg_bytes)
+        return await loop.run_in_executor(None, _get)
 
-                sleep_time = max(0, interval - (time.monotonic() - t0))
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"screencap error for {device_id}: {e}")
-                await asyncio.sleep(1)
+    @staticmethod
+    def _apply_rotation_to_size(width: int, height: int, rotation: int) -> tuple[int, int]:
+        if width <= 0 or height <= 0:
+            return width, height
+        if rotation in (1, 3):
+            return height, width
+        return width, height
+
+    async def _check_rotation_and_recover(self, device_id: str, session: ScrcpySession, trigger: str) -> bool:
+        """Check device rotation; restart stream if orientation changed."""
+        if not session.is_scrcpy or not session.is_streaming:
+            return False
+
+        now = time.monotonic()
+        if now - float(session._last_rotation_check_ts or 0.0) < _scrcpy_rotation_check_interval_sec:
+            return False
+        session._last_rotation_check_ts = now
+
+        rotation = await self._get_display_rotation(device_id)
+        if rotation < 0:
+            return False
+        if session.display_rotation < 0:
+            session.display_rotation = rotation
+            frame_landscape = False
+            if session.video_width > 0 and session.video_height > 0:
+                frame_landscape = session.video_width > session.video_height
+            logical_landscape = rotation in (1, 3)
+            if frame_landscape != logical_landscape:
+                logger.warning(
+                    f"[SCRCPY-ROTATE] baseline rotation fixed for {device_id}: -1->{rotation}, "
+                    f"trigger={trigger}, scheduling stream restart "
+                    f"(video={session.video_width}x{session.video_height}, "
+                    f"screen={session.screen_width}x{session.screen_height}, meta={session._current_frame_meta})"
+                )
+                return self._schedule_stream_recovery(
+                    device_id, f"orientation_unknown_to_{rotation}"
+                )
+            return False
+        if rotation == session.display_rotation:
+            return False
+
+        old_rotation = session.display_rotation
+        session.display_rotation = rotation
+
+        base_w, base_h = await self._get_screen_size(device_id)
+        logical_w, logical_h = self._apply_rotation_to_size(base_w, base_h, rotation)
+        if logical_w > 0 and logical_h > 0:
+            session.screen_width = logical_w
+            session.screen_height = logical_h
+
+        logger.warning(
+            f"[SCRCPY-ROTATE] orientation changed for {device_id}: {old_rotation}->{rotation}, "
+            f"trigger={trigger}, scheduling stream restart "
+            f"(video={session.video_width}x{session.video_height}, "
+            f"screen={session.screen_width}x{session.screen_height}, meta={session._current_frame_meta})"
+        )
+        scheduled = self._schedule_stream_recovery(device_id, f"orientation_{old_rotation}_to_{rotation}")
+        if scheduled:
+            try:
+                await self._broadcast_control(
+                    session,
+                    {
+                        "type": "rotation_switching",
+                        "from": old_rotation,
+                        "to": rotation,
+                        "trigger": trigger,
+                    },
+                )
+            except Exception:
+                pass
+        return scheduled
 
     # ──────────────────────────────────────────────────────────────────────
     # Stream control
@@ -1800,6 +1991,30 @@ class ScrcpyService:
         session = self._sessions.get(device_id)
         if not session or not session.is_streaming:
             return {"status": "not_running"}
+
+        recover_task = session._recover_task
+        if recover_task:
+            try:
+                current_task = asyncio.current_task()
+            except RuntimeError:
+                current_task = None
+            try:
+                should_cancel = (
+                    hasattr(recover_task, "done")
+                    and hasattr(recover_task, "cancel")
+                    and not recover_task.done()
+                    and recover_task is not current_task
+                )
+            except Exception:
+                should_cancel = False
+            if should_cancel:
+                try:
+                    recover_task.cancel()
+                except Exception:
+                    pass
+                session._recover_task = None
+            elif hasattr(recover_task, "done") and recover_task.done():
+                session._recover_task = None
 
         session.is_streaming = False
 
@@ -1825,16 +2040,8 @@ class ScrcpyService:
         session._ffmpeg_proc = None
         session._client_thread = None
 
-        # Screencap task cleanup
-        if session._fallback_task and not session._fallback_task.done():
-            session._fallback_task.cancel()
-            try:
-                await session._fallback_task
-            except asyncio.CancelledError:
-                pass
-            session._fallback_task = None
-
         session.stream_mode = ""
+        session.is_scrcpy = False
         session.control_enabled = False
         session._control_socket = None
         session.audio_enabled = False
@@ -1842,6 +2049,9 @@ class ScrcpyService:
         session._audio_socket = None
         session.video_width = 0
         session.video_height = 0
+        session._current_frame_meta = False
+        session.display_rotation = -1
+        session._last_rotation_check_ts = 0.0
         logger.info(f"Stream stopped for {device_id}")
         return {"status": "stopped"}
 
@@ -1864,7 +2074,7 @@ class ScrcpyService:
         }
 
     # ──────────────────────────────────────────────────────────────────────
-    # Touch / Key input (via adb for all modes)
+    # Touch / Key input
     # ──────────────────────────────────────────────────────────────────────
 
     async def send_touch(self, device_id: str, action: str, x: float, y: float,
@@ -1873,6 +2083,19 @@ class ScrcpyService:
         session = self._sessions.get(device_id)
         if not session:
             return
+        if action == "down" and session.is_scrcpy:
+            restarted_for_rotation = False
+            try:
+                restarted_for_rotation = await self._check_rotation_and_recover(
+                    device_id, session, "touch_down"
+                )
+            except Exception:
+                restarted_for_rotation = False
+            if restarted_for_rotation:
+                # Drop current touch; stream is restarting with new orientation.
+                return
+            if not (session._client_thread and session._client_thread.is_alive()):
+                self._schedule_stream_recovery(device_id, "touch_video_thread_dead")
 
         # For scrcpy control injection, map from current canvas/frame size to scrcpy video size.
         src_w = int(max(1, round(width))) if width > 0 else 0
@@ -1906,7 +2129,7 @@ class ScrcpyService:
             if action_i is not None:
                 pressure = 0.0 if action_i == 1 else 1.0
                 if _scrcpy_control_debug and action in ("down", "up"):
-                    logger.info(
+                    logger.debug(
                         "[SCRCPY-CTRL] touch enqueue: "
                         f"device={device_id} action={action} ctrl=({ctrl_x},{ctrl_y}) "
                         f"frame={ctrl_w}x{ctrl_h} src={src_w}x{src_h} adb_map=({device_x},{device_y}) "
@@ -1925,22 +2148,24 @@ class ScrcpyService:
                 )
                 if self._send_scrcpy_control_packet(session, device_id, payload, "touch"):
                     if _scrcpy_control_debug and action in ("down", "up"):
-                        logger.info(
+                        logger.debug(
                             "[SCRCPY-CTRL] touch sent: "
                             f"device={device_id} action={action}"
                         )
                     return
-                if _scrcpy_control_debug and action in ("down", "up"):
-                    logger.warning(
-                        "[SCRCPY-CTRL] touch control send failed, fallback adb: "
-                        f"device={device_id} action={action}"
-                    )
-        elif _scrcpy_control_debug and action == "down" and session.is_scrcpy:
-            logger.info(
+                logger.warning(
+                    "[SCRCPY-CTRL] touch control send failed, fallback adb: "
+                    f"device={device_id} action={action}"
+                )
+                self._schedule_stream_recovery(device_id, "touch_control_send_failed")
+        elif action == "down" and session.is_scrcpy and _scrcpy_control_debug:
+            logger.debug(
                 "[SCRCPY-CTRL] touch control inactive, use adb: "
                 f"device={device_id} control_enabled={session.control_enabled} "
                 f"has_socket={bool(session._control_socket)}"
             )
+            if not session._control_socket:
+                self._schedule_stream_recovery(device_id, "touch_control_socket_missing")
 
         await self._send_touch_adb(device_id, session, action, device_x, device_y)
 
@@ -2066,7 +2291,7 @@ class ScrcpyService:
         if self._can_use_scrcpy_control(session):
             v_scroll = -1.0 if delta_y > 0 else 1.0
             if _scrcpy_control_debug:
-                logger.info(
+                logger.debug(
                     "[SCRCPY-CTRL] scroll enqueue: "
                     f"device={device_id} ctrl=({ctrl_x},{ctrl_y}) frame={ctrl_w}x{ctrl_h} "
                     f"src={src_w}x{src_h} adb_map=({device_x},{device_y}) "
@@ -2083,10 +2308,10 @@ class ScrcpyService:
             )
             if self._send_scrcpy_control_packet(session, device_id, payload, "scroll"):
                 if _scrcpy_control_debug:
-                    logger.info(f"[SCRCPY-CTRL] scroll sent: device={device_id}")
+                    logger.debug(f"[SCRCPY-CTRL] scroll sent: device={device_id}")
                 return
-            if _scrcpy_control_debug:
-                logger.warning(f"[SCRCPY-CTRL] scroll control send failed, fallback adb: device={device_id}")
+            logger.warning(f"[SCRCPY-CTRL] scroll control send failed, fallback adb: device={device_id}")
+            self._schedule_stream_recovery(device_id, "scroll_control_send_failed")
 
         distance = max(120, min(520, int(session.screen_height * 0.18)))
         half = distance // 2
@@ -2126,18 +2351,18 @@ class ScrcpyService:
         session = self._sessions.get(device_id)
         if self._can_use_scrcpy_control(session):
             if _scrcpy_control_debug:
-                logger.info(f"[SCRCPY-CTRL] key enqueue: device={device_id} keycode={keycode}")
+                logger.debug(f"[SCRCPY-CTRL] key enqueue: device={device_id} keycode={keycode}")
             down = self._pack_scrcpy_key_message(action=0, keycode=keycode, repeat=0, meta_state=0)
             up = self._pack_scrcpy_key_message(action=1, keycode=keycode, repeat=0, meta_state=0)
             if self._send_scrcpy_control_packet(session, device_id, down, "key-down"):
                 if self._send_scrcpy_control_packet(session, device_id, up, "key-up"):
                     if _scrcpy_control_debug:
-                        logger.info(f"[SCRCPY-CTRL] key sent: device={device_id} keycode={keycode}")
+                        logger.debug(f"[SCRCPY-CTRL] key sent: device={device_id} keycode={keycode}")
                     return
-            if _scrcpy_control_debug:
-                logger.warning(f"[SCRCPY-CTRL] key control send failed, fallback adb: device={device_id} keycode={keycode}")
+            logger.warning(f"[SCRCPY-CTRL] key control send failed, fallback adb: device={device_id} keycode={keycode}")
+            self._schedule_stream_recovery(device_id, "key_control_send_failed")
         elif _scrcpy_control_debug and session and session.is_scrcpy:
-            logger.info(
+            logger.debug(
                 "[SCRCPY-CTRL] key control inactive, use adb: "
                 f"device={device_id} keycode={keycode} control_enabled={session.control_enabled} "
                 f"has_socket={bool(session._control_socket)}"
@@ -2192,6 +2417,20 @@ class ScrcpyService:
                 dead.add(ws)
         for ws in dead:
             session.connected_audio_websockets.discard(ws)
+
+    async def _broadcast_control(self, session: ScrcpySession, message: dict):
+        """Broadcast JSON control message to video WebSockets."""
+        if not session.connected_websockets:
+            return
+        payload = json.dumps(message, ensure_ascii=False)
+        dead = set()
+        for ws in list(session.connected_websockets):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                dead.add(ws)
+        for ws in dead:
+            session.connected_websockets.discard(ws)
 
     @staticmethod
     def _has_any_viewers(session: ScrcpySession) -> bool:

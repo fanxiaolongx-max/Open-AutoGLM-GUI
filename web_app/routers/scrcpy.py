@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from web_app.auth import verify_token
 from web_app.config import config_manager
@@ -64,16 +64,48 @@ async def start_stream(
     _: bool = Depends(verify_token),
 ):
     """Start scrcpy stream for a device."""
-    result = await scrcpy_service.start_stream(
-        device_id,
-        max_size=max_size,
-        bit_rate=bit_rate,
-        frame_rate=frame_rate,
-        restart=restart,
-        control_enabled=control,
-        audio_enabled=audio,
+    logger.info(
+        f"[SCRCPY-API] start request: device={device_id} restart={restart} "
+        f"control={control} audio={audio} max_size={max_size} fps={frame_rate} bit_rate={bit_rate}"
     )
-    return result
+    try:
+        result = await scrcpy_service.start_stream(
+            device_id,
+            max_size=max_size,
+            bit_rate=bit_rate,
+            frame_rate=frame_rate,
+            restart=restart,
+            control_enabled=control,
+            audio_enabled=audio,
+        )
+        return result
+    except RuntimeError as e:
+        # Expected startup failures (handshake timeout/socket closed) should not dump ASGI traceback.
+        logger.error(
+            f"[SCRCPY-API-ERR] start failed: device={device_id} "
+            f"control={control} audio={audio} restart={restart} error={e}"
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "SCRCPY_START_FAILED",
+                "message": str(e),
+                "device_id": device_id,
+            },
+        ) from e
+    except Exception as e:
+        logger.exception(
+            f"[SCRCPY-API-ERR] unexpected start error: device={device_id} "
+            f"control={control} audio={audio} restart={restart}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "SCRCPY_START_INTERNAL_ERROR",
+                "message": "scrcpy start internal error",
+                "device_id": device_id,
+            },
+        ) from e
 
 
 @router.post("/{device_id}/stop")
@@ -104,6 +136,10 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
     await websocket.accept()
     logger.info(f"Scrcpy WebSocket connected for device {device_id} ✅ ✅ ✅")
     req_max_size, req_bit_rate, req_frame_rate, req_control, req_audio = _parse_stream_params(websocket.query_params)
+    logger.info(
+        f"[SCRCPY-WS] video ws params: device={device_id} control={req_control} audio={req_audio} "
+        f"max_size={req_max_size} fps={req_frame_rate} bit_rate={req_bit_rate}"
+    )
 
     # Add viewer to session
     session = scrcpy_service.add_viewer(device_id, websocket)
@@ -116,7 +152,7 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
             and session.is_scrcpy
             and (session.control_enabled != req_control or session.audio_enabled != req_audio)
         ):
-            logger.info(
+            logger.debug(
                 f"[SCRCPY-CTRL] mode switch requested: device={device_id} "
                 f"current_control={session.control_enabled} requested_control={req_control} "
                 f"current_audio={session.audio_enabled} requested_audio={req_audio}"
@@ -138,7 +174,7 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
 
         # Send stream info
         if session:
-            logger.info(
+            logger.debug(
                 f"[SCRCPY-CTRL] ws session ready: device={device_id} "
                 f"requested_control={req_control} active_control={session.control_enabled} "
                 f"mode={session.stream_mode}"
@@ -154,6 +190,7 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
                 "audio_codec": session.audio_codec,
                 "video_width": session.video_width,
                 "video_height": session.video_height,
+                "rotation": session.display_rotation,
             }))
 
             # Send last frame if available (immediate display)
@@ -164,12 +201,16 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
                     pass
 
         # Main message loop
+        idle_probe_ticks = 0
+        idle_probe_interval = 0.8
+        ping_every_ticks = 38  # 0.8s * 38 = ~30s
         while True:
             try:
                 data = await asyncio.wait_for(
                     websocket.receive_text(),
-                    timeout=30.0
+                    timeout=idle_probe_interval
                 )
+                idle_probe_ticks = 0
 
                 try:
                     message = json.loads(data)
@@ -208,11 +249,27 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
                     pass
 
             except asyncio.TimeoutError:
-                # Send ping
+                # Idle probe: quick rotation/watchdog check without waiting for user input.
+                idle_probe_ticks += 1
                 try:
-                    await websocket.send_text(json.dumps({"type": "ping"}))
+                    await scrcpy_service.watchdog_check_rotation(device_id)
+                    scrcpy_service.watchdog_recover_if_stale(
+                        device_id,
+                        max_size=req_max_size,
+                        bit_rate=req_bit_rate,
+                        frame_rate=req_frame_rate,
+                        control_enabled=req_control,
+                        audio_enabled=req_audio,
+                    )
                 except Exception:
-                    break
+                    pass
+                # Keepalive ping every ~30s to avoid noisy traffic.
+                if idle_probe_ticks >= ping_every_ticks:
+                    try:
+                        await websocket.send_text(json.dumps({"type": "ping"}))
+                        idle_probe_ticks = 0
+                    except Exception:
+                        break
 
     except WebSocketDisconnect:
         pass
@@ -239,6 +296,10 @@ async def scrcpy_audio_websocket(websocket: WebSocket, device_id: str):
     logger.info(f"[SCRCPY-AUDIO] WebSocket connected for device {device_id} 🔊")
     req_max_size, req_bit_rate, req_frame_rate, req_control, _ = _parse_stream_params(websocket.query_params)
     req_audio = True
+    logger.info(
+        f"[SCRCPY-WS] audio ws params: device={device_id} control={req_control} audio={req_audio} "
+        f"max_size={req_max_size} fps={req_frame_rate} bit_rate={req_bit_rate}"
+    )
 
     session = scrcpy_service.add_audio_viewer(device_id, websocket)
 

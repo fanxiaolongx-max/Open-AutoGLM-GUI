@@ -1170,6 +1170,11 @@
             transform-origin: center;
         }
 
+        body.preview-dragging,
+        body.preview-dragging * {
+            user-select: none !important;
+        }
+
         .phone-preview-header {
             position: absolute;
             top: 12px;
@@ -1196,6 +1201,22 @@
             opacity: 1;
         }
 
+        .phone-preview-window.is-landscape .phone-preview-header {
+            top: auto;
+            right: 0;
+            left: 0;
+            bottom: -68px;
+            width: auto;
+            min-height: 58px;
+            max-height: 58px;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 8px;
+            padding: 6px 8px;
+            overflow: hidden;
+        }
+
         .phone-preview-title {
             font-size: 11px;
             font-weight: 500;
@@ -1214,6 +1235,29 @@
             flex-wrap: nowrap;
             justify-content: flex-start;
             width: 100%;
+        }
+
+        .phone-preview-window.is-landscape .phone-preview-title {
+            width: auto;
+            min-width: 44px;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .phone-preview-window.is-landscape .phone-preview-controls {
+            width: auto;
+            flex: 1 1 auto;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 6px;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .phone-preview-window.is-landscape .phone-preview-controls>* {
+            flex: 0 0 auto;
         }
 
         .phone-preview-select {
@@ -1341,6 +1385,11 @@
             flex-direction: column;
             gap: 6px;
             margin-right: 0;
+        }
+
+        .phone-preview-window.is-landscape .phone-nav-buttons {
+            flex-direction: row;
+            gap: 6px;
         }
 
         .phone-nav-btn {
@@ -3676,7 +3725,8 @@
         </div>
 
         <!-- Floating Phone Preview Window -->
-        <div v-if="showPhonePreview" class="phone-preview-window" :style="phonePreviewStyle"
+        <div v-if="showPhonePreview" class="phone-preview-window"
+            :class="{ 'is-landscape': previewIsLandscape }" :style="phonePreviewStyle"
             @mousedown="startDragPreview">
             <div class="phone-preview-header">
                 <span class="phone-preview-title">
@@ -3744,7 +3794,8 @@
                     Select a device
                 </div>
                 <!-- Streaming canvas -->
-                <canvas v-show="previewDeviceId && streamConnected && streamReady" ref="previewCanvas" tabindex="0"
+                <canvas v-show="previewDeviceId && streamConnected && streamReady && !streamOrientationSwitching"
+                    ref="previewCanvas" tabindex="0"
                     :width="canvasWidth" :height="canvasHeight" @mousedown="onCanvasMouseDown"
                     @mousemove="onCanvasMouseMove" @mouseup="onCanvasMouseUp" @mouseleave="onCanvasMouseUp"
                     @wheel.prevent="onCanvasWheel" @touchstart.prevent="onCanvasTouchStart"
@@ -3755,7 +3806,7 @@
                     :src="'data:image/png;base64,' + previewImage" class="phone-preview-image"
                     @error="previewImage = null">
                 <!-- Stream loading state -->
-                <div v-if="previewDeviceId && (streamConnecting || (streamConnected && !streamReady))"
+                <div v-if="previewDeviceId && (streamConnecting || (streamConnected && !streamReady) || streamOrientationSwitching)"
                     class="stream-loading-overlay">
                     <div class="stream-loading-spinner"></div>
                     <div class="stream-loading-text">{{ streamLoadingText }}</div>
@@ -4011,6 +4062,7 @@
                     const previewWidth = ref(270);
                     const previewAspect = ref(16 / 9);  // height/width ratio, updated from stream
                     const PREVIEW_TOOLBAR_WIDTH = 92;
+                    const PREVIEW_TOOLBAR_HEIGHT_LANDSCAPE = 72;
                     const PREVIEW_SAFE_MARGIN = 28;
                     const PREVIEW_FIRST_OPEN_HINT_KEY = 'preview_first_open_hint_shown_v1';
                     let previewInterval = null;
@@ -4024,13 +4076,15 @@
                     const streamConnecting = ref(false);
                     const streamReady = ref(false);
                     const streamLoadingText = ref('Connecting...');
+                    const streamOrientationSwitching = ref(false);
+                    const streamSwitchProgress = ref(0);
                     const streamFps = ref(0);
                     const streamMaxSize = ref(960);
                     const streamTargetFps = ref(24);
                     const streamBitRate = ref(4000000);
                     const streamAutoAdapt = ref(false);
                     const streamUseScrcpyControl = ref(true); // Advanced: on by default
-                    const streamAudioEnabled = ref(false); // Separate passthrough audio channel
+                    const streamAudioEnabled = ref(false); // Separate passthrough audio channel (default off)
                     const streamAudioConnected = ref(false);
                     const streamAudioCodec = ref('raw');
                     const streamAudioSampleRate = ref(48000);
@@ -4039,10 +4093,14 @@
                     const canvasHeight = ref(540);
                     const deviceScreenWidth = ref(0);
                     const deviceScreenHeight = ref(0);
+                    const streamDisplayRotation = ref(0);
+                    const streamSourceWidth = ref(0);
+                    const streamSourceHeight = ref(0);
                     const previewCanvas = ref(null);
                     let streamWs = null;
                     let streamAudioWs = null;
                     let streamConnectToken = 0;
+                    let streamSwitchTimer = null;
                     let fpsCounter = 0;
                     let fpsTimer = null;
                     let autoAdaptLowFpsStreak = 0;
@@ -4053,7 +4111,13 @@
                     let audioProcessorNode = null;
                     let audioQueue = [];
                     let audioQueueOffset = 0;
-                    let touchState = { isDown: false, startX: 0, startY: 0, startTime: 0, lastX: 0, lastY: 0, longPressTimer: null, hasMoved: false };
+                    const AUDIO_QUEUE_TARGET_MS = 100;
+                    const AUDIO_QUEUE_MAX_MS = 120;
+                    let touchState = {
+                        isDown: false, startX: 0, startY: 0, startTime: 0,
+                        lastX: 0, lastY: 0, lastW: 0, lastH: 0,
+                        longPressTimer: null, hasMoved: false
+                    };
 
                     // Chat state
                     const chatMessages = ref([]);
@@ -4398,10 +4462,12 @@
                         const safeAspect = Math.max(0.2, aspect || (16 / 9));
                         const pw = Math.max(1, Math.round(width));
                         const ph = Math.max(1, Math.round(pw * safeAspect));
+                        const toolbarReserveX = getPreviewToolbarWidthReserve();
+                        const toolbarReserveY = getPreviewToolbarHeightReserve();
                         const minX = PREVIEW_SAFE_MARGIN;
                         const minY = PREVIEW_SAFE_MARGIN;
-                        const maxX = Math.max(minX, window.innerWidth - pw - PREVIEW_TOOLBAR_WIDTH - PREVIEW_SAFE_MARGIN);
-                        const maxY = Math.max(minY, window.innerHeight - ph - PREVIEW_SAFE_MARGIN);
+                        const maxX = Math.max(minX, window.innerWidth - pw - toolbarReserveX - PREVIEW_SAFE_MARGIN);
+                        const maxY = Math.max(minY, window.innerHeight - ph - toolbarReserveY - PREVIEW_SAFE_MARGIN);
                         return { minX, maxX, minY, maxY };
                     }
 
@@ -4409,8 +4475,10 @@
                         const minBase = 220;
                         const maxBase = 600;
                         const safeAspect = Math.max(0.2, previewAspect.value || (16 / 9));
-                        const maxByWidth = Math.floor(window.innerWidth - PREVIEW_SAFE_MARGIN - PREVIEW_TOOLBAR_WIDTH - left);
-                        const maxByHeight = Math.floor((window.innerHeight - PREVIEW_SAFE_MARGIN - top) / safeAspect);
+                        const toolbarReserveX = getPreviewToolbarWidthReserve();
+                        const toolbarReserveY = getPreviewToolbarHeightReserve();
+                        const maxByWidth = Math.floor(window.innerWidth - PREVIEW_SAFE_MARGIN - toolbarReserveX - left);
+                        const maxByHeight = Math.floor((window.innerHeight - PREVIEW_SAFE_MARGIN - toolbarReserveY - top) / safeAspect);
                         let maxAllowed = Math.min(maxBase, maxByWidth, maxByHeight);
                         if (!Number.isFinite(maxAllowed)) maxAllowed = maxBase;
                         maxAllowed = Math.max(120, maxAllowed);
@@ -7439,6 +7507,40 @@
                         height: Math.round(previewWidth.value * previewAspect.value) + 'px',
                     }));
 
+                    const previewIsLandscape = Vue.computed(() => {
+                        if (canvasWidth.value > 0 && canvasHeight.value > 0) {
+                            return canvasWidth.value > canvasHeight.value;
+                        }
+                        return (previewAspect.value || (16 / 9)) < 1;
+                    });
+
+                    function getPreviewToolbarWidthReserve() {
+                        return previewIsLandscape.value ? 0 : PREVIEW_TOOLBAR_WIDTH;
+                    }
+
+                    function getPreviewToolbarHeightReserve() {
+                        return previewIsLandscape.value ? PREVIEW_TOOLBAR_HEIGHT_LANDSCAPE : 0;
+                    }
+
+                    function maybeResizePreviewOnAspectSwitch(nextAspect) {
+                        const currentAspect = Math.max(0.2, Number(previewAspect.value) || (16 / 9));
+                        const targetAspect = Math.max(0.2, Number(nextAspect) || currentAspect);
+                        const currentLandscape = currentAspect < 1;
+                        const nextLandscape = targetAspect < 1;
+                        if (currentLandscape === nextLandscape) return;
+
+                        const currentW = Math.max(120, Number(previewWidth.value) || 270);
+                        const currentH = currentW * currentAspect;
+                        const area = Math.max(1, currentW * currentH);
+                        let nextW = Math.sqrt(area / targetAspect);
+                        const growCap = currentW * (nextLandscape ? 1.18 : 1.1);
+                        const shrinkFloor = currentW * 0.7;
+                        nextW = Math.min(nextW, growCap);
+                        nextW = Math.max(nextW, shrinkFloor);
+                        if (!Number.isFinite(nextW) || nextW <= 0) return;
+                        previewWidth.value = Math.round(nextW);
+                    }
+
                     function pickDefaultStreamSizeByLongEdge(longEdge) {
                         if (longEdge >= 1080) return 1080;
                         if (longEdge >= 960) return 960;
@@ -7688,6 +7790,53 @@
                         return [0, 0];
                     }
 
+                    function getAudioBufferedMs() {
+                        const sampleRate = Math.max(8000, Number(streamAudioSampleRate.value) || 48000);
+                        let totalFrames = 0;
+                        for (let i = 0; i < audioQueue.length; i++) {
+                            const chunk = audioQueue[i];
+                            if (!chunk || !chunk.data || chunk.data.length === 0) continue;
+                            const channels = Math.max(1, Number(chunk.channels) || 2);
+                            const offset = i === 0 ? Math.max(0, audioQueueOffset) : 0;
+                            const remainingSamples = Math.max(0, chunk.data.length - offset);
+                            totalFrames += Math.floor(remainingSamples / channels);
+                        }
+                        return (totalFrames * 1000) / sampleRate;
+                    }
+
+                    function trimAudioQueueToTarget(targetMs) {
+                        const sampleRate = Math.max(8000, Number(streamAudioSampleRate.value) || 48000);
+                        let bufferedMs = getAudioBufferedMs();
+                        if (bufferedMs <= targetMs) return;
+
+                        let dropFrames = Math.ceil(((bufferedMs - targetMs) / 1000) * sampleRate);
+                        while (dropFrames > 0 && audioQueue.length) {
+                            const chunk = audioQueue[0];
+                            if (!chunk || !chunk.data || chunk.data.length === 0) {
+                                audioQueue.shift();
+                                audioQueueOffset = 0;
+                                continue;
+                            }
+                            const channels = Math.max(1, Number(chunk.channels) || 2);
+                            const offset = Math.max(0, audioQueueOffset);
+                            const remainingSamples = Math.max(0, chunk.data.length - offset);
+                            const remainingFrames = Math.floor(remainingSamples / channels);
+                            if (remainingFrames <= 0) {
+                                audioQueue.shift();
+                                audioQueueOffset = 0;
+                                continue;
+                            }
+                            if (dropFrames >= remainingFrames) {
+                                dropFrames -= remainingFrames;
+                                audioQueue.shift();
+                                audioQueueOffset = 0;
+                                continue;
+                            }
+                            audioQueueOffset = offset + dropFrames * channels;
+                            dropFrames = 0;
+                        }
+                    }
+
                     async function ensureAudioPipeline(sampleRate = 48000) {
                         const AudioCtx = window.AudioContext || window.webkitAudioContext;
                         if (!AudioCtx) {
@@ -7730,6 +7879,10 @@
                             data: pcm,
                             channels: Math.max(1, streamAudioChannels.value || 2),
                         });
+                        // Keep a small steady buffer and cut tail latency under network jitter.
+                        if (getAudioBufferedMs() > AUDIO_QUEUE_MAX_MS) {
+                            trimAudioQueueToTarget(AUDIO_QUEUE_TARGET_MS);
+                        }
                         // Cap queue to avoid growing forever under network jitter.
                         if (audioQueue.length > 240) {
                             audioQueue.splice(0, audioQueue.length - 240);
@@ -7884,6 +8037,7 @@
                             streamConnecting.value = false;
                             streamReady.value = false;
                             streamLoadingText.value = 'Connecting...';
+                            _finishOrientationSwitchProgress(false);
                             streamWs = null;
                             disconnectAudioStream();
                             autoAdaptLowFpsStreak = 0;
@@ -7902,6 +8056,7 @@
 
                     function disconnectStream() {
                         streamConnectToken += 1;
+                        _finishOrientationSwitchProgress(false);
                         if (streamWs) {
                             try { streamWs.close(); } catch (e) { }
                             streamWs = null;
@@ -7914,6 +8069,9 @@
                         autoAdaptLowFpsStreak = 0;
                         if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
                         streamFps.value = 0;
+                        streamDisplayRotation.value = 0;
+                        streamSourceWidth.value = 0;
+                        streamSourceHeight.value = 0;
                     }
 
                     function applyStreamSettings() {
@@ -7944,6 +8102,92 @@
                         await connectStream(previewDeviceId.value, true);
                     }
 
+                    function _stopOrientationSwitchTimer() {
+                        if (streamSwitchTimer) {
+                            clearInterval(streamSwitchTimer);
+                            streamSwitchTimer = null;
+                        }
+                    }
+
+                    function _startOrientationSwitchProgress(fromRotation, toRotation) {
+                        _stopOrientationSwitchTimer();
+                        streamOrientationSwitching.value = true;
+                        streamSwitchProgress.value = Math.max(8, streamSwitchProgress.value || 0);
+                        streamLoadingText.value = `旋转切换中 ${streamSwitchProgress.value}%`;
+                        streamSwitchTimer = setInterval(() => {
+                            const next = Math.min(94, streamSwitchProgress.value + 4);
+                            streamSwitchProgress.value = next;
+                            streamLoadingText.value = `旋转切换中 ${next}%`;
+                        }, 120);
+                    }
+
+                    function _finishOrientationSwitchProgress(ok = true) {
+                        _stopOrientationSwitchTimer();
+                        if (!streamOrientationSwitching.value && streamSwitchProgress.value <= 0) {
+                            return;
+                        }
+                        if (!ok) {
+                            streamOrientationSwitching.value = false;
+                            streamSwitchProgress.value = 0;
+                            return;
+                        }
+                        streamSwitchProgress.value = 100;
+                        streamLoadingText.value = '旋转切换完成 100%';
+                        setTimeout(() => {
+                            streamOrientationSwitching.value = false;
+                            streamSwitchProgress.value = 0;
+                            if (streamConnected.value && streamReady.value) {
+                                streamLoadingText.value = '';
+                            } else if (streamConnected.value) {
+                                streamLoadingText.value = 'Waiting for first frame...';
+                            }
+                        }, 120);
+                    }
+
+                    function _normalizeRotation(rotation) {
+                        const value = Number(rotation);
+                        if (!Number.isFinite(value)) return 0;
+                        if (value === 1 || value === 2 || value === 3) return value;
+                        return 0;
+                    }
+
+                    function _isQuarterTurn(rotation) {
+                        return rotation === 1 || rotation === 3;
+                    }
+
+                    function _mapDisplayToSource(x, y, displayW, displayH) {
+                        const rotation = _normalizeRotation(streamDisplayRotation.value);
+                        const srcW = Math.max(
+                            1,
+                            streamSourceWidth.value > 0
+                                ? streamSourceWidth.value
+                                : (_isQuarterTurn(rotation) ? displayH : displayW)
+                        );
+                        const srcH = Math.max(
+                            1,
+                            streamSourceHeight.value > 0
+                                ? streamSourceHeight.value
+                                : (_isQuarterTurn(rotation) ? displayW : displayH)
+                        );
+
+                        let sx = x;
+                        let sy = y;
+                        if (rotation === 1) {
+                            sx = y;
+                            sy = displayW - x;
+                        } else if (rotation === 2) {
+                            sx = displayW - x;
+                            sy = displayH - y;
+                        } else if (rotation === 3) {
+                            sx = displayH - y;
+                            sy = x;
+                        }
+
+                        sx = Math.max(0, Math.min(srcW - 1, sx));
+                        sy = Math.max(0, Math.min(srcH - 1, sy));
+                        return { x: sx, y: sy, w: srcW, h: srcH };
+                    }
+
                     function renderFrame(arrayBuffer) {
                         const canvas = previewCanvas.value;
                         if (!canvas) return;
@@ -7954,25 +8198,46 @@
                         const url = URL.createObjectURL(blob);
                         const img = new window.Image();
                         img.onload = () => {
-                            // Update aspect ratio and canvas dimensions from actual frame
                             if (img.width > 0 && img.height > 0) {
-                                const ratio = img.height / img.width;
+                                streamSourceWidth.value = img.width;
+                                streamSourceHeight.value = img.height;
+                                const rotation = _normalizeRotation(streamDisplayRotation.value);
+                                const displayW = _isQuarterTurn(rotation) ? img.height : img.width;
+                                const displayH = _isQuarterTurn(rotation) ? img.width : img.height;
+                                const ratio = displayH / displayW;
                                 if (Math.abs(ratio - previewAspect.value) > 0.01) {
+                                    maybeResizePreviewOnAspectSwitch(ratio);
                                     previewAspect.value = ratio;
                                 }
-                                if (img.width !== canvasWidth.value || img.height !== canvasHeight.value) {
-                                    canvasWidth.value = img.width;
-                                    canvasHeight.value = img.height;
+                                if (displayW !== canvasWidth.value || displayH !== canvasHeight.value) {
+                                    canvasWidth.value = displayW;
+                                    canvasHeight.value = displayH;
                                 }
-                                if (canvas.width !== img.width || canvas.height !== img.height) {
-                                    canvas.width = img.width;
-                                    canvas.height = img.height;
+                                if (canvas.width !== displayW || canvas.height !== displayH) {
+                                    canvas.width = displayW;
+                                    canvas.height = displayH;
                                 }
+                                ctx.save();
+                                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                if (rotation === 1) {
+                                    ctx.translate(canvas.width, 0);
+                                    ctx.rotate(Math.PI / 2);
+                                } else if (rotation === 2) {
+                                    ctx.translate(canvas.width, canvas.height);
+                                    ctx.rotate(Math.PI);
+                                } else if (rotation === 3) {
+                                    ctx.translate(0, canvas.height);
+                                    ctx.rotate(-Math.PI / 2);
+                                }
+                                ctx.drawImage(img, 0, 0, img.width, img.height);
+                                ctx.restore();
                             }
-                            ctx.drawImage(img, 0, 0, img.width, img.height);
                             if (!streamReady.value) {
                                 streamReady.value = true;
                                 streamLoadingText.value = '';
+                            }
+                            if (streamOrientationSwitching.value) {
+                                _finishOrientationSwitchProgress(true);
                             }
                             URL.revokeObjectURL(url);
                         };
@@ -7987,13 +8252,43 @@
                             deviceScreenWidth.value = msg.width || 0;
                             deviceScreenHeight.value = msg.height || 0;
                             streamAudioCodec.value = msg.audio_codec || streamAudioCodec.value;
+                            streamDisplayRotation.value = _normalizeRotation(msg.rotation);
+                            streamSourceWidth.value = msg.video_width || streamSourceWidth.value;
+                            streamSourceHeight.value = msg.video_height || streamSourceHeight.value;
                             if (msg.width && msg.height) {
-                                const ratio = msg.height / msg.width;
+                                let ratio = msg.height / msg.width;
+                                if (streamSourceWidth.value > 0 && streamSourceHeight.value > 0) {
+                                    const displayW = _isQuarterTurn(streamDisplayRotation.value)
+                                        ? streamSourceHeight.value
+                                        : streamSourceWidth.value;
+                                    const displayH = _isQuarterTurn(streamDisplayRotation.value)
+                                        ? streamSourceWidth.value
+                                        : streamSourceHeight.value;
+                                    ratio = displayH / displayW;
+                                    canvasWidth.value = displayW;
+                                    canvasHeight.value = displayH;
+                                } else {
+                                    canvasWidth.value = msg.width;
+                                    canvasHeight.value = msg.height;
+                                }
+                                if (Math.abs(ratio - previewAspect.value) > 0.01) {
+                                    maybeResizePreviewOnAspectSwitch(ratio);
+                                }
                                 previewAspect.value = ratio;
-                                canvasWidth.value = msg.width;
-                                canvasHeight.value = msg.height;
-                                streamLoadingText.value = 'Waiting for first frame...';
+                                if (!streamOrientationSwitching.value) {
+                                    streamLoadingText.value = 'Waiting for first frame...';
+                                }
                             }
+                        } else if (msg.type === 'rotation_switching') {
+                            _startOrientationSwitchProgress(msg.from, msg.to);
+                        } else if (msg.type === 'rotation_recovery_done') {
+                            if (streamOrientationSwitching.value) {
+                                streamSwitchProgress.value = Math.max(95, streamSwitchProgress.value);
+                                streamLoadingText.value = `旋转切换中 ${streamSwitchProgress.value}%`;
+                            }
+                        } else if (msg.type === 'rotation_recovery_failed') {
+                            _finishOrientationSwitchProgress(false);
+                            showToast('旋转重连失败，请手动重连', 'warning');
                         } else if (msg.type === 'ping') {
                             if (streamWs && streamWs.readyState === WebSocket.OPEN) {
                                 streamWs.send(JSON.stringify({ type: 'pong' }));
@@ -8009,11 +8304,14 @@
                         const rect = canvas.getBoundingClientRect();
                         const scaleX = canvas.width / rect.width;
                         const scaleY = canvas.height / rect.height;
+                        const displayX = (event.clientX - rect.left) * scaleX;
+                        const displayY = (event.clientY - rect.top) * scaleY;
+                        const mapped = _mapDisplayToSource(displayX, displayY, canvas.width, canvas.height);
                         return {
-                            x: (event.clientX - rect.left) * scaleX,
-                            y: (event.clientY - rect.top) * scaleY,
-                            w: canvas.width,
-                            h: canvas.height,
+                            x: mapped.x,
+                            y: mapped.y,
+                            w: mapped.w,
+                            h: mapped.h,
                         };
                     }
 
@@ -8056,6 +8354,8 @@
                         touchState.startY = coords.y;
                         touchState.lastX = coords.x;
                         touchState.lastY = coords.y;
+                        touchState.lastW = coords.w;
+                        touchState.lastH = coords.h;
                         touchState.startTime = Date.now();
                         touchState.hasMoved = false;
                         _sendTouch('down', coords.x, coords.y, coords.w, coords.h);
@@ -8072,6 +8372,8 @@
                         }
                         touchState.lastX = coords.x;
                         touchState.lastY = coords.y;
+                        touchState.lastW = coords.w;
+                        touchState.lastH = coords.h;
                         _sendTouch('move', coords.x, coords.y, coords.w, coords.h);
                     }
 
@@ -8086,7 +8388,13 @@
                             // Mouse left canvas - use last known position
                             const canvas = previewCanvas.value;
                             if (canvas) {
-                                _sendTouch('up', touchState.lastX, touchState.lastY, canvas.width, canvas.height);
+                                _sendTouch(
+                                    'up',
+                                    touchState.lastX,
+                                    touchState.lastY,
+                                    touchState.lastW || canvas.width,
+                                    touchState.lastH || canvas.height
+                                );
                             }
                         }
                     }
@@ -8103,15 +8411,20 @@
                         const rect = canvas.getBoundingClientRect();
                         const scaleX = canvas.width / rect.width;
                         const scaleY = canvas.height / rect.height;
-                        const x = (touch.clientX - rect.left) * scaleX;
-                        const y = (touch.clientY - rect.top) * scaleY;
+                        const displayX = (touch.clientX - rect.left) * scaleX;
+                        const displayY = (touch.clientY - rect.top) * scaleY;
+                        const mapped = _mapDisplayToSource(displayX, displayY, canvas.width, canvas.height);
+                        const x = mapped.x;
+                        const y = mapped.y;
                         touchState.isDown = true;
                         touchState.startX = x;
                         touchState.startY = y;
                         touchState.lastX = x;
                         touchState.lastY = y;
+                        touchState.lastW = mapped.w;
+                        touchState.lastH = mapped.h;
                         touchState.hasMoved = false;
-                        _sendTouch('down', x, y, canvas.width, canvas.height);
+                        _sendTouch('down', x, y, mapped.w, mapped.h);
                     }
 
                     function onCanvasTouchMove(e) {
@@ -8122,12 +8435,17 @@
                         const rect = canvas.getBoundingClientRect();
                         const scaleX = canvas.width / rect.width;
                         const scaleY = canvas.height / rect.height;
-                        const x = (touch.clientX - rect.left) * scaleX;
-                        const y = (touch.clientY - rect.top) * scaleY;
+                        const displayX = (touch.clientX - rect.left) * scaleX;
+                        const displayY = (touch.clientY - rect.top) * scaleY;
+                        const mapped = _mapDisplayToSource(displayX, displayY, canvas.width, canvas.height);
+                        const x = mapped.x;
+                        const y = mapped.y;
                         touchState.lastX = x;
                         touchState.lastY = y;
+                        touchState.lastW = mapped.w;
+                        touchState.lastH = mapped.h;
                         touchState.hasMoved = true;
-                        _sendTouch('move', x, y, canvas.width, canvas.height);
+                        _sendTouch('move', x, y, mapped.w, mapped.h);
                     }
 
                     function onCanvasTouchEnd(e) {
@@ -8136,7 +8454,13 @@
                         if (!streamConnected.value) return;
                         const canvas = previewCanvas.value;
                         if (canvas) {
-                            _sendTouch('up', touchState.lastX, touchState.lastY, canvas.width, canvas.height);
+                            _sendTouch(
+                                'up',
+                                touchState.lastX,
+                                touchState.lastY,
+                                touchState.lastW || canvas.width,
+                                touchState.lastH || canvas.height
+                            );
                         }
                     }
 
@@ -8240,15 +8564,20 @@
                     }
 
                     function startDragPreview(e) {
+                        const interactive = e.target.closest(
+                            'button, select, input, textarea, a, label, [data-no-preview-drag="1"]'
+                        );
                         if (
-                            e.target.closest('.phone-preview-controls')
+                            interactive
                             || e.target.closest('.phone-preview-body')
                             || e.target.closest('.phone-preview-resize')
                             || e.target.closest('.phone-preview-resize-side')
                         ) return;
+                        e.preventDefault();
                         isDragging = true;
                         dragOffset.x = e.clientX - previewPosition.value.x;
                         dragOffset.y = e.clientY - previewPosition.value.y;
+                        document.body.classList.add('preview-dragging');
                         document.addEventListener('mousemove', onDragPreview);
                         document.addEventListener('mouseup', stopDragPreview);
                     }
@@ -8262,6 +8591,7 @@
 
                     function stopDragPreview() {
                         isDragging = false;
+                        document.body.classList.remove('preview-dragging');
                         document.removeEventListener('mousemove', onDragPreview);
                         document.removeEventListener('mouseup', stopDragPreview);
                     }
@@ -8355,6 +8685,12 @@
                     watch([previewWidth, previewAspect], () => {
                         if (showPhonePreview.value && !isDragging && !isResizing) {
                             ensurePreviewInViewport();
+                        }
+                    });
+
+                    watch(previewIsLandscape, () => {
+                        if (showPhonePreview.value && !isDragging && !isResizing) {
+                            Vue.nextTick(() => ensurePreviewInViewport());
                         }
                     });
 
@@ -8572,6 +8908,7 @@
                         previewDeviceId,
                         previewImage,
                         previewLoading,
+                        previewIsLandscape,
                         phonePreviewStyle,
                         refreshPreview,
                         openPhonePreview,
@@ -8583,6 +8920,8 @@
                         streamConnecting,
                         streamReady,
                         streamLoadingText,
+                        streamOrientationSwitching,
+                        streamSwitchProgress,
                         streamFps,
                         streamMaxSize,
                         streamTargetFps,
