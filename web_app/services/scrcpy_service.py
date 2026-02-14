@@ -13,6 +13,7 @@ import io
 import logging
 import os
 import shutil
+import struct
 import subprocess
 import threading
 import time
@@ -71,6 +72,7 @@ if _scrcpy_auto_nudge_delay_ms < 0:
     _scrcpy_auto_nudge_delay_ms = 0
 
 _scrcpy_auto_unlock_on_start = os.getenv("SCRCPY_AUTO_UNLOCK_ON_START", "1") == "1"
+_scrcpy_control_debug = os.getenv("SCRCPY_CONTROL_DEBUG", "1") == "1"
 
 # Main event loop reference for thread-safe scheduling
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -93,6 +95,8 @@ class ScrcpySession:
     connected_websockets: Set = field(default_factory=set)
     screen_width: int = 0
     screen_height: int = 0
+    video_width: int = 0
+    video_height: int = 0
     frame_rate: int = 15
     client: Optional[object] = None  # unused, kept for compatibility
     _fallback_task: Optional[asyncio.Task] = None
@@ -103,6 +107,9 @@ class ScrcpySession:
     _ffmpeg_proc: Optional[subprocess.Popen] = None
     _server_proc: Optional[subprocess.Popen] = None
     _video_socket: Optional[object] = None
+    _control_socket: Optional[object] = None
+    control_enabled: bool = False
+    _control_lock: threading.Lock = field(default_factory=threading.Lock)
     _scrcpy_scid: Optional[str] = None
     _local_port: int = 0
 
@@ -232,14 +239,110 @@ class ScrcpyService:
         logger.info(f"[AUTO-UNLOCK#SEQ] stream pipeline started, scheduling auto-unlock for {device_id} 🔒")
         loop.create_task(self._auto_unlock_if_needed(device_id))
 
+    @staticmethod
+    def _float_to_u16_fixed_point(value: float) -> int:
+        v = max(0.0, min(1.0, float(value)))
+        return int(round(v * 0xFFFF))
+
+    @staticmethod
+    def _float_to_i16_fixed_point(value: float) -> int:
+        v = max(-1.0, min(1.0, float(value)))
+        return int(round(v * 32767.0))
+
+    @staticmethod
+    def _pack_scrcpy_key_message(action: int, keycode: int, repeat: int = 0, meta_state: int = 0) -> bytes:
+        # TYPE_INJECT_KEYCODE = 0
+        return struct.pack(
+            ">BBiii",
+            0,
+            action & 0xFF,
+            int(keycode),
+            int(repeat),
+            int(meta_state),
+        )
+
+    @staticmethod
+    def _pack_scrcpy_touch_message(
+        action: int,
+        pointer_id: int,
+        x: int,
+        y: int,
+        screen_width: int,
+        screen_height: int,
+        pressure: float,
+        action_button: int = 0,
+        buttons: int = 0,
+    ) -> bytes:
+        # TYPE_INJECT_TOUCH_EVENT = 2
+        return struct.pack(
+            ">BBqiiHHHii",
+            2,
+            action & 0xFF,
+            int(pointer_id),
+            int(x),
+            int(y),
+            max(0, min(0xFFFF, int(screen_width))),
+            max(0, min(0xFFFF, int(screen_height))),
+            ScrcpyService._float_to_u16_fixed_point(pressure),
+            int(action_button),
+            int(buttons),
+        )
+
+    @staticmethod
+    def _pack_scrcpy_scroll_message(
+        x: int,
+        y: int,
+        screen_width: int,
+        screen_height: int,
+        h_scroll: float,
+        v_scroll: float,
+        buttons: int = 0,
+    ) -> bytes:
+        # TYPE_INJECT_SCROLL_EVENT = 3
+        return struct.pack(
+            ">BiiHHhhi",
+            3,
+            int(x),
+            int(y),
+            max(0, min(0xFFFF, int(screen_width))),
+            max(0, min(0xFFFF, int(screen_height))),
+            ScrcpyService._float_to_i16_fixed_point(h_scroll),
+            ScrcpyService._float_to_i16_fixed_point(v_scroll),
+            int(buttons),
+        )
+
+    @staticmethod
+    def _can_use_scrcpy_control(session: Optional[ScrcpySession]) -> bool:
+        return bool(session and session.is_scrcpy and session.control_enabled and session._control_socket)
+
+    def _send_scrcpy_control_packet(self, session: ScrcpySession, device_id: str, payload: bytes, label: str) -> bool:
+        sock = session._control_socket
+        if not sock:
+            return False
+        try:
+            with session._control_lock:
+                sock.sendall(payload)
+            return True
+        except Exception as e:
+            logger.warning(f"scrcpy control send failed for {device_id} ({label}): {e}")
+            try:
+                sock.close()
+            except Exception:
+                pass
+            session._control_socket = None
+            return False
+
     async def start_stream(self, device_id: str, max_size: int = 960,
                            bit_rate: int = 4_000_000, frame_rate: int = 24,
-                           restart: bool = False) -> dict:
+                           restart: bool = False, control_enabled: bool = False) -> dict:
         """
         Start streaming for a device.
         Tries scrcpy → screenrecord+ffmpeg → screencap in priority order.
         """
         session = self.get_or_create_session(device_id)
+
+        if session.is_streaming and session.is_scrcpy and session.control_enabled != control_enabled:
+            restart = True
 
         if session.is_streaming and restart:
             try:
@@ -256,6 +359,7 @@ class ScrcpyService:
                 "width": session.screen_width,
                 "height": session.screen_height,
                 "fps": session.frame_rate,
+                "control": session.control_enabled,
             }
 
         # Cancel any pending auto-stop
@@ -295,7 +399,8 @@ class ScrcpyService:
                     )
                 try:
                     result = await self._start_scrcpy_stream(
-                        session, device_id, size_i, br_i, fps_i, frame_meta=frame_meta_i
+                        session, device_id, size_i, br_i, fps_i,
+                        frame_meta=frame_meta_i, control_enabled=control_enabled
                     )
                     self._schedule_start_nudge(device_id, session)
                     return result
@@ -316,6 +421,8 @@ class ScrcpyService:
                     session.is_streaming = False
                     session.is_scrcpy = False
                     session.stream_mode = ""
+                    session.control_enabled = False
+                    session._control_socket = None
                     session.last_frame = None
                     if idx < len(scrcpy_profiles):
                         await asyncio.sleep(0.4)
@@ -446,7 +553,8 @@ class ScrcpyService:
 
     async def _start_scrcpy_stream(self, session: ScrcpySession, device_id: str,
                                     max_size: int, bit_rate: int, frame_rate: int,
-                                    frame_meta: Optional[bool] = None) -> dict:
+                                    frame_meta: Optional[bool] = None,
+                                    control_enabled: bool = False) -> dict:
         """
         Deploy scrcpy-server v3 JAR, connect raw H.264 socket, decode via ffmpeg.
 
@@ -505,7 +613,7 @@ class ScrcpyService:
                  "CLASSPATH=/data/local/tmp/scrcpy-server.jar",
                  "app_process", "/", "com.genymobile.scrcpy.Server", "3.3.4",
                  f"scid={scid}",
-                 "video=true", "audio=false", "control=false",
+                 "video=true", "audio=false", f"control={'true' if control_enabled else 'false'}",
                  "video_codec=h264",
                  f"max_size={max_size}",
                  f"max_fps={frame_rate}",
@@ -532,6 +640,39 @@ class ScrcpyService:
                 server_proc.terminate()
                 raise ConnectionError(f"Failed to connect to scrcpy-server on port {local_port}")
 
+            control_sock = None
+            if control_enabled:
+                control_sock = socket_mod.socket(socket_mod.AF_INET, socket_mod.SOCK_STREAM)
+                control_sock.settimeout(10)
+                for attempt in range(30):
+                    try:
+                        control_sock.connect(("127.0.0.1", local_port))
+                        break
+                    except (ConnectionRefusedError, OSError):
+                        time.sleep(0.2)
+                else:
+                    try:
+                        control_sock.close()
+                    except Exception:
+                        pass
+                    server_proc.terminate()
+                    raise ConnectionError(f"Failed to connect scrcpy control socket on port {local_port}")
+
+                # Optional dummy byte from server on control channel.
+                try:
+                    control_sock.settimeout(0.2)
+                    _ = control_sock.recv(1)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        control_sock.settimeout(10)
+                    except Exception:
+                        pass
+
+            video_w = 0
+            video_h = 0
+
             # Read 69-byte header: [1B dummy] [64B device name] [4B codec]
             header = b''
             while len(header) < 69:
@@ -542,7 +683,10 @@ class ScrcpyService:
 
             device_name = header[1:65].decode('utf-8', errors='replace').rstrip('\x00')
             codec = header[65:69].decode('ascii', errors='replace')
-            logger.info(f"scrcpy v3 connected: device={device_name}, codec={codec}")
+            logger.info(
+                f"scrcpy v3 connected: device={device_name}, codec={codec}, "
+                f"control={control_enabled}"
+            )
 
             # Some scrcpy versions send 8 bytes of video size right after header.
             # If present, consume them to keep stream aligned.
@@ -554,6 +698,8 @@ class ScrcpyService:
                     h = int.from_bytes(peek[4:8], "big", signed=False)
                     if 100 <= w <= 10000 and 100 <= h <= 10000:
                         sock.recv(8)  # consume
+                        video_w = w
+                        video_h = h
                         logger.info(f"scrcpy header meta: size={w}x{h}")
             except Exception:
                 pass
@@ -563,12 +709,16 @@ class ScrcpyService:
                 except Exception:
                     pass
 
-            return server_proc, sock
+            return server_proc, sock, control_sock, video_w, video_h
 
-        server_proc, video_socket = await loop.run_in_executor(None, _deploy_and_connect)
+        server_proc, video_socket, control_socket, video_w, video_h = await loop.run_in_executor(None, _deploy_and_connect)
 
         session._server_proc = server_proc
         session._video_socket = video_socket
+        session._control_socket = control_socket
+        session.control_enabled = bool(control_enabled and control_socket)
+        session.video_width = int(video_w or 0)
+        session.video_height = int(video_h or 0)
         session.stream_mode = "scrcpy"
         session.is_scrcpy = True
         session.is_streaming = True
@@ -1135,6 +1285,7 @@ class ScrcpyService:
             "width": w,
             "height": h,
             "fps": frame_rate,
+            "control": session.control_enabled,
         }
 
     def _cleanup_scrcpy(self, session: ScrcpySession, device_id: str):
@@ -1156,6 +1307,16 @@ class ScrcpyService:
             except Exception:
                 pass
             session._video_socket = None
+
+        if session._control_socket:
+            try:
+                session._control_socket.close()
+            except Exception:
+                pass
+            session._control_socket = None
+        session.control_enabled = False
+        session.video_width = 0
+        session.video_height = 0
 
         if session._server_proc:
             try:
@@ -1271,7 +1432,11 @@ class ScrcpyService:
         w, h = await self._get_screen_size(device_id)
         session.screen_width = w
         session.screen_height = h
+        session.video_width = 0
+        session.video_height = 0
         session.is_scrcpy = False
+        session.control_enabled = False
+        session._control_socket = None
         session.stream_mode = "screenrecord"
         session.frame_rate = frame_rate
         session.is_streaming = True
@@ -1421,6 +1586,10 @@ class ScrcpyService:
                                        device_id: str, frame_rate: int) -> dict:
         """Start screenshot-based fallback streaming."""
         session.is_scrcpy = False
+        session.video_width = 0
+        session.video_height = 0
+        session.control_enabled = False
+        session._control_socket = None
         session.stream_mode = "screencap"
         session.frame_rate = min(frame_rate, 10)
         session.is_streaming = True
@@ -1520,6 +1689,10 @@ class ScrcpyService:
             session._fallback_task = None
 
         session.stream_mode = ""
+        session.control_enabled = False
+        session._control_socket = None
+        session.video_width = 0
+        session.video_height = 0
         logger.info(f"Stream stopped for {device_id}")
         return {"status": "stopped"}
 
@@ -1532,6 +1705,9 @@ class ScrcpyService:
             "streaming": session.is_streaming, "mode": session.stream_mode,
             "width": session.screen_width, "height": session.screen_height,
             "fps": session.frame_rate, "viewers": len(session.connected_websockets),
+            "control": session.control_enabled,
+            "video_width": session.video_width,
+            "video_height": session.video_height,
         }
 
     # ──────────────────────────────────────────────────────────────────────
@@ -1545,6 +1721,23 @@ class ScrcpyService:
         if not session:
             return
 
+        # For scrcpy control injection, map from current canvas/frame size to scrcpy video size.
+        src_w = int(max(1, round(width))) if width > 0 else 0
+        src_h = int(max(1, round(height))) if height > 0 else 0
+        ctrl_w = int(session.video_width or 0)
+        ctrl_h = int(session.video_height or 0)
+        if ctrl_w <= 0 or ctrl_h <= 0:
+            ctrl_w = src_w if src_w > 0 else max(1, int(session.screen_width or 1))
+            ctrl_h = src_h if src_h > 0 else max(1, int(session.screen_height or 1))
+        if src_w > 0 and src_h > 0:
+            ctrl_x = int(x * ctrl_w / src_w)
+            ctrl_y = int(y * ctrl_h / src_h)
+        else:
+            ctrl_x = int(max(0, round(x)))
+            ctrl_y = int(max(0, round(y)))
+        ctrl_x = max(0, min(ctrl_x, ctrl_w - 1))
+        ctrl_y = max(0, min(ctrl_y, ctrl_h - 1))
+
         if width > 0 and height > 0 and session.screen_width > 0 and session.screen_height > 0:
             device_x = int(x * session.screen_width / width)
             device_y = int(y * session.screen_height / height)
@@ -1553,6 +1746,48 @@ class ScrcpyService:
 
         device_x = max(0, min(device_x, session.screen_width - 1))
         device_y = max(0, min(device_y, session.screen_height - 1))
+
+        if self._can_use_scrcpy_control(session):
+            action_map = {"down": 0, "up": 1, "move": 2}
+            action_i = action_map.get(action)
+            if action_i is not None:
+                pressure = 0.0 if action_i == 1 else 1.0
+                if _scrcpy_control_debug and action in ("down", "up"):
+                    logger.info(
+                        "[SCRCPY-CTRL] touch enqueue: "
+                        f"device={device_id} action={action} ctrl=({ctrl_x},{ctrl_y}) "
+                        f"frame={ctrl_w}x{ctrl_h} src={src_w}x{src_h} adb_map=({device_x},{device_y}) "
+                        f"video_meta={session.video_width}x{session.video_height}"
+                    )
+                payload = self._pack_scrcpy_touch_message(
+                    action=action_i,
+                    pointer_id=0,
+                    x=ctrl_x,
+                    y=ctrl_y,
+                    screen_width=ctrl_w,
+                    screen_height=ctrl_h,
+                    pressure=pressure,
+                    action_button=0,
+                    buttons=0,
+                )
+                if self._send_scrcpy_control_packet(session, device_id, payload, "touch"):
+                    if _scrcpy_control_debug and action in ("down", "up"):
+                        logger.info(
+                            "[SCRCPY-CTRL] touch sent: "
+                            f"device={device_id} action={action}"
+                        )
+                    return
+                if _scrcpy_control_debug and action in ("down", "up"):
+                    logger.warning(
+                        "[SCRCPY-CTRL] touch control send failed, fallback adb: "
+                        f"device={device_id} action={action}"
+                    )
+        elif _scrcpy_control_debug and action == "down" and session.is_scrcpy:
+            logger.info(
+                "[SCRCPY-CTRL] touch control inactive, use adb: "
+                f"device={device_id} control_enabled={session.control_enabled} "
+                f"has_socket={bool(session._control_socket)}"
+            )
 
         await self._send_touch_adb(device_id, session, action, device_x, device_y)
 
@@ -1649,6 +1884,23 @@ class ScrcpyService:
         if not session or session.screen_width <= 0 or session.screen_height <= 0:
             return
 
+        # For scrcpy control injection, map from current canvas/frame size to scrcpy video size.
+        src_w = int(max(1, round(width))) if width > 0 else 0
+        src_h = int(max(1, round(height))) if height > 0 else 0
+        ctrl_w = int(session.video_width or 0)
+        ctrl_h = int(session.video_height or 0)
+        if ctrl_w <= 0 or ctrl_h <= 0:
+            ctrl_w = src_w if src_w > 0 else max(1, int(session.screen_width or 1))
+            ctrl_h = src_h if src_h > 0 else max(1, int(session.screen_height or 1))
+        if src_w > 0 and src_h > 0:
+            ctrl_x = int(x * ctrl_w / src_w)
+            ctrl_y = int(y * ctrl_h / src_h)
+        else:
+            ctrl_x = int(max(0, round(x)))
+            ctrl_y = int(max(0, round(y)))
+        ctrl_x = max(0, min(ctrl_x, ctrl_w - 1))
+        ctrl_y = max(0, min(ctrl_y, ctrl_h - 1))
+
         if width > 0 and height > 0:
             device_x = int(x * session.screen_width / width)
             device_y = int(y * session.screen_height / height)
@@ -1657,6 +1909,32 @@ class ScrcpyService:
 
         device_x = max(0, min(device_x, session.screen_width - 1))
         device_y = max(0, min(device_y, session.screen_height - 1))
+
+        if self._can_use_scrcpy_control(session):
+            v_scroll = -1.0 if delta_y > 0 else 1.0
+            if _scrcpy_control_debug:
+                logger.info(
+                    "[SCRCPY-CTRL] scroll enqueue: "
+                    f"device={device_id} ctrl=({ctrl_x},{ctrl_y}) frame={ctrl_w}x{ctrl_h} "
+                    f"src={src_w}x{src_h} adb_map=({device_x},{device_y}) "
+                    f"video_meta={session.video_width}x{session.video_height} delta_y={delta_y}"
+                )
+            payload = self._pack_scrcpy_scroll_message(
+                x=ctrl_x,
+                y=ctrl_y,
+                screen_width=ctrl_w,
+                screen_height=ctrl_h,
+                h_scroll=0.0,
+                v_scroll=v_scroll,
+                buttons=0,
+            )
+            if self._send_scrcpy_control_packet(session, device_id, payload, "scroll"):
+                if _scrcpy_control_debug:
+                    logger.info(f"[SCRCPY-CTRL] scroll sent: device={device_id}")
+                return
+            if _scrcpy_control_debug:
+                logger.warning(f"[SCRCPY-CTRL] scroll control send failed, fallback adb: device={device_id}")
+
         distance = max(120, min(520, int(session.screen_height * 0.18)))
         half = distance // 2
 
@@ -1692,6 +1970,26 @@ class ScrcpyService:
 
     async def send_key(self, device_id: str, keycode: int):
         """Send key event. Common: Back=4, Home=3."""
+        session = self._sessions.get(device_id)
+        if self._can_use_scrcpy_control(session):
+            if _scrcpy_control_debug:
+                logger.info(f"[SCRCPY-CTRL] key enqueue: device={device_id} keycode={keycode}")
+            down = self._pack_scrcpy_key_message(action=0, keycode=keycode, repeat=0, meta_state=0)
+            up = self._pack_scrcpy_key_message(action=1, keycode=keycode, repeat=0, meta_state=0)
+            if self._send_scrcpy_control_packet(session, device_id, down, "key-down"):
+                if self._send_scrcpy_control_packet(session, device_id, up, "key-up"):
+                    if _scrcpy_control_debug:
+                        logger.info(f"[SCRCPY-CTRL] key sent: device={device_id} keycode={keycode}")
+                    return
+            if _scrcpy_control_debug:
+                logger.warning(f"[SCRCPY-CTRL] key control send failed, fallback adb: device={device_id} keycode={keycode}")
+        elif _scrcpy_control_debug and session and session.is_scrcpy:
+            logger.info(
+                "[SCRCPY-CTRL] key control inactive, use adb: "
+                f"device={device_id} keycode={keycode} control_enabled={session.control_enabled} "
+                f"has_socket={bool(session._control_socket)}"
+            )
+
         loop = asyncio.get_event_loop()
         try:
             result = await loop.run_in_executor(

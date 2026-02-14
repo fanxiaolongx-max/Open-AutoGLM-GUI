@@ -3676,6 +3676,9 @@
                             :disabled="!previewDeviceId" title="解锁设备">U</button>
                         <button class="phone-nav-btn" @click.stop="lockDevice(previewDeviceId)"
                             :disabled="!previewDeviceId" title="锁定设备">L</button>
+                        <button class="phone-nav-btn" @click.stop="toggleScrcpyControlInject"
+                            :style="{ background: streamUseScrcpyControl ? 'rgba(34,197,94,0.85)' : 'rgba(39,39,42,0.8)' }"
+                            title="高级：scrcpy 控制注入（默认关闭）">CI</button>
                     </div>
                     <select v-model.number="streamMaxSize" class="phone-preview-select-mini" @mousedown.stop
                         title="分辨率(长边)">
@@ -4006,6 +4009,7 @@
                     const streamTargetFps = ref(24);
                     const streamBitRate = ref(4000000);
                     const streamAutoAdapt = ref(false);
+                    const streamUseScrcpyControl = ref(false); // Advanced: off by default
                     const canvasWidth = ref(300);
                     const canvasHeight = ref(540);
                     const deviceScreenWidth = ref(0);
@@ -4437,6 +4441,22 @@
                         setTimeout(() => {
                             toasts.value = toasts.value.filter(t => t.id !== id);
                         }, 3000);
+                    }
+
+                    function upsertSystemAlert({ id, level = 'warning', title = '系统通知', message = '', autoDismiss = 0 }) {
+                        if (!id) return;
+                        const existing = systemAlerts.value.findIndex(a => a.id === id);
+                        const payload = { id, level, title, message };
+                        if (existing >= 0) {
+                            systemAlerts.value.splice(existing, 1, payload);
+                        } else {
+                            systemAlerts.value.push(payload);
+                        }
+                        if (autoDismiss > 0) {
+                            setTimeout(() => {
+                                systemAlerts.value = systemAlerts.value.filter(a => a.id !== id);
+                            }, autoDismiss * 1000);
+                        }
                     }
 
                     function dismissSystemAlert(alertId) {
@@ -7480,13 +7500,23 @@
                     }
 
                     async function onPreviewDeviceChange() {
+                        const targetDeviceId = previewDeviceId.value;
+                        if (targetDeviceId && isEmulatorDevice(targetDeviceId)) {
+                            upsertSystemAlert({
+                                id: 'emulator-preview-wakeup-hint',
+                                level: 'warning',
+                                title: '模拟器预览提示',
+                                message: '切换设备后若预览黑屏，请手动点击模拟器屏幕唤醒。',
+                                autoDismiss: 10,
+                            });
+                        }
                         disconnectStream();
                         previewImage.value = null;
                         previewAspect.value = 16 / 9;
-                        if (previewDeviceId.value) {
-                            await autoTuneStreamSizeFromScreenshot(previewDeviceId.value);
-                            if (previewDeviceId.value) {
-                                connectStream(previewDeviceId.value);
+                        if (targetDeviceId) {
+                            await autoTuneStreamSizeFromScreenshot(targetDeviceId);
+                            if (previewDeviceId.value === targetDeviceId) {
+                                connectStream(targetDeviceId);
                             }
                         }
                     }
@@ -7507,6 +7537,7 @@
                             max_size: String(streamMaxSize.value),
                             frame_rate: String(streamTargetFps.value),
                             bit_rate: String(streamBitRate.value),
+                            control: streamUseScrcpyControl.value ? '1' : '0',
                         });
                         if (includeRestart) {
                             params.set('restart', 'true');
@@ -7667,6 +7698,19 @@
                     function applyStreamSettings() {
                         if (!previewDeviceId.value) return;
                         connectStream(previewDeviceId.value, true);
+                    }
+
+                    async function toggleScrcpyControlInject() {
+                        streamUseScrcpyControl.value = !streamUseScrcpyControl.value;
+                        showToast(
+                            streamUseScrcpyControl.value
+                                ? '已开启 scrcpy 控制注入'
+                                : '已关闭 scrcpy 控制注入'
+                        );
+                        if (!previewDeviceId.value) return;
+                        streamReady.value = false;
+                        streamLoadingText.value = 'Switching control mode...';
+                        await connectStream(previewDeviceId.value, true);
                     }
 
                     async function reconnectPreviewStream() {
@@ -8321,12 +8365,14 @@
                         streamTargetFps,
                         streamBitRate,
                         streamAutoAdapt,
+                        streamUseScrcpyControl,
                         canvasWidth,
                         canvasHeight,
                         previewCanvas,
                         connectStream,
                         disconnectStream,
                         applyStreamSettings,
+                        toggleScrcpyControlInject,
                         reconnectPreviewStream,
                         onCanvasMouseDown,
                         onCanvasMouseMove,

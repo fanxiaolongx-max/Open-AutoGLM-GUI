@@ -26,6 +26,7 @@ async def start_stream(
     bit_rate: int = Query(4_000_000, ge=500_000, le=20_000_000),
     frame_rate: int = Query(24, ge=5, le=60),
     restart: bool = Query(False),
+    control: bool = Query(False),
     _: bool = Depends(verify_token),
 ):
     """Start scrcpy stream for a device."""
@@ -35,6 +36,7 @@ async def start_stream(
         bit_rate=bit_rate,
         frame_rate=frame_rate,
         restart=restart,
+        control_enabled=control,
     )
     return result
 
@@ -87,30 +89,49 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
     req_max_size = max(240, min(2160, req_max_size))
     req_bit_rate = max(500_000, min(20_000_000, req_bit_rate))
     req_frame_rate = max(5, min(60, req_frame_rate))
+    req_control = str(qs.get("control", "0")).lower() in ("1", "true", "yes", "on")
 
     # Add viewer to session
     session = scrcpy_service.add_viewer(device_id, websocket)
 
     try:
-        # Auto-start stream if not running
+        # Auto-start stream if not running. If requested control mode differs,
+        # restart stream to apply the new input path.
+        if session.is_streaming and session.is_scrcpy and session.control_enabled != req_control:
+            logger.info(
+                f"[SCRCPY-CTRL] mode switch requested: device={device_id} "
+                f"current_control={session.control_enabled} requested_control={req_control}"
+            )
+            await scrcpy_service.stop_stream(device_id)
+            session = scrcpy_service.get_or_create_session(device_id)
+
         if not session.is_streaming:
             result = await scrcpy_service.start_stream(
                 device_id,
                 max_size=req_max_size,
                 bit_rate=req_bit_rate,
                 frame_rate=req_frame_rate,
+                control_enabled=req_control,
             )
             # Refresh session reference after start
             session = scrcpy_service.get_session(device_id)
 
         # Send stream info
         if session:
+            logger.info(
+                f"[SCRCPY-CTRL] ws session ready: device={device_id} "
+                f"requested_control={req_control} active_control={session.control_enabled} "
+                f"mode={session.stream_mode}"
+            )
             await websocket.send_text(json.dumps({
                 "type": "stream_info",
                 "width": session.screen_width,
                 "height": session.screen_height,
                 "fps": session.frame_rate,
                 "mode": "scrcpy" if session.is_scrcpy else "fallback",
+                "control": session.control_enabled,
+                "video_width": session.video_width,
+                "video_height": session.video_height,
             }))
 
             # Send last frame if available (immediate display)
