@@ -55,9 +55,9 @@ if _scrcpy_first_frame_timeout < 5:
     _scrcpy_first_frame_timeout = 5.0
 
 try:
-    _scrcpy_auto_stop_delay = int(os.getenv("SCRCPY_AUTO_STOP_DELAY", "60"))
+    _scrcpy_auto_stop_delay = int(os.getenv("SCRCPY_AUTO_STOP_DELAY", "0"))
 except ValueError:
-    _scrcpy_auto_stop_delay = 60
+    _scrcpy_auto_stop_delay = 0
 if _scrcpy_auto_stop_delay < 0:
     _scrcpy_auto_stop_delay = 0
 
