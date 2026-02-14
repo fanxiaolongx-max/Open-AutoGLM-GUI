@@ -1,0 +1,1124 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+    <title>Open-AutoGLM-Pro — AI 远程安卓控制 Agent（免费开源）</title>
+    <meta name="description"
+        content="Open-AutoGLM-Pro：基于视觉语言模型的手机智能助理框架。Web 实时预览 + 可控注入（默认 ADB，手动启用 scrcpy 控制注入）+ 多设备 + Telegram Bot + 定时任务 + 邮件报告。免费开源，强大可扩展。" />
+    <style>
+        :root {
+            --bg: #070A12;
+            --bg2: #0B1020;
+            --card: #0F1731;
+            --card2: #0E1630;
+            --text: #EAF0FF;
+            --muted: #A9B6DA;
+            --line: rgba(255, 255, 255, .08);
+            --glow: rgba(120, 180, 255, .14);
+            --brand: #7AB6FF;
+            --brand2: #B3D7FF;
+            --good: #39d98a;
+            --warn: #ffd166;
+            --bad: #ff5c7a;
+            --shadow: 0 22px 60px rgba(0, 0, 0, .55);
+            --radius: 20px;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #F6F8FF;
+                --bg2: #EEF3FF;
+                --card: #FFFFFF;
+                --card2: #FFFFFF;
+                --text: #0A1330;
+                --muted: #4A587C;
+                --line: rgba(10, 19, 48, .10);
+                --glow: rgba(70, 130, 255, .14);
+                --shadow: 0 18px 50px rgba(20, 40, 120, .18);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(900px 500px at 20% 0%, var(--glow), transparent 60%),
+                radial-gradient(900px 500px at 80% 20%, rgba(160, 120, 255, .12), transparent 60%),
+                linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+            overflow-x: hidden;
+        }
+
+        body::before,
+        body::after {
+            content: "";
+            position: fixed;
+            pointer-events: none;
+            inset: -20vh -10vw;
+            z-index: -1;
+        }
+
+        body::before {
+            background:
+                radial-gradient(42vw 38vw at 12% 22%, rgba(122, 182, 255, .18), transparent 60%),
+                radial-gradient(34vw 32vw at 82% 16%, rgba(160, 120, 255, .16), transparent 62%),
+                radial-gradient(30vw 28vw at 56% 78%, rgba(57, 217, 138, .13), transparent 66%);
+            filter: blur(20px);
+            animation: auroraShift 16s ease-in-out infinite alternate;
+        }
+
+        body::after {
+            background-image:
+                linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px);
+            background-size: 36px 36px;
+            opacity: .22;
+            transform-origin: center;
+            animation: gridDrift 24s linear infinite;
+        }
+
+        @keyframes auroraShift {
+            0% {
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+
+            100% {
+                transform: translate3d(0, -2.5vh, 0) scale(1.04);
+            }
+        }
+
+        @keyframes gridDrift {
+            0% {
+                transform: translate3d(0, 0, 0);
+            }
+
+            100% {
+                transform: translate3d(-36px, -24px, 0);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            body::after {
+                background-image:
+                    linear-gradient(rgba(10, 19, 48, .05) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(10, 19, 48, .05) 1px, transparent 1px);
+                opacity: .4;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            body::before,
+            body::after {
+                animation: none;
+            }
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .wrap {
+            width: min(1120px, calc(100% - 40px));
+            margin: 0 auto;
+        }
+
+        .nav {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(14px);
+            background: linear-gradient(180deg, rgba(0, 0, 0, .35), rgba(0, 0, 0, .05));
+            border-bottom: 1px solid var(--line);
+        }
+
+        @media (prefers-color-scheme: light) {
+            .nav {
+                background: rgba(246, 248, 255, .65);
+            }
+        }
+
+        .nav-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 0;
+            gap: 18px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            letter-spacing: .2px;
+        }
+
+        .logo {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            background:
+                radial-gradient(10px 10px at 30% 30%, rgba(255, 255, 255, .8), transparent 60%),
+                linear-gradient(135deg, rgba(122, 182, 255, .95), rgba(179, 215, 255, .45));
+            box-shadow: 0 12px 30px rgba(122, 182, 255, .18);
+            border: 1px solid rgba(255, 255, 255, .12);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 14px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .nav-links a {
+            padding: 8px 10px;
+            border-radius: 12px;
+            transition: .2s ease;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+            background: rgba(255, 255, 255, .06);
+        }
+
+        @media (prefers-color-scheme: light) {
+            .nav-links a:hover {
+                background: rgba(10, 19, 48, .06);
+            }
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, .06);
+            color: var(--text);
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform .12s ease, background .2s ease, border-color .2s ease;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            background: rgba(255, 255, 255, .10);
+            border-color: rgba(255, 255, 255, .18);
+        }
+
+        @media (prefers-color-scheme: light) {
+            .btn {
+                background: rgba(10, 19, 48, .03);
+            }
+
+            .btn:hover {
+                background: rgba(10, 19, 48, .06);
+                border-color: rgba(10, 19, 48, .14);
+            }
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, rgba(122, 182, 255, .95), rgba(179, 215, 255, .55));
+            color: #071027;
+            border-color: rgba(255, 255, 255, .25);
+            box-shadow: 0 18px 40px rgba(122, 182, 255, .20);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, rgba(122, 182, 255, 1), rgba(179, 215, 255, .70));
+        }
+
+        .btn-ghost {
+            background: transparent;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, .06);
+            color: var(--muted);
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--brand);
+            box-shadow: 0 0 0 4px rgba(122, 182, 255, .18);
+        }
+
+        /* Hero */
+        header.hero {
+            padding: 68px 0 34px;
+            position: relative;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 1.3fr .9fr;
+            gap: 22px;
+            align-items: stretch;
+        }
+
+        @media (max-width: 920px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        h1 {
+            margin: 14px 0 10px;
+            font-size: clamp(28px, 4vw, 46px);
+            letter-spacing: -0.6px;
+            line-height: 1.12;
+        }
+
+        .lead {
+            color: var(--muted);
+            font-size: 16px;
+            line-height: 1.7;
+            margin: 12px 0 18px;
+            max-width: 62ch;
+        }
+
+        .cta-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .subrow {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+
+        .panel {
+            background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .03));
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        @media (prefers-color-scheme: light) {
+            .panel {
+                background: linear-gradient(180deg, rgba(255, 255, 255, .95), rgba(255, 255, 255, .85));
+            }
+        }
+
+        .panel-pad {
+            padding: 18px;
+        }
+
+        .kpis {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .kpi {
+            padding: 14px 14px;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, .06);
+        }
+
+        @media (prefers-color-scheme: light) {
+            .kpi {
+                background: rgba(10, 19, 48, .03);
+            }
+        }
+
+        .kpi .n {
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: -0.2px;
+        }
+
+        .kpi .t {
+            margin-top: 6px;
+            color: var(--muted);
+            font-weight: 700;
+            font-size: 12px;
+            line-height: 1.35;
+        }
+
+        .mini-title {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: .18em;
+            text-transform: uppercase;
+        }
+
+        .hero-card-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        /* Sections */
+        section {
+            padding: 34px 0;
+        }
+
+        .sec-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        h2 {
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: -0.3px;
+        }
+
+        .sec-desc {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.7;
+            max-width: 70ch;
+            font-size: 14px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        @media (max-width: 980px) {
+            .grid-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, .05);
+            box-shadow: 0 12px 34px rgba(0, 0, 0, .25);
+            min-height: 132px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        @media (prefers-color-scheme: light) {
+            .card {
+                background: rgba(255, 255, 255, .95);
+            }
+        }
+
+        .card h3 {
+            margin: 0 0 8px;
+            font-size: 16px;
+            letter-spacing: -0.2px;
+        }
+
+        .card p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.7;
+            font-size: 13px;
+        }
+
+        .card-ill {
+            float: right;
+            width: 84px;
+            height: 63px;
+            margin: 0 0 10px 10px;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, .16);
+            background: rgba(255, 255, 255, .08);
+            object-fit: cover;
+        }
+
+        .card::after {
+            content: "";
+            display: block;
+            clear: both;
+        }
+
+        .icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            background: rgba(122, 182, 255, .12);
+            border: 1px solid rgba(122, 182, 255, .18);
+            color: var(--brand2);
+            margin-bottom: 10px;
+        }
+
+        /* Table */
+        .table-wrap {
+            overflow: auto;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, .04);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, .25);
+        }
+
+        @media (prefers-color-scheme: light) {
+            .table-wrap {
+                background: rgba(255, 255, 255, .95);
+            }
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 860px;
+        }
+
+        th,
+        td {
+            padding: 12px 12px;
+            border-bottom: 1px solid var(--line);
+            vertical-align: top;
+            text-align: left;
+            font-size: 13px;
+            line-height: 1.55;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: rgba(10, 16, 32, .65);
+            backdrop-filter: blur(10px);
+            font-size: 12px;
+            color: var(--muted);
+            letter-spacing: .10em;
+            text-transform: uppercase;
+            z-index: 1;
+        }
+
+        @media (prefers-color-scheme: light) {
+            th {
+                background: rgba(246, 248, 255, .9);
+            }
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 9px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            font-weight: 800;
+            font-size: 12px;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, .05);
+        }
+
+        .tag.good {
+            color: var(--good);
+            border-color: rgba(57, 217, 138, .30);
+            background: rgba(57, 217, 138, .10);
+        }
+
+        .tag.warn {
+            color: var(--warn);
+            border-color: rgba(255, 209, 102, .35);
+            background: rgba(255, 209, 102, .10);
+        }
+
+        .tag.bad {
+            color: var(--bad);
+            border-color: rgba(255, 92, 122, .35);
+            background: rgba(255, 92, 122, .10);
+        }
+
+        /* Code block */
+        pre {
+            margin: 0;
+            padding: 14px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(0, 0, 0, .25);
+            overflow: auto;
+            font-size: 12px;
+            line-height: 1.65;
+        }
+
+        @media (prefers-color-scheme: light) {
+            pre {
+                background: rgba(10, 19, 48, .04);
+            }
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        /* Footer */
+        footer {
+            padding: 34px 0 44px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+        }
+
+        .foot-grid {
+            display: grid;
+            gap: 14px;
+            grid-template-columns: 1.2fr .8fr;
+            align-items: start;
+        }
+
+        @media (max-width: 920px) {
+            .foot-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .small {
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        .pillrow {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        /* Smooth scroll */
+        html {
+            scroll-behavior: smooth;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="nav">
+        <div class="wrap nav-inner">
+            <a class="brand" href="#top" aria-label="Open-AutoGLM-Pro">
+                <span class="logo" aria-hidden="true"></span>
+                <span>Open-AutoGLM-Pro</span>
+            </a>
+
+            <div class="nav-links" role="navigation" aria-label="site">
+                <a href="#features">特性</a>
+                <a href="#how">工作原理</a>
+                <a href="#compare">对比</a>
+                <a href="#usecases">能帮你做什么</a>
+                <a href="#getstarted">快速开始</a>
+                <a class="btn btn-primary" href="https://github.com/fanxiaolongx-max/Open-AutoGLM-GUI" target="_blank"
+                    rel="noopener noreferrer">GitHub</a>
+            </div>
+        </div>
+    </div>
+
+    <main id="top">
+        <!-- HERO -->
+        <header class="hero">
+            <div class="wrap hero-grid">
+                <div>
+                    <span class="chip"><span class="dot"></span> 免费开源 · 强大可控 · 可嵌入</span>
+                    <h1>把 Android 变成可编程的「AI 远程执行终端」</h1>
+                    <p class="lead">
+                        Open-AutoGLM-Pro 基于视觉语言模型：看懂屏幕、规划动作、执行到完成。<br />
+                        提供 Web 实时预览（<b>scrcpy 主链路</b>）、多设备切换、Telegram Bot、定时任务和邮件报告。<br />
+                        默认用稳定的 ADB 注入，<b>高级开关</b>可切到 <b>scrcpy 控制注入</b>，失败自动回退。
+                    </p>
+
+                    <div class="cta-row">
+                        <a class="btn btn-primary" href="#getstarted">立即上手</a>
+                        <a class="btn" href="#compare">看看对比表</a>
+                        <a class="btn btn-ghost" href="#" onclick="alert('把这里替换成在线 Demo / 视频演示链接'); return false;">观看
+                            Demo</a>
+                    </div>
+
+                    <div class="subrow">
+                        <span class="chip">Web UI</span>
+                        <span class="chip">CLI</span>
+                        <span class="chip">Python API</span>
+                        <span class="chip">Telegram Bot</span>
+                        <span class="chip">Android / HarmonyOS / iOS</span>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-pad">
+                        <div class="hero-card-title">
+                            <div>
+                                <div class="mini-title">WHY IT FEELS DIFFERENT</div>
+                                <div style="font-weight:900; font-size:18px; margin-top:6px;">不是“投屏工具”，而是“可执行 Agent 平台”
+                                </div>
+                            </div>
+                            <span class="chip">默认稳定 · 手动增强</span>
+                        </div>
+
+                        <div class="kpis">
+                            <div class="kpi">
+                                <div class="n">scrcpy</div>
+                                <div class="t">主链路实时预览 + 低延迟交互（失败自动降级）</div>
+                            </div>
+                            <div class="kpi">
+                                <div class="n">CI 开关</div>
+                                <div class="t">侧边栏启用 scrcpy 控制注入（默认开启）</div>
+                            </div>
+                            <div class="kpi">
+                                <div class="n">多设备</div>
+                                <div class="t">快速切换、可保活、切回不冷启动</div>
+                            </div>
+                            <div class="kpi">
+                                <div class="n">自动化</div>
+                                <div class="t">定时任务 + 报告 + 规则引擎 + 远程调试</div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:14px;">
+                            <pre><code>🗣️ 下指令 → 👀 看画面 → 🧠 AI 决策 → ✋ 执行动作 → ✅ 完成</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- FEATURES -->
+        <section id="features">
+            <div class="wrap">
+                <div class="sec-head">
+                    <div>
+                        <h2>核心特性</h2>
+                        <p class="sec-desc">默认稳、按需强：先保证生产可用，再按场景开启高级能力。</p>
+                    </div>
+                    <a class="btn" href="#getstarted">查看部署方式</a>
+                </div>
+
+                <div class="grid-3">
+                    <div class="card">
+                        <div class="icon">🎮</div>
+                        <img class="card-ill" src="/static/official-assets/preview-control.svg" alt="设备预览与控制" />
+                        <h3>设备预览与控制（重点）</h3>
+                        <p>Web 实时预览（scrcpy 主链路），支持鼠标/触控/键盘控制；多设备快切，后端保活流会话。</p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">🧠</div>
+                        <img class="card-ill" src="/static/official-assets/ai-ops.svg" alt="AI看懂并操作" />
+                        <h3>AI 驱动的“看懂并操作”</h3>
+                        <p>模型理解页面并规划动作：打开、搜索、填写、提交、返回、等待，全流程自动执行。</p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">🧩</div>
+                        <img class="card-ill" src="/static/official-assets/ci-injection.svg" alt="高级控制注入" />
+                        <h3>高级控制注入</h3>
+                        <p>侧边栏开启 scrcpy 控制注入，可保留 down→move→up 连续轨迹；失败自动回退 ADB。</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="icon">🛰️</div>
+                        <img class="card-ill" src="/static/official-assets/remote-entry.svg" alt="远程调试与多入口" />
+                        <h3>远程调试与多入口</h3>
+                        <p>支持 Web 多用户远程访问、Cloudflare Tunnel 一键公网、CLI、Python API 和 Telegram Bot。</p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">⏱️</div>
+                        <img class="card-ill" src="/static/official-assets/scheduler.svg" alt="定时任务与报告" />
+                        <h3>定时任务 + 邮件报告</h3>
+                        <p>支持单次/每日/每周自动执行；结束自动发报告，适合无人值守。</p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">🔧</div>
+                        <img class="card-ill" src="/static/official-assets/rules-engine.svg" alt="规则引擎可扩展" />
+                        <h3>规则引擎 & 可扩展</h3>
+                        <p>可自定义应用映射、动作规则和提示词，把 SOP 固化为可复用能力。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- HOW IT WORKS -->
+        <section id="how">
+            <div class="wrap">
+                <div class="sec-head">
+                    <div>
+                        <h2>为什么更稳：三层预览链路 + 双注入路径</h2>
+                        <p class="sec-desc">
+                            <b>scrcpy 主链路</b>失败会自动降级到 screenrecord/screencap；
+                            输入默认走 ADB，高级开关可切 scrcpy 控制注入，失败自动回退。
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="card">
+                        <div class="icon">📺</div>
+                        <img class="card-ill" src="/static/official-assets/stream-chain.svg" alt="预览链路" />
+                        <h3>预览链路（优先级）</h3>
+                        <p>
+                            1) scrcpy + ffmpeg（主链路）<br />
+                            2) adb screenrecord + ffmpeg（兼容链路）<br />
+                            3) adb screencap loop（兜底链路）
+                        </p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">🖱️</div>
+                        <img class="card-ill" src="/static/official-assets/dual-input.svg" alt="输入注入双路径" />
+                        <h3>输入注入（双路径）</h3>
+                        <p>
+                            默认：ADB tap/swipe/keyevent（稳定）<br />
+                            高级：scrcpy 控制通道注入（连续轨迹）<br />
+                            失败：自动降级回 ADB，不影响基本功能
+                        </p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">🧯</div>
+                        <img class="card-ill" src="/static/official-assets/recovery.svg" alt="异常恢复与保活" />
+                        <h3>异常恢复与保活</h3>
+                        <p>
+                            流会话可保活、切换更快；先起流再解锁；模拟器黑屏有提示；异常输入可快速 fallback。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- COMPARISON -->
+        <section id="compare">
+            <div class="wrap">
+                <div class="sec-head">
+                    <div>
+                        <h2>与业界类似工具对比</h2>
+                        <p class="sec-desc">
+                            投屏/远控工具偏终端产品，Appium 等偏测试框架；
+                            Open-AutoGLM-Pro 更像<b>可编排、可接入、可远程下发任务的 Agent 平台</b>。
+                        </p>
+                    </div>
+                    <span class="chip">对比维度：开源/可编程/实时预览/注入轨迹/多入口/自动化能力</span>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>方案</th>
+                                <th>定位</th>
+                                <th>优势</th>
+                                <th>短板</th>
+                                <th>适合谁</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><b>Open-AutoGLM-Pro</b><br /><span class="tag good">Free & Open Source</span></td>
+                                <td>AI 远程安卓控制 Agent 平台</td>
+                                <td>
+                                    <span class="tag good">Web 实时预览</span>
+                                    <span class="tag good">多设备</span>
+                                    <span class="tag good">Telegram/CLI/API</span>
+                                    <span class="tag good">定时 + 报告</span><br />
+                                    默认 ADB 稳定注入；可手动开 scrcpy 控制注入（连续轨迹）；失败自动回退。
+                                </td>
+                                <td>
+                                    需具备基础 ADB/设备调试能力；高级注入依赖 scrcpy 会话稳定性（已做 fallback）。
+                                </td>
+                                <td>做业务自动化、远程运营、客服流程、工具平台化的人</td>
+                            </tr>
+
+                            <tr>
+                                <td><b>scrcpy</b><br /><span class="tag good">Open Source</span></td>
+                                <td>低延迟投屏 + 电脑控制手机</td>
+                                <td>
+                                    <span class="tag good">极低延迟</span>
+                                    <span class="tag good">轻量稳定</span>
+                                    <span class="tag good">控制通道注入</span><br />
+                                    作为底层能力非常优秀。
+                                </td>
+                                <td>
+                                    偏工具本体，不提供任务编排、AI理解、多入口、报表、规则引擎等平台能力。
+                                </td>
+                                <td>开发者日常投屏、调试、手动操作</td>
+                            </tr>
+
+                            <tr>
+                                <td><b>Vysor / AirDroid / TeamViewer</b><br /><span class="tag warn">Commercial</span>
+                                </td>
+                                <td>远程控制/设备管理（偏产品）</td>
+                                <td>
+                                    开箱即用、跨网远控、界面友好，适合非技术用户。
+                                </td>
+                                <td>
+                                    多为闭源/付费；可编程与深度自动化能力有限；难把 SOP 直接做成 Agent 工作流。
+                                </td>
+                                <td>IT 运维、远程协助、非开发团队</td>
+                            </tr>
+
+                            <tr>
+                                <td><b>Appium / UIAutomator</b><br /><span class="tag good">Open Source</span></td>
+                                <td>测试自动化框架</td>
+                                <td>
+                                    <span class="tag good">自动化成熟</span>
+                                    <span class="tag good">元素级定位</span><br />
+                                    适合 CI 测试与回归。
+                                </td>
+                                <td>
+                                    配置和维护成本高；多应用和变化 UI 需要持续工程投入；
+                                    不等同于 AI 看屏 Agent 模式。
+                                </td>
+                                <td>QA/自动化测试团队</td>
+                            </tr>
+
+                            <tr>
+                                <td><b>纯 ADB 脚本</b><br /><span class="tag good">Free</span></td>
+                                <td>命令行注入/脚本控制</td>
+                                <td>
+                                    简单直接、兼容广、易落地。
+                                </td>
+                                <td>
+                                    轨迹能力弱（tap/swipe 两端点），复杂场景和 UI 变化适应差；缺少平台能力与可视化。
+                                </td>
+                                <td>轻量自动化、小工具脚本</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div style="margin-top:12px; color:var(--muted); font-size:12px; line-height:1.7;">
+                    注：对比为“产品形态与能力覆盖”角度总结，实际效果会因设备/ROM/网络/权限策略而异。
+                </div>
+            </div>
+        </section>
+
+        <!-- USE CASES -->
+        <section id="usecases">
+            <div class="wrap">
+                <div class="sec-head">
+                    <div>
+                        <h2>它能帮你做什么（更接近“赚钱/降本”的场景）</h2>
+                        <p class="sec-desc">
+                            以下场景都强调<b>合规自动化</b>：提效、降本、减少误操作。涉及平台互动请遵守平台规则与法律法规。
+                        </p>
+                    </div>
+                    <span class="chip">自动化 ≠ 违规刷量</span>
+                </div>
+
+                <div class="grid-3">
+                    <div class="card">
+                        <div class="icon">💬</div>
+                        <img class="card-ill" src="/static/official-assets/customer-support.svg" alt="客服与售后" />
+                        <h3>客服与售后：更快响应</h3>
+                        <p>
+                            自动打开聊天应用或客服后台，按规则回复常见问题并收集订单号；
+                            复杂问题可触发 <b>Take_over</b> 交给人工。
+                        </p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">🧾</div>
+                        <img class="card-ill" src="/static/official-assets/order-flow.svg" alt="接单履约" />
+                        <h3>接单与履约：少漏单</h3>
+                        <p>
+                            定时检查订单/私信/通知，自动确认和登记派发；结束发送邮件报告。
+                        </p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">📣</div>
+                        <img class="card-ill" src="/static/official-assets/content-ops.svg" alt="内容运营流程" />
+                        <h3>内容运营：标准化流程</h3>
+                        <p>
+                            按 SOP 发布内容、补标签、检排版、传素材、定时发布；
+                            互动仅做合规协助，避免刷量和虚假互动。
+                        </p>
+                    </div>
+
+                    <div class="card">
+                        <div class="icon">🧰</div>
+                        <img class="card-ill" src="/static/official-assets/app-automation.svg" alt="App流程自动化" />
+                        <h3>App 级流程自动化</h3>
+                        <p>
+                            自动登录/跳转/搜索/筛选/填写/提交/返回，适合高频重复操作；
+                            UI 改版时可用视觉理解做适配。
+                        </p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">📊</div>
+                        <img class="card-ill" src="/static/official-assets/audit.svg" alt="数据收集与稽核" />
+                        <h3>数据收集与稽核</h3>
+                        <p>
+                            通过实时预览和任务回放抓取关键截图与状态，生成审计报告；
+                            适合巡检、价库存检查和流程稽核。
+                        </p>
+                    </div>
+                    <div class="card">
+                        <div class="icon">🧪</div>
+                        <img class="card-ill" src="/static/official-assets/family-assist.svg" alt="远程协助父母手机" />
+                        <h3>远程协助/父母手机支持</h3>
+                        <p>
+                            远程协助家人处理手机问题，或让 AI 控制父母手机完成设置与排障；过程画面可见、操作可控，解决问题看得见摸得着。
+                        </p>
+                    </div>
+                </div>
+
+                <div class="panel" style="margin-top:14px;">
+                    <div class="panel-pad">
+                        <div class="mini-title">COMPLIANCE NOTE</div>
+                        <div style="font-weight:900; font-size:16px; margin-top:6px;">我们坚持“可控合规”的自动化</div>
+                        <p class="sec-desc" style="margin-top:8px;">
+                            项目用于研究和效率提升，不用于非法获取信息、干扰系统或违规操作。
+                            可在官网底部保留免责声明与使用条款入口。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- GET STARTED -->
+        <section id="getstarted">
+            <div class="wrap">
+                <div class="sec-head">
+                    <div>
+                        <h2>快速开始（最短路径）</h2>
+                        <p class="sec-desc">三步启动：装依赖 → 连设备 → 起 Web。高级注入默认开启，按需关闭。</p>
+                    </div>
+                    <div class="pillrow">
+                        <span class="chip">python run_web.py</span>
+                        <span class="chip">http://localhost:8080</span>
+                        <span class="chip">/docs</span>
+                    </div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="card">
+                        <div class="icon">1</div>
+                        <img class="card-ill" src="/static/official-assets/step-install.svg" alt="安装依赖" />
+                        <h3>安装 & 依赖</h3>
+                        <pre><code>git clone &lt;YOUR_REPO_URL&gt;
+cd Open-AutoGLM-Pro
+python -m venv venv
+# Windows: venv\Scripts\activate
+source venv/bin/activate
+pip install -r requirements.txt
+pip install -e .</code></pre>
+                    </div>
+                    <div class="card">
+                        <div class="icon">2</div>
+                        <img class="card-ill" src="/static/official-assets/step-connect.svg" alt="连接设备" />
+                        <h3>连接设备（Android）</h3>
+                        <pre><code># 手机开启 USB 调试
+adb devices
+# 看到: XXXXXXXX device
+# WiFi 调试:
+adb connect 192.168.1.100:5555</code></pre>
+                    </div>
+                    <div class="card">
+                        <div class="icon">3</div>
+                        <img class="card-ill" src="/static/official-assets/step-start.svg" alt="启动Web" />
+                        <h3>启动 Web（推荐）</h3>
+                        <pre><code>python run_web.py
+# 访问:
+http://localhost:8080
+# API 文档:
+http://localhost:8080/docs</code></pre>
+                    </div>
+                </div>
+
+                <div class="panel" style="margin-top:14px;">
+                    <div class="panel-pad">
+                        <div class="mini-title">ADVANCED</div>
+                        <div style="font-weight:900; font-size:16px; margin-top:6px;">侧边栏高级开关：scrcpy 控制注入（默认开启）</div>
+                        <p class="sec-desc" style="margin-top:8px;">
+                            默认：ADB 注入（稳定）<br />
+                            开启后：触控/滚轮/按键优先走 scrcpy 控制通道（连续轨迹更顺）<br />
+                            失败：自动回退 ADB（不影响基本操作）
+                        </p>
+                        <div class="pillrow" style="margin-top:10px;">
+                            <span class="chip">SCRCPY_FIRST_FRAME_TIMEOUT=40</span>
+                            <span class="chip">SCRCPY_AUTO_UNLOCK_ON_START=1</span>
+                            <span class="chip">SCRCPY_CONTROL_DEBUG=1</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FOOTER -->
+        <footer>
+            <div class="wrap foot-grid">
+                <div>
+                    <div class="brand" style="gap:10px;">
+                        <span class="logo" aria-hidden="true"></span>
+                        <span style="font-weight:900;">Open-AutoGLM-Pro</span>
+                        <span class="chip">Apache 2.0</span>
+                    </div>
+                    <p class="small" style="margin-top:10px;">
+                        一个面向工程落地的手机智能助理框架：可编排、可远程、可观测、可回退。<br />
+                        免责声明：本项目仅供研究与学习使用，严禁用于非法获取信息、干扰系统或任何违法活动；涉及平台交互请遵守平台规则与法律法规。
+                    </p>
+                    <div class="pillrow">
+                        <a class="btn" href="#" onclick="alert('替换成你的 Docs 链接');return false;">文档</a>
+                        <a class="btn" href="https://github.com/fanxiaolongx-max/Open-AutoGLM-GUI" target="_blank"
+                            rel="noopener noreferrer">GitHub</a>
+                        <a class="btn" href="#" onclick="alert('替换成你的 Telegram Bot 说明');return false;">Telegram Bot</a>
+                        <a class="btn" href="#" onclick="alert('替换成你的微信社群入口');return false;">微信社区</a>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-pad">
+                        <div class="mini-title">CONTACT</div>
+                        <div style="font-weight:900; font-size:16px; margin-top:6px;">把你的 SOP 交给 Agent</div>
+                        <p class="small" style="margin-top:8px;">
+                            想要：私有化部署、企业接入、定制规则引擎、更多设备与模型服务？<br />
+                            把此处替换为邮箱/表单入口即可。
+                        </p>
+                        <a class="btn btn-primary" href="#" onclick="alert('替换成联系邮箱/表单链接');return false;">联系我</a>
+                    </div>
+                </div>
+            </div>
+            <div class="wrap" style="margin-top:16px; opacity:.85;">
+                <div class="small">© <span id="y"></span> Open-AutoGLM-Pro. Built with love for reliable automation.
+                </div>
+            </div>
+        </footer>
+    </main>
+
+    <script>
+        document.getElementById("y").textContent = new Date().getFullYear();
+    </script>
+</body>
+
+</html>

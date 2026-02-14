@@ -87,7 +87,7 @@ def main():
     # ============================================================
     parser = argparse.ArgumentParser(
 
-        description="AutoGLM Web Server",
+        description="AutoGLM-Pro Web Server",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

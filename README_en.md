@@ -16,6 +16,7 @@
 
 - [Introduction](#introduction)
 - [Key Features](#key-features)
+- [Device Preview & Control (Highlight)](#device-preview--control-highlight)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
   - [Web Interface](#web-interface)
@@ -64,6 +65,7 @@ User Command → Screenshot → AI Understands Interface → Generate Action →
 
 ### Core Features
 
+- 🎮 **Device Preview & Control (Highlight)** - Real-time stream preview + mouse/touch/keyboard control + fast device switching
 - 🤖 **AI-Powered** - Based on AutoGLM vision-language model, intelligently understands screen content
 - 📱 **Multi-Device Support** - Manage Android, HarmonyOS, and iOS devices simultaneously
 - 🤖 **Telegram Bot** - Remote control, send tasks anytime, anywhere
@@ -71,8 +73,42 @@ User Command → Screenshot → AI Understands Interface → Generate Action →
 - 📧 **Email Reports** - Automatic execution reports after complex tasks
 - 🔧 **Rule Engine** - Custom app mappings, action rules, and prompts
 - 🌐 **Remote Debugging** - WiFi wireless connection and QR code pairing
-- 📊 **Real-time Preview** - Live phone screen display during task execution
+- 🌍 **One-Click Public Access (Cloudflare Tunnel)** - Generate a temporary public URL without creating an account
+- 📊 **Real-time Preview** - Live phone screen display during task execution (scrcpy-first pipeline)
 - 💾 **Data Persistence** - SQLite database stores sessions and message history
+
+---
+
+## Device Preview & Control (Highlight)
+
+The Web preview is not just static screenshots. It is designed as an interactive control pipeline:
+
+- Live streaming with fallback: `scrcpy` -> `screenrecord` -> `screencap`
+- Low-latency interaction: click/drag/wheel/keyboard are forwarded to the device
+- Fast switching: reconnect target device quickly, backend stream can stay warm
+- Compatibility-first defaults with optional advanced control injection
+
+### Control Paths
+
+- Default (stable): ADB input injection (`tap/swipe/keyevent`)
+- Advanced (manual toggle): scrcpy control injection via sidebar `CI`
+  - Default is OFF
+  - If control injection fails, it automatically falls back to ADB
+
+### Switching and Keep-Alive
+
+- Switching preview device reconnects WebSocket to target device
+- Backend stream can remain alive (no-viewer auto-stop disabled by default)
+- Helps reduce cold-start delay when switching back
+
+### Related Environment Variables
+
+| Variable | Default | Description |
+|---|---:|---|
+| `SCRCPY_AUTO_STOP_DELAY` | `0` | No-viewer auto-stop delay in seconds (`0` = disabled) |
+| `SCRCPY_AUTO_UNLOCK_ON_START` | `1` | Auto-unlock when preview stream starts |
+| `SCRCPY_FIRST_FRAME_TIMEOUT` | `40` | First-frame timeout in seconds |
+| `SCRCPY_CONTROL_DEBUG` | `1` | Control-injection debug logs |
 
 ---
 
@@ -149,10 +185,27 @@ python run_web.py --reload
 |--------|-------------|
 | **Dashboard** | System dashboard showing device status, model config, task stats |
 | **Device Center** | Manage device connections, USB, WiFi, QR pairing |
+| **Public Access** | One-click Cloudflare Tunnel start/stop and URL copy |
 | **Model Service** | Configure and switch between AI model services |
 | **Chat Execution** | Select device, input task description, AI auto-executes |
 | **Scheduled Tasks** | Create scheduled or periodic automation tasks |
 | **Rule Management** | Manage app mappings, action rules, and system prompts |
+
+#### One-Click Public Access (Cloudflare Tunnel)
+
+The sidebar includes a Tunnel capsule switch to expose your local web app via a temporary `trycloudflare.com` URL:
+
+1. Install cloudflared (macOS): `brew install cloudflared`
+2. Start the app: `python run_web.py`
+3. Click the Tunnel capsule in the sidebar (`Private` -> `Public`)
+4. Click the displayed URL bar to copy the public URL
+5. Open this URL from a remote device to access the current Web UI
+
+Security notes:
+
+- The URL includes an access token query parameter (`tunnel_token`)
+- The token is enforced only for the active public tunnel host (local/LAN access is unaffected)
+- Stopping the tunnel immediately revokes public access
 
 #### Access URLs
 

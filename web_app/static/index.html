@@ -1800,6 +1800,13 @@
         }
 
         /* Bottom Controls Container - Premium Design */
+        .sidebar-official-link {
+            position: absolute;
+            bottom: 122px;
+            left: 20px;
+            right: 20px;
+        }
+
         .sidebar-bottom-controls {
             position: absolute;
             bottom: 70px;
@@ -1826,6 +1833,7 @@
             font-size: 13px;
             color: var(--text-secondary);
             box-shadow: 0 2px 8px var(--shadow-sm);
+            text-decoration: none;
         }
 
         .control-button:hover {
@@ -1946,6 +1954,14 @@
                         <span>{{ t('navSettings') }}</span>
                     </li>
                 </ul>
+
+                <div class="sidebar-official-link">
+                    <a class="control-button" href="/static/official-site.html" target="_blank" rel="noopener noreferrer"
+                        :title="currentLanguage === 'zh' ? '打开官网页面' : 'Open official site page'">
+                        <span class="control-icon">🏠</span>
+                        <span class="control-label">{{ currentLanguage === 'zh' ? '官网链接' : 'Official Site' }}</span>
+                    </a>
+                </div>
 
                 <!-- Bottom Controls - Theme & Language -->
                 <div class="sidebar-bottom-controls">
@@ -3678,7 +3694,10 @@
                             :disabled="!previewDeviceId" title="锁定设备">L</button>
                         <button class="phone-nav-btn" @click.stop="toggleScrcpyControlInject"
                             :style="{ background: streamUseScrcpyControl ? 'rgba(34,197,94,0.85)' : 'rgba(39,39,42,0.8)' }"
-                            title="高级：scrcpy 控制注入（默认关闭）">CI</button>
+                            title="高级：scrcpy 控制注入（默认开启）">CI</button>
+                        <button class="phone-nav-btn" @click.stop="toggleAudioPassthrough"
+                            :style="{ background: streamAudioEnabled ? 'rgba(59,130,246,0.88)' : 'rgba(39,39,42,0.8)' }"
+                            title="音频直通（独立通道）">{{ streamAudioEnabled ? '🔊' : '🔈' }}</button>
                     </div>
                     <select v-model.number="streamMaxSize" class="phone-preview-select-mini" @mousedown.stop
                         title="分辨率(长边)">
@@ -3993,6 +4012,7 @@
                     const previewAspect = ref(16 / 9);  // height/width ratio, updated from stream
                     const PREVIEW_TOOLBAR_WIDTH = 92;
                     const PREVIEW_SAFE_MARGIN = 28;
+                    const PREVIEW_FIRST_OPEN_HINT_KEY = 'preview_first_open_hint_shown_v1';
                     let previewInterval = null;
                     let isDragging = false;
                     let isResizing = false;
@@ -4009,13 +4029,19 @@
                     const streamTargetFps = ref(24);
                     const streamBitRate = ref(4000000);
                     const streamAutoAdapt = ref(false);
-                    const streamUseScrcpyControl = ref(false); // Advanced: off by default
+                    const streamUseScrcpyControl = ref(true); // Advanced: on by default
+                    const streamAudioEnabled = ref(false); // Separate passthrough audio channel
+                    const streamAudioConnected = ref(false);
+                    const streamAudioCodec = ref('raw');
+                    const streamAudioSampleRate = ref(48000);
+                    const streamAudioChannels = ref(2);
                     const canvasWidth = ref(300);
                     const canvasHeight = ref(540);
                     const deviceScreenWidth = ref(0);
                     const deviceScreenHeight = ref(0);
                     const previewCanvas = ref(null);
                     let streamWs = null;
+                    let streamAudioWs = null;
                     let streamConnectToken = 0;
                     let fpsCounter = 0;
                     let fpsTimer = null;
@@ -4023,6 +4049,10 @@
                     let autoAdaptCooldownUntil = 0;
                     let wheelDeltaAccum = 0;
                     let wheelTimer = null;
+                    let audioContext = null;
+                    let audioProcessorNode = null;
+                    let audioQueue = [];
+                    let audioQueueOffset = 0;
                     let touchState = { isDown: false, startX: 0, startY: 0, startTime: 0, lastX: 0, lastY: 0, longPressTimer: null, hasMoved: false };
 
                     // Chat state
@@ -7488,6 +7518,19 @@
                         updatePreviewPosition();
                         showPhonePreview.value = true;
                         Vue.nextTick(() => ensurePreviewInViewport());
+                        try {
+                            const shown = localStorage.getItem(PREVIEW_FIRST_OPEN_HINT_KEY);
+                            if (shown !== '1') {
+                                upsertSystemAlert({
+                                    id: 'preview-first-open-recovery-hint',
+                                    level: 'warning',
+                                    title: '预览无响应提示',
+                                    message: '首次使用预览时，若设备长时间无响应或点击无反应，请先点击“锁定”再点击“解锁”触发画面显示。',
+                                    autoDismiss: 12,
+                                });
+                                localStorage.setItem(PREVIEW_FIRST_OPEN_HINT_KEY, '1');
+                            }
+                        } catch (e) { }
                         if (!previewDeviceId.value && devices.value.length) {
                             previewDeviceId.value = devices.value[0].id;
                         }
@@ -7538,6 +7581,7 @@
                             frame_rate: String(streamTargetFps.value),
                             bit_rate: String(streamBitRate.value),
                             control: streamUseScrcpyControl.value ? '1' : '0',
+                            audio: streamAudioEnabled.value ? '1' : '0',
                         });
                         if (includeRestart) {
                             params.set('restart', 'true');
@@ -7601,6 +7645,176 @@
                         }
                     }
 
+                    function closeAudioPipeline() {
+                        audioQueue = [];
+                        audioQueueOffset = 0;
+                        if (audioProcessorNode) {
+                            try { audioProcessorNode.disconnect(); } catch (e) { }
+                            audioProcessorNode = null;
+                        }
+                        if (audioContext) {
+                            try { audioContext.close(); } catch (e) { }
+                            audioContext = null;
+                        }
+                    }
+
+                    function dequeueAudioFrame() {
+                        while (audioQueue.length) {
+                            const chunk = audioQueue[0];
+                            if (!chunk || !chunk.data || chunk.data.length === 0) {
+                                audioQueue.shift();
+                                audioQueueOffset = 0;
+                                continue;
+                            }
+                            if (audioQueueOffset >= chunk.data.length) {
+                                audioQueue.shift();
+                                audioQueueOffset = 0;
+                                continue;
+                            }
+                            if (chunk.channels <= 1) {
+                                const sample = chunk.data[audioQueueOffset++];
+                                return [sample, sample];
+                            }
+                            if (audioQueueOffset + chunk.channels > chunk.data.length) {
+                                audioQueue.shift();
+                                audioQueueOffset = 0;
+                                continue;
+                            }
+                            const left = chunk.data[audioQueueOffset];
+                            const right = chunk.channels > 1 ? chunk.data[audioQueueOffset + 1] : left;
+                            audioQueueOffset += chunk.channels;
+                            return [left, right];
+                        }
+                        return [0, 0];
+                    }
+
+                    async function ensureAudioPipeline(sampleRate = 48000) {
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        if (!AudioCtx) {
+                            showToast('当前浏览器不支持 AudioContext', 'warning');
+                            return false;
+                        }
+                        if (!audioContext || audioContext.sampleRate !== sampleRate) {
+                            closeAudioPipeline();
+                            audioContext = new AudioCtx({ sampleRate });
+                            audioProcessorNode = audioContext.createScriptProcessor(2048, 0, 2);
+                            audioProcessorNode.onaudioprocess = (event) => {
+                                const outL = event.outputBuffer.getChannelData(0);
+                                const outR = event.outputBuffer.getChannelData(1);
+                                for (let i = 0; i < outL.length; i++) {
+                                    const frame = dequeueAudioFrame();
+                                    outL[i] = frame[0];
+                                    outR[i] = frame[1];
+                                }
+                            };
+                            audioProcessorNode.connect(audioContext.destination);
+                        }
+                        try {
+                            if (audioContext.state !== 'running') {
+                                await audioContext.resume();
+                            }
+                        } catch (e) { }
+                        return true;
+                    }
+
+                    function enqueueAudioPcm(arrayBuffer) {
+                        if (!arrayBuffer || arrayBuffer.byteLength < 2) return;
+                        const view = new DataView(arrayBuffer);
+                        const sampleCount = Math.floor(view.byteLength / 2);
+                        const pcm = new Float32Array(sampleCount);
+                        for (let i = 0; i < sampleCount; i++) {
+                            const s = view.getInt16(i * 2, true);
+                            pcm[i] = Math.max(-1, Math.min(1, s / 32768));
+                        }
+                        audioQueue.push({
+                            data: pcm,
+                            channels: Math.max(1, streamAudioChannels.value || 2),
+                        });
+                        // Cap queue to avoid growing forever under network jitter.
+                        if (audioQueue.length > 240) {
+                            audioQueue.splice(0, audioQueue.length - 240);
+                            audioQueueOffset = 0;
+                        }
+                    }
+
+                    async function connectAudioStream(deviceId, forceRestart = false) {
+                        disconnectAudioStream();
+                        if (!streamAudioEnabled.value || !deviceId) return;
+                        const ok = await ensureAudioPipeline(streamAudioSampleRate.value || 48000);
+                        if (!ok) return;
+                        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                        const wsParams = getStreamQueryParams(forceRestart);
+                        wsParams.set('audio', '1');
+                        let wsUrl = `${wsProtocol}//${location.host}/api/scrcpy/audio/ws/${encodeURIComponent(deviceId)}?${wsParams.toString()}`;
+                        const config = window._appConfig;
+                        if (config && config.auth_enabled && config.token) {
+                            wsUrl += `&token=${encodeURIComponent(config.token)}`;
+                        }
+                        const ws = new WebSocket(wsUrl);
+                        ws.binaryType = 'arraybuffer';
+                        streamAudioWs = ws;
+                        ws.onopen = () => {
+                            streamAudioConnected.value = true;
+                        };
+                        ws.onmessage = async (event) => {
+                            if (event.data instanceof ArrayBuffer) {
+                                enqueueAudioPcm(event.data);
+                                return;
+                            }
+                            try {
+                                const msg = JSON.parse(event.data);
+                                if (msg.type === 'audio_info') {
+                                    streamAudioCodec.value = msg.codec || 'raw';
+                                    streamAudioSampleRate.value = msg.sample_rate || 48000;
+                                    streamAudioChannels.value = msg.channels || 2;
+                                    await ensureAudioPipeline(streamAudioSampleRate.value);
+                                } else if (msg.type === 'ping') {
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: 'pong' }));
+                                    }
+                                }
+                            } catch (e) { }
+                        };
+                        ws.onclose = () => {
+                            streamAudioConnected.value = false;
+                            if (streamAudioWs === ws) {
+                                streamAudioWs = null;
+                            }
+                            audioQueue = [];
+                            audioQueueOffset = 0;
+                        };
+                        ws.onerror = () => { };
+                    }
+
+                    function disconnectAudioStream() {
+                        if (streamAudioWs) {
+                            try { streamAudioWs.close(); } catch (e) { }
+                            streamAudioWs = null;
+                        }
+                        streamAudioConnected.value = false;
+                        audioQueue = [];
+                        audioQueueOffset = 0;
+                        closeAudioPipeline();
+                    }
+
+                    async function toggleAudioPassthrough() {
+                        streamAudioEnabled.value = !streamAudioEnabled.value;
+                        showToast(
+                            streamAudioEnabled.value
+                                ? '已开启音频直通（独立通道）'
+                                : '已关闭音频直通'
+                        );
+                        if (!previewDeviceId.value) {
+                            if (!streamAudioEnabled.value) {
+                                disconnectAudioStream();
+                            }
+                            return;
+                        }
+                        streamReady.value = false;
+                        streamLoadingText.value = 'Switching audio...';
+                        await connectStream(previewDeviceId.value, true);
+                    }
+
                     async function connectStream(deviceId, forceRestart = false) {
                         disconnectStream();
                         stopPreviewAutoRefresh();
@@ -7623,6 +7837,11 @@
                         const ws = new WebSocket(wsUrl);
                         ws.binaryType = 'arraybuffer';
                         streamWs = ws;
+                        if (streamAudioEnabled.value) {
+                            connectAudioStream(deviceId, forceRestart);
+                        } else {
+                            disconnectAudioStream();
+                        }
 
                         // FPS counter
                         fpsCounter = 0;
@@ -7666,6 +7885,7 @@
                             streamReady.value = false;
                             streamLoadingText.value = 'Connecting...';
                             streamWs = null;
+                            disconnectAudioStream();
                             autoAdaptLowFpsStreak = 0;
                             if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
                             streamFps.value = 0;
@@ -7686,6 +7906,7 @@
                             try { streamWs.close(); } catch (e) { }
                             streamWs = null;
                         }
+                        disconnectAudioStream();
                         streamConnected.value = false;
                         streamConnecting.value = false;
                         streamReady.value = false;
@@ -7765,6 +7986,7 @@
                         if (msg.type === 'stream_info') {
                             deviceScreenWidth.value = msg.width || 0;
                             deviceScreenHeight.value = msg.height || 0;
+                            streamAudioCodec.value = msg.audio_codec || streamAudioCodec.value;
                             if (msg.width && msg.height) {
                                 const ratio = msg.height / msg.width;
                                 previewAspect.value = ratio;
@@ -8171,6 +8393,7 @@
                     onUnmounted(() => {
                         if (ws) ws.close();
                         if (reconnectTimer) clearTimeout(reconnectTimer);
+                        disconnectAudioStream();
                         window.removeEventListener('resize', handleWindowResize);
                         document.removeEventListener('keydown', handlePreviewKeyboard, true);
                     });
@@ -8366,6 +8589,8 @@
                         streamBitRate,
                         streamAutoAdapt,
                         streamUseScrcpyControl,
+                        streamAudioEnabled,
+                        streamAudioConnected,
                         canvasWidth,
                         canvasHeight,
                         previewCanvas,
@@ -8373,6 +8598,7 @@
                         disconnectStream,
                         applyStreamSettings,
                         toggleScrcpyControlInject,
+                        toggleAudioPassthrough,
                         reconnectPreviewStream,
                         onCanvasMouseDown,
                         onCanvasMouseMove,

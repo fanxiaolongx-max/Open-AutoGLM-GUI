@@ -93,10 +93,15 @@ class ScrcpySession:
     stream_mode: str = ""  # "scrcpy", "screenrecord", "screencap"
     last_frame: Optional[bytes] = None  # Latest JPEG frame
     connected_websockets: Set = field(default_factory=set)
+    connected_audio_websockets: Set = field(default_factory=set)
     screen_width: int = 0
     screen_height: int = 0
     video_width: int = 0
     video_height: int = 0
+    audio_enabled: bool = False
+    audio_codec: str = ""
+    audio_sample_rate: int = 48_000
+    audio_channels: int = 2
     frame_rate: int = 15
     client: Optional[object] = None  # unused, kept for compatibility
     _fallback_task: Optional[asyncio.Task] = None
@@ -107,6 +112,7 @@ class ScrcpySession:
     _ffmpeg_proc: Optional[subprocess.Popen] = None
     _server_proc: Optional[subprocess.Popen] = None
     _video_socket: Optional[object] = None
+    _audio_socket: Optional[object] = None
     _control_socket: Optional[object] = None
     control_enabled: bool = False
     _control_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -334,14 +340,19 @@ class ScrcpyService:
 
     async def start_stream(self, device_id: str, max_size: int = 960,
                            bit_rate: int = 4_000_000, frame_rate: int = 24,
-                           restart: bool = False, control_enabled: bool = False) -> dict:
+                           restart: bool = False, control_enabled: bool = False,
+                           audio_enabled: bool = False) -> dict:
         """
         Start streaming for a device.
         Tries scrcpy → screenrecord+ffmpeg → screencap in priority order.
         """
         session = self.get_or_create_session(device_id)
 
-        if session.is_streaming and session.is_scrcpy and session.control_enabled != control_enabled:
+        if (
+            session.is_streaming
+            and session.is_scrcpy
+            and (session.control_enabled != control_enabled or session.audio_enabled != audio_enabled)
+        ):
             restart = True
 
         if session.is_streaming and restart:
@@ -360,6 +371,8 @@ class ScrcpyService:
                 "height": session.screen_height,
                 "fps": session.frame_rate,
                 "control": session.control_enabled,
+                "audio": session.audio_enabled,
+                "audio_codec": session.audio_codec,
             }
 
         # Cancel any pending auto-stop
@@ -395,12 +408,13 @@ class ScrcpyService:
                 if tag != "requested":
                     logger.warning(
                         f"scrcpy retry for {device_id}: profile={tag}, max_size={size_i}, "
-                        f"frame_rate={fps_i}, bit_rate={br_i}, frame_meta={frame_meta_i}"
+                        f"frame_rate={fps_i}, bit_rate={br_i}, frame_meta={frame_meta_i}, audio={audio_enabled}"
                     )
                 try:
                     result = await self._start_scrcpy_stream(
                         session, device_id, size_i, br_i, fps_i,
-                        frame_meta=frame_meta_i, control_enabled=control_enabled
+                        frame_meta=frame_meta_i, control_enabled=control_enabled,
+                        audio_enabled=audio_enabled,
                     )
                     self._schedule_start_nudge(device_id, session)
                     return result
@@ -409,7 +423,7 @@ class ScrcpyService:
                     logger.warning(
                         f"scrcpy attempt {idx}/{len(scrcpy_profiles)} failed for {device_id} "
                         f"(profile={tag}, max_size={size_i}, frame_rate={fps_i}, "
-                        f"bit_rate={br_i}, frame_meta={frame_meta_i}): {e}"
+                        f"bit_rate={br_i}, frame_meta={frame_meta_i}, audio={audio_enabled}): {e}"
                     )
                     # Ensure any partial resources from this attempt are cleaned up before retry/fallback.
                     try:
@@ -423,6 +437,9 @@ class ScrcpyService:
                     session.stream_mode = ""
                     session.control_enabled = False
                     session._control_socket = None
+                    session.audio_enabled = False
+                    session.audio_codec = ""
+                    session._audio_socket = None
                     session.last_frame = None
                     if idx < len(scrcpy_profiles):
                         await asyncio.sleep(0.4)
@@ -554,7 +571,8 @@ class ScrcpyService:
     async def _start_scrcpy_stream(self, session: ScrcpySession, device_id: str,
                                     max_size: int, bit_rate: int, frame_rate: int,
                                     frame_meta: Optional[bool] = None,
-                                    control_enabled: bool = False) -> dict:
+                                    control_enabled: bool = False,
+                                    audio_enabled: bool = False) -> dict:
         """
         Deploy scrcpy-server v3 JAR, connect raw H.264 socket, decode via ffmpeg.
 
@@ -608,19 +626,25 @@ class ScrcpyService:
             )
 
             # Start server process
+            server_cmd = [
+                "adb", "-s", device_id, "shell",
+                "CLASSPATH=/data/local/tmp/scrcpy-server.jar",
+                "app_process", "/", "com.genymobile.scrcpy.Server", "3.3.4",
+                f"scid={scid}",
+                "video=true", f"audio={'true' if audio_enabled else 'false'}",
+                f"control={'true' if control_enabled else 'false'}",
+                "video_codec=h264",
+                f"max_size={max_size}",
+                f"max_fps={frame_rate}",
+                f"video_bit_rate={bit_rate}",
+                "tunnel_forward=true",
+                f"send_frame_meta={'true' if use_frame_meta else 'false'}",
+                "log_level=info",
+            ]
+            if audio_enabled:
+                server_cmd.append("audio_codec=raw")
             server_proc = subprocess.Popen(
-                ["adb", "-s", device_id, "shell",
-                 "CLASSPATH=/data/local/tmp/scrcpy-server.jar",
-                 "app_process", "/", "com.genymobile.scrcpy.Server", "3.3.4",
-                 f"scid={scid}",
-                 "video=true", "audio=false", f"control={'true' if control_enabled else 'false'}",
-                 "video_codec=h264",
-                 f"max_size={max_size}",
-                 f"max_fps={frame_rate}",
-                 f"video_bit_rate={bit_rate}",
-                 "tunnel_forward=true",
-                 f"send_frame_meta={'true' if use_frame_meta else 'false'}",
-                 "log_level=info"],
+                server_cmd,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0
             )
             # Drain server stdout in background to prevent blocking
@@ -639,6 +663,24 @@ class ScrcpyService:
             else:
                 server_proc.terminate()
                 raise ConnectionError(f"Failed to connect to scrcpy-server on port {local_port}")
+
+            audio_sock = None
+            if audio_enabled:
+                audio_sock = socket_mod.socket(socket_mod.AF_INET, socket_mod.SOCK_STREAM)
+                audio_sock.settimeout(10)
+                for attempt in range(30):
+                    try:
+                        audio_sock.connect(("127.0.0.1", local_port))
+                        break
+                    except (ConnectionRefusedError, OSError):
+                        time.sleep(0.2)
+                else:
+                    try:
+                        audio_sock.close()
+                    except Exception:
+                        pass
+                    server_proc.terminate()
+                    raise ConnectionError(f"Failed to connect scrcpy audio socket on port {local_port}")
 
             control_sock = None
             if control_enabled:
@@ -672,6 +714,7 @@ class ScrcpyService:
 
             video_w = 0
             video_h = 0
+            audio_codec = "raw"
 
             # Read 69-byte header: [1B dummy] [64B device name] [4B codec]
             header = b''
@@ -709,14 +752,38 @@ class ScrcpyService:
                 except Exception:
                     pass
 
-            return server_proc, sock, control_sock, video_w, video_h
+            if audio_sock:
+                try:
+                    audio_sock.settimeout(0.5)
+                    codec_meta = b""
+                    while len(codec_meta) < 4:
+                        chunk = audio_sock.recv(4 - len(codec_meta))
+                        if not chunk:
+                            break
+                        codec_meta += chunk
+                    if len(codec_meta) == 4:
+                        audio_codec = codec_meta.decode("ascii", errors="replace").rstrip("\x00")
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        audio_sock.settimeout(10)
+                    except Exception:
+                        pass
 
-        server_proc, video_socket, control_socket, video_w, video_h = await loop.run_in_executor(None, _deploy_and_connect)
+            return server_proc, sock, audio_sock, control_sock, video_w, video_h, audio_codec
+
+        server_proc, video_socket, audio_socket, control_socket, video_w, video_h, audio_codec = await loop.run_in_executor(None, _deploy_and_connect)
 
         session._server_proc = server_proc
         session._video_socket = video_socket
+        session._audio_socket = audio_socket
         session._control_socket = control_socket
         session.control_enabled = bool(control_enabled and control_socket)
+        session.audio_enabled = bool(audio_enabled and audio_socket)
+        session.audio_codec = audio_codec or "raw"
+        session.audio_sample_rate = 48_000
+        session.audio_channels = 2
         session.video_width = int(video_w or 0)
         session.video_height = int(video_h or 0)
         session.stream_mode = "scrcpy"
@@ -733,6 +800,66 @@ class ScrcpyService:
                 out_height[0] += 1
 
         _valid_frame_event = threading.Event()
+
+        def audio_thread():
+            """Audio socket (PCM packets) -> WebSocket broadcast."""
+            if not session._audio_socket:
+                return
+            logger.info(
+                f"[SCRCPY-AUDIO] pipe start: device={device_id}, codec={session.audio_codec}, "
+                f"meta={use_frame_meta}"
+            )
+
+            def read_exact(sock, n: int) -> Optional[bytes]:
+                buf = bytearray()
+                while len(buf) < n and not stop_event.is_set():
+                    try:
+                        chunk = sock.recv(n - len(buf))
+                        if not chunk:
+                            return None
+                        buf.extend(chunk)
+                    except Exception:
+                        return None
+                return bytes(buf) if len(buf) == n else None
+
+            try:
+                while not stop_event.is_set():
+                    if use_frame_meta:
+                        hdr = read_exact(session._audio_socket, 12)
+                        if not hdr:
+                            break
+                        pts_flags = int.from_bytes(hdr[0:8], "big", signed=False)
+                        payload_len = int.from_bytes(hdr[8:12], "big", signed=False)
+                        if payload_len <= 0 or payload_len > 512_000:
+                            logger.warning(
+                                f"[SCRCPY-AUDIO] invalid packet length for {device_id}: {payload_len}"
+                            )
+                            break
+                        payload = read_exact(session._audio_socket, payload_len)
+                        if not payload:
+                            break
+                        # config packet marker (highest bit) has no PCM payload to play
+                        if pts_flags & (1 << 63):
+                            continue
+                        if _main_loop and not _main_loop.is_closed():
+                            asyncio.run_coroutine_threadsafe(
+                                self._broadcast_audio(session, payload), _main_loop
+                            )
+                    else:
+                        data = session._audio_socket.recv(8192)
+                        if not data:
+                            break
+                        if _main_loop and not _main_loop.is_closed():
+                            asyncio.run_coroutine_threadsafe(
+                                self._broadcast_audio(session, data), _main_loop
+                            )
+            except Exception as e:
+                logger.warning(f"[SCRCPY-AUDIO] thread stopped for {device_id}: {e}")
+            finally:
+                logger.info(f"[SCRCPY-AUDIO] pipe stopped for {device_id}")
+
+        if session.audio_enabled and session._audio_socket:
+            threading.Thread(target=audio_thread, daemon=True, name=f"scrcpy-audio-{device_id}").start()
 
         def stream_thread():
             """Socket → ffmpeg (rawvideo) → PIL JPEG → WebSocket broadcast."""
@@ -1286,6 +1413,8 @@ class ScrcpyService:
             "height": h,
             "fps": frame_rate,
             "control": session.control_enabled,
+            "audio": session.audio_enabled,
+            "audio_codec": session.audio_codec,
         }
 
     def _cleanup_scrcpy(self, session: ScrcpySession, device_id: str):
@@ -1307,6 +1436,17 @@ class ScrcpyService:
             except Exception:
                 pass
             session._video_socket = None
+
+        if session._audio_socket:
+            try:
+                session._audio_socket.close()
+            except Exception:
+                pass
+            session._audio_socket = None
+        session.audio_enabled = False
+        session.audio_codec = ""
+        session.audio_sample_rate = 48_000
+        session.audio_channels = 2
 
         if session._control_socket:
             try:
@@ -1437,6 +1577,9 @@ class ScrcpyService:
         session.is_scrcpy = False
         session.control_enabled = False
         session._control_socket = None
+        session.audio_enabled = False
+        session.audio_codec = ""
+        session._audio_socket = None
         session.stream_mode = "screenrecord"
         session.frame_rate = frame_rate
         session.is_streaming = True
@@ -1590,6 +1733,9 @@ class ScrcpyService:
         session.video_height = 0
         session.control_enabled = False
         session._control_socket = None
+        session.audio_enabled = False
+        session.audio_codec = ""
+        session._audio_socket = None
         session.stream_mode = "screencap"
         session.frame_rate = min(frame_rate, 10)
         session.is_streaming = True
@@ -1691,6 +1837,9 @@ class ScrcpyService:
         session.stream_mode = ""
         session.control_enabled = False
         session._control_socket = None
+        session.audio_enabled = False
+        session.audio_codec = ""
+        session._audio_socket = None
         session.video_width = 0
         session.video_height = 0
         logger.info(f"Stream stopped for {device_id}")
@@ -1704,8 +1853,12 @@ class ScrcpyService:
         return {
             "streaming": session.is_streaming, "mode": session.stream_mode,
             "width": session.screen_width, "height": session.screen_height,
-            "fps": session.frame_rate, "viewers": len(session.connected_websockets),
+            "fps": session.frame_rate,
+            "viewers": len(session.connected_websockets),
+            "audio_viewers": len(session.connected_audio_websockets),
             "control": session.control_enabled,
+            "audio": session.audio_enabled,
+            "audio_codec": session.audio_codec,
             "video_width": session.video_width,
             "video_height": session.video_height,
         }
@@ -2027,10 +2180,49 @@ class ScrcpyService:
         for ws in dead:
             session.connected_websockets.discard(ws)
 
+    async def _broadcast_audio(self, session: ScrcpySession, audio_bytes: bytes):
+        """Broadcast PCM audio packets to audio WebSockets."""
+        if not session.connected_audio_websockets:
+            return
+        dead = set()
+        for ws in list(session.connected_audio_websockets):
+            try:
+                await ws.send_bytes(audio_bytes)
+            except Exception:
+                dead.add(ws)
+        for ws in dead:
+            session.connected_audio_websockets.discard(ws)
+
+    @staticmethod
+    def _has_any_viewers(session: ScrcpySession) -> bool:
+        return bool(session.connected_websockets or session.connected_audio_websockets)
+
+    def _schedule_auto_stop_if_needed(self, device_id: str, session: ScrcpySession):
+        if self._has_any_viewers(session) or not session.is_streaming:
+            return
+        if _scrcpy_auto_stop_delay <= 0:
+            logger.info(
+                f"No-viewer auto-stop disabled for {device_id}; stream kept alive"
+            )
+            return
+        if _main_loop and not _main_loop.is_closed():
+            session._auto_stop_task = asyncio.ensure_future(
+                self._auto_stop_after_delay(device_id, _scrcpy_auto_stop_delay)
+            )
+
     def add_viewer(self, device_id: str, websocket) -> ScrcpySession:
         """Add a WebSocket viewer to a session."""
         session = self.get_or_create_session(device_id)
         session.connected_websockets.add(websocket)
+        if session._auto_stop_task and not session._auto_stop_task.done():
+            session._auto_stop_task.cancel()
+            session._auto_stop_task = None
+        return session
+
+    def add_audio_viewer(self, device_id: str, websocket) -> ScrcpySession:
+        """Add an audio WebSocket viewer to a session."""
+        session = self.get_or_create_session(device_id)
+        session.connected_audio_websockets.add(websocket)
         if session._auto_stop_task and not session._auto_stop_task.done():
             session._auto_stop_task.cancel()
             session._auto_stop_task = None
@@ -2042,22 +2234,21 @@ class ScrcpyService:
         if not session:
             return
         session.connected_websockets.discard(websocket)
-        if not session.connected_websockets and session.is_streaming:
-            if _scrcpy_auto_stop_delay <= 0:
-                logger.info(
-                    f"No-viewer auto-stop disabled for {device_id}; stream kept alive"
-                )
-                return
-            if _main_loop and not _main_loop.is_closed():
-                session._auto_stop_task = asyncio.ensure_future(
-                    self._auto_stop_after_delay(device_id, _scrcpy_auto_stop_delay)
-                )
+        self._schedule_auto_stop_if_needed(device_id, session)
+
+    def remove_audio_viewer(self, device_id: str, websocket):
+        """Remove an audio WebSocket viewer and schedule optional auto-stop."""
+        session = self._sessions.get(device_id)
+        if not session:
+            return
+        session.connected_audio_websockets.discard(websocket)
+        self._schedule_auto_stop_if_needed(device_id, session)
 
     async def _auto_stop_after_delay(self, device_id: str, delay: int):
         try:
             await asyncio.sleep(delay)
             session = self._sessions.get(device_id)
-            if session and not session.connected_websockets and session.is_streaming:
+            if session and not self._has_any_viewers(session) and session.is_streaming:
                 logger.info(f"Auto-stopping stream for {device_id} (no viewers for {delay}s)")
                 await self.stop_stream(device_id)
         except asyncio.CancelledError:
