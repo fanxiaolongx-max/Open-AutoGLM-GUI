@@ -1229,7 +1229,7 @@
 
         .phone-preview-controls {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             align-items: center;
             flex-direction: column;
             flex-wrap: nowrap;
@@ -1260,16 +1260,65 @@
             flex: 0 0 auto;
         }
 
+        .phone-preview-stats {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 6px;
+            padding: 3px 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 8px;
+            color: #e2e8f0;
+            line-height: 1.15;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        .phone-preview-window.is-landscape .phone-preview-stats {
+            width: auto;
+            min-width: 186px;
+            max-width: 220px;
+        }
+
+        .phone-preview-stats-line {
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        .phone-preview-stats-status {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .phone-preview-stats-chip {
+            padding: 1px 4px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            color: #94a3b8;
+        }
+
+        .phone-preview-stats-chip.on {
+            color: #22c55e;
+            border-color: rgba(34, 197, 94, 0.52);
+            background: rgba(22, 101, 52, 0.22);
+        }
+
         .phone-preview-select {
             background: rgba(39, 39, 42, 0.8);
             color: white;
             border: none;
             border-radius: 4px;
-            padding: 4px 5px;
-            font-size: 11px;
-            max-width: 72px;
-            min-width: 72px;
-            height: 30px;
+            padding: 3px 4px;
+            font-size: 10px;
+            max-width: 64px;
+            min-width: 64px;
+            height: 26px;
             cursor: pointer;
         }
 
@@ -1278,10 +1327,10 @@
             color: white;
             border: none;
             border-radius: 4px;
-            padding: 4px 5px;
-            font-size: 11px;
-            width: 72px;
-            height: 30px;
+            padding: 3px 4px;
+            font-size: 10px;
+            width: 64px;
+            height: 26px;
             cursor: pointer;
         }
 
@@ -1289,28 +1338,23 @@
             background: rgba(39, 39, 42, 0.8);
             border: none;
             color: white;
-            width: 28px;
-            height: 28px;
+            width: 24px;
+            height: 24px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 11px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
         .phone-preview-btn-text {
-            width: 72px;
-            height: 32px;
+            width: 64px;
+            height: 26px;
             padding: 0 4px;
-            font-size: 10px;
+            font-size: 9px;
             line-height: 1.1;
             white-space: nowrap;
-        }
-
-        .phone-preview-btn-reconnect {
-            width: 44px;
-            font-size: 11px;
         }
 
         .phone-preview-btn:hover {
@@ -1381,26 +1425,31 @@
         }
 
         .phone-nav-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 4px;
             margin-right: 0;
+            width: 52px;
+            justify-items: center;
         }
 
         .phone-preview-window.is-landscape .phone-nav-buttons {
+            display: flex;
             flex-direction: row;
-            gap: 6px;
+            gap: 4px;
+            width: auto;
+            justify-items: unset;
         }
 
         .phone-nav-btn {
             background: rgba(39, 39, 42, 0.8);
             border: none;
             color: white;
-            width: 28px;
-            height: 28px;
+            width: 24px;
+            height: 24px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -2005,7 +2054,8 @@
                 </ul>
 
                 <div class="sidebar-official-link">
-                    <a class="control-button" href="/static/official-site.html" target="_blank" rel="noopener noreferrer"
+                    <a class="control-button" href="/static/official-site.html" target="_blank"
+                        rel="noopener noreferrer"
                         :title="currentLanguage === 'zh' ? '打开官网页面' : 'Open official site page'">
                         <span class="control-icon">🏠</span>
                         <span class="control-label">{{ currentLanguage === 'zh' ? '官网链接' : 'Official Site' }}</span>
@@ -3725,9 +3775,8 @@
         </div>
 
         <!-- Floating Phone Preview Window -->
-        <div v-if="showPhonePreview" class="phone-preview-window"
-            :class="{ 'is-landscape': previewIsLandscape }" :style="phonePreviewStyle"
-            @mousedown="startDragPreview">
+        <div v-if="showPhonePreview" class="phone-preview-window" :class="{ 'is-landscape': previewIsLandscape }"
+            :style="phonePreviewStyle" @mousedown="startDragPreview">
             <div class="phone-preview-header">
                 <span class="phone-preview-title">
                     <span class="stream-status-dot"
@@ -3738,6 +3787,8 @@
                     <div class="phone-nav-buttons">
                         <button class="phone-nav-btn" @click.stop="sendKey(3)" title="Home">&#9679;</button>
                         <button class="phone-nav-btn" @click.stop="sendKey(4)" title="Back">&#9664;</button>
+                        <button class="phone-nav-btn" @click.stop="sendKey(24)" title="音量加">+</button>
+                        <button class="phone-nav-btn" @click.stop="sendKey(25)" title="音量减">-</button>
                         <button class="phone-nav-btn" @click.stop="unlockDevice(previewDeviceId)"
                             :disabled="!previewDeviceId" title="解锁设备">U</button>
                         <button class="phone-nav-btn" @click.stop="lockDevice(previewDeviceId)"
@@ -3749,12 +3800,31 @@
                             :style="{ background: streamAudioEnabled ? 'rgba(59,130,246,0.88)' : 'rgba(39,39,42,0.8)' }"
                             title="音频直通（独立通道）">{{ streamAudioEnabled ? '🔊' : '🔈' }}</button>
                     </div>
+                    <div class="phone-preview-stats" @mousedown.stop data-no-preview-drag="1"
+                        title="高级状态：视频/控制/音频、带宽、延迟、抖动">
+                        <div class="phone-preview-stats-line phone-preview-stats-status">
+                            <span class="phone-preview-stats-chip"
+                                :class="{ on: streamConnected && streamReady }">V</span>
+                            <span class="phone-preview-stats-chip" :class="{ on: streamControlActive }">C</span>
+                            <span class="phone-preview-stats-chip"
+                                :class="{ on: streamAudioEnabled && streamAudioConnected }">A</span>
+                        </div>
+                        <div class="phone-preview-stats-line">BW {{ streamTotalBitrateLabel }}</div>
+                        <div class="phone-preview-stats-line">VBW {{ streamVideoBitrateLabel }}</div>
+                        <div class="phone-preview-stats-line">ABW {{ streamAudioBitrateLabel }}</div>
+                        <div class="phone-preview-stats-line">RTT {{ streamLatencyMs }}ms</div>
+                        <div class="phone-preview-stats-line">J {{ streamLatencyJitterMs }}ms</div>
+                        <div class="phone-preview-stats-line">FJ {{ streamFrameJitterMs }}ms</div>
+                        <div class="phone-preview-stats-line">AJ {{ streamAudioJitterMs }}ms</div>
+                    </div>
                     <select v-model.number="streamMaxSize" class="phone-preview-select-mini" @mousedown.stop
                         title="分辨率(长边)">
                         <option :value="540">540p</option>
                         <option :value="720">720p</option>
                         <option :value="960">960p</option>
                         <option :value="1080">1080p</option>
+                        <option :value="1440">1440p</option>
+                        <option :value="2160">2160p</option>
                     </select>
                     <select v-model.number="streamTargetFps" class="phone-preview-select-mini" @mousedown.stop
                         title="目标帧率">
@@ -3762,6 +3832,7 @@
                         <option :value="24">24fps</option>
                         <option :value="30">30fps</option>
                         <option :value="45">45fps</option>
+                        <option :value="60">60fps</option>
                     </select>
                     <select v-model.number="streamBitRate" class="phone-preview-select-mini" @mousedown.stop title="码率">
                         <option :value="2000000">2M</option>
@@ -3769,8 +3840,8 @@
                         <option :value="6000000">6M</option>
                         <option :value="8000000">8M</option>
                     </select>
-                    <button class="phone-preview-btn" @click.stop="applyStreamSettings"
-                        title="应用清晰度参数并重连">&#10003;</button>
+                    <button class="phone-preview-btn phone-preview-btn-text" @click.stop="applyStreamSettings"
+                        title="应用当前参数并重连">应用重连</button>
                     <button class="phone-preview-btn phone-preview-btn-text"
                         :style="{ background: streamAutoAdapt ? 'rgba(34,197,94,0.85)' : 'rgba(39,39,42,0.8)' }"
                         @click.stop="streamAutoAdapt = !streamAutoAdapt" title="自动带宽适配：低帧率时自动降档并重连">
@@ -3783,8 +3854,6 @@
                             {{ d.name || d.id.substring(0, 12) }}
                         </option>
                     </select>
-                    <button class="phone-preview-btn phone-preview-btn-reconnect" @click.stop="reconnectPreviewStream"
-                        title="重连（重新解锁并重启视频流）">重连</button>
                     <button class="phone-preview-btn" @click.stop="showPhonePreview = false"
                         title="Close">&#10005;</button>
                 </div>
@@ -3795,11 +3864,11 @@
                 </div>
                 <!-- Streaming canvas -->
                 <canvas v-show="previewDeviceId && streamConnected && streamReady && !streamOrientationSwitching"
-                    ref="previewCanvas" tabindex="0"
-                    :width="canvasWidth" :height="canvasHeight" @mousedown="onCanvasMouseDown"
-                    @mousemove="onCanvasMouseMove" @mouseup="onCanvasMouseUp" @mouseleave="onCanvasMouseUp"
-                    @wheel.prevent="onCanvasWheel" @touchstart.prevent="onCanvasTouchStart"
-                    @touchmove.prevent="onCanvasTouchMove" @touchend.prevent="onCanvasTouchEnd">
+                    ref="previewCanvas" tabindex="0" :width="canvasWidth" :height="canvasHeight"
+                    @mousedown="onCanvasMouseDown" @mousemove="onCanvasMouseMove" @mouseup="onCanvasMouseUp"
+                    @mouseleave="onCanvasMouseUp" @wheel.prevent="onCanvasWheel"
+                    @touchstart.prevent="onCanvasTouchStart" @touchmove.prevent="onCanvasTouchMove"
+                    @touchend.prevent="onCanvasTouchEnd">
                 </canvas>
                 <!-- Fallback static image -->
                 <img v-if="previewDeviceId && !streamConnected && previewImage"
@@ -4089,6 +4158,13 @@
                     const streamAudioCodec = ref('raw');
                     const streamAudioSampleRate = ref(48000);
                     const streamAudioChannels = ref(2);
+                    const streamControlActive = ref(false);
+                    const streamVideoBitrateKbps = ref(0);
+                    const streamAudioBitrateKbps = ref(0);
+                    const streamLatencyMs = ref(0);
+                    const streamLatencyJitterMs = ref(0);
+                    const streamFrameJitterMs = ref(0);
+                    const streamAudioJitterMs = ref(0);
                     const canvasWidth = ref(300);
                     const canvasHeight = ref(540);
                     const deviceScreenWidth = ref(0);
@@ -4113,6 +4189,17 @@
                     let audioQueueOffset = 0;
                     const AUDIO_QUEUE_TARGET_MS = 100;
                     const AUDIO_QUEUE_MAX_MS = 120;
+                    let telemetryVideoBytes = 0;
+                    let telemetryAudioBytes = 0;
+                    let telemetryTimer = null;
+                    let telemetryProbeTimer = null;
+                    let telemetryProbeSeq = 0;
+                    const telemetryPendingProbeTs = new Map();
+                    let telemetryLastVideoTs = 0;
+                    let telemetryLastAudioTs = 0;
+                    let telemetryVideoIntervalAvg = 0;
+                    let telemetryAudioIntervalAvg = 0;
+                    let telemetryRttAvg = 0;
                     let touchState = {
                         isDown: false, startX: 0, startY: 0, startTime: 0,
                         lastX: 0, lastY: 0, lastW: 0, lastH: 0,
@@ -4473,8 +4560,11 @@
 
                     function getPreviewWidthRange(left, top) {
                         const minBase = 220;
-                        const maxBase = 600;
                         const safeAspect = Math.max(0.2, previewAspect.value || (16 / 9));
+                        const isLandscapePreview = safeAspect < 1;
+                        const maxBase = isLandscapePreview
+                            ? Math.max(920, Math.floor(window.innerWidth * 0.9))
+                            : 760;
                         const toolbarReserveX = getPreviewToolbarWidthReserve();
                         const toolbarReserveY = getPreviewToolbarHeightReserve();
                         const maxByWidth = Math.floor(window.innerWidth - PREVIEW_SAFE_MARGIN - toolbarReserveX - left);
@@ -7531,13 +7621,15 @@
 
                         const currentW = Math.max(120, Number(previewWidth.value) || 270);
                         const currentH = currentW * currentAspect;
-                        const area = Math.max(1, currentW * currentH);
-                        let nextW = Math.sqrt(area / targetAspect);
-                        const growCap = currentW * (nextLandscape ? 1.18 : 1.1);
-                        const shrinkFloor = currentW * 0.7;
-                        nextW = Math.min(nextW, growCap);
-                        nextW = Math.max(nextW, shrinkFloor);
+                        let nextW = nextLandscape
+                            ? (currentH / targetAspect)   // Landscape: keep visual height, avoid tiny window
+                            : currentW;                  // Portrait: keep current width, then clamp to viewport
                         if (!Number.isFinite(nextW) || nextW <= 0) return;
+                        const { minAllowed, maxAllowed } = getPreviewWidthRange(
+                            previewPosition.value.x,
+                            previewPosition.value.y
+                        );
+                        nextW = Math.max(minAllowed, Math.min(maxAllowed, nextW));
                         previewWidth.value = Math.round(nextW);
                     }
 
@@ -7691,6 +7783,125 @@
                         return params;
                     }
 
+                    function formatBitrateLabel(kbps) {
+                        const value = Number(kbps) || 0;
+                        if (value <= 0) return '0 kbps';
+                        if (value >= 1000) return `${(value / 1000).toFixed(2)} Mbps`;
+                        return `${Math.round(value)} kbps`;
+                    }
+
+                    const streamTotalBitrateKbps = Vue.computed(
+                        () => Math.max(0, (Number(streamVideoBitrateKbps.value) || 0) + (Number(streamAudioBitrateKbps.value) || 0))
+                    );
+                    const streamVideoBitrateLabel = Vue.computed(() => formatBitrateLabel(streamVideoBitrateKbps.value));
+                    const streamAudioBitrateLabel = Vue.computed(() => formatBitrateLabel(streamAudioBitrateKbps.value));
+                    const streamTotalBitrateLabel = Vue.computed(() => formatBitrateLabel(streamTotalBitrateKbps.value));
+
+                    function _smoothMetric(refObj, next, alpha = 0.25) {
+                        const current = Number(refObj.value) || 0;
+                        if (current <= 0) {
+                            refObj.value = Math.max(0, Math.round(next));
+                            return;
+                        }
+                        refObj.value = Math.max(0, Math.round(current * (1 - alpha) + next * alpha));
+                    }
+
+                    function _updateIntervalJitter(nowMs, lastTs, avg, outRef) {
+                        if (lastTs <= 0) return { lastTs: nowMs, avg };
+                        const delta = nowMs - lastTs;
+                        if (delta <= 0 || delta > 2500) {
+                            return { lastTs: nowMs, avg };
+                        }
+                        let nextAvg = avg;
+                        if (nextAvg <= 0) nextAvg = delta;
+                        else nextAvg = nextAvg * 0.9 + delta * 0.1;
+                        const jitter = Math.abs(delta - nextAvg);
+                        _smoothMetric(outRef, jitter, 0.22);
+                        return { lastTs: nowMs, avg: nextAvg };
+                    }
+
+                    function _recordVideoSample(byteLen) {
+                        telemetryVideoBytes += Math.max(0, Number(byteLen) || 0);
+                        const next = _updateIntervalJitter(performance.now(), telemetryLastVideoTs, telemetryVideoIntervalAvg, streamFrameJitterMs);
+                        telemetryLastVideoTs = next.lastTs;
+                        telemetryVideoIntervalAvg = next.avg;
+                    }
+
+                    function _recordAudioSample(byteLen) {
+                        telemetryAudioBytes += Math.max(0, Number(byteLen) || 0);
+                        const next = _updateIntervalJitter(performance.now(), telemetryLastAudioTs, telemetryAudioIntervalAvg, streamAudioJitterMs);
+                        telemetryLastAudioTs = next.lastTs;
+                        telemetryAudioIntervalAvg = next.avg;
+                    }
+
+                    function _resetTelemetry(clearControl = false) {
+                        telemetryVideoBytes = 0;
+                        telemetryAudioBytes = 0;
+                        telemetryLastVideoTs = 0;
+                        telemetryLastAudioTs = 0;
+                        telemetryVideoIntervalAvg = 0;
+                        telemetryAudioIntervalAvg = 0;
+                        telemetryRttAvg = 0;
+                        telemetryPendingProbeTs.clear();
+                        streamVideoBitrateKbps.value = 0;
+                        streamAudioBitrateKbps.value = 0;
+                        streamLatencyMs.value = 0;
+                        streamLatencyJitterMs.value = 0;
+                        streamFrameJitterMs.value = 0;
+                        streamAudioJitterMs.value = 0;
+                        if (clearControl) {
+                            streamControlActive.value = false;
+                        }
+                    }
+
+                    function _stopTelemetryLoops() {
+                        if (telemetryTimer) {
+                            clearInterval(telemetryTimer);
+                            telemetryTimer = null;
+                        }
+                        if (telemetryProbeTimer) {
+                            clearInterval(telemetryProbeTimer);
+                            telemetryProbeTimer = null;
+                        }
+                        telemetryPendingProbeTs.clear();
+                    }
+
+                    function _startTelemetryLoops(ws, connectToken) {
+                        _stopTelemetryLoops();
+                        telemetryTimer = setInterval(() => {
+                            if (connectToken !== streamConnectToken || ws !== streamWs) return;
+                            streamVideoBitrateKbps.value = Math.max(0, Math.round((telemetryVideoBytes * 8) / 1000));
+                            streamAudioBitrateKbps.value = Math.max(0, Math.round((telemetryAudioBytes * 8) / 1000));
+                            telemetryVideoBytes = 0;
+                            telemetryAudioBytes = 0;
+                        }, 1000);
+
+                        telemetryProbeTimer = setInterval(() => {
+                            if (connectToken !== streamConnectToken || ws !== streamWs) return;
+                            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                            const id = ++telemetryProbeSeq;
+                            telemetryPendingProbeTs.set(id, performance.now());
+                            try {
+                                ws.send(JSON.stringify({ type: 'latency_probe', id }));
+                            } catch (e) { }
+                        }, 2000);
+                    }
+
+                    function _handleLatencyProbeAck(msg) {
+                        const id = Number(msg && msg.id);
+                        if (!Number.isFinite(id)) return;
+                        const sentTs = telemetryPendingProbeTs.get(id);
+                        if (!sentTs) return;
+                        telemetryPendingProbeTs.delete(id);
+                        const rtt = performance.now() - sentTs;
+                        if (rtt <= 0 || rtt > 6000) return;
+                        _smoothMetric(streamLatencyMs, rtt, 0.28);
+                        if (telemetryRttAvg <= 0) telemetryRttAvg = rtt;
+                        else telemetryRttAvg = telemetryRttAvg * 0.9 + rtt * 0.1;
+                        const jitter = Math.abs(rtt - telemetryRttAvg);
+                        _smoothMetric(streamLatencyJitterMs, jitter, 0.24);
+                    }
+
                     async function startStreamWithSettings(deviceId, restart = true) {
                         const params = getStreamQueryParams(restart);
                         try {
@@ -7703,8 +7914,8 @@
 
                     function lowerStreamProfileStep() {
                         const bitRates = [2000000, 4000000, 6000000, 8000000];
-                        const fpsLevels = [15, 24, 30, 45];
-                        const sizeLevels = [540, 720, 960, 1080];
+                        const fpsLevels = [15, 24, 30, 45, 60];
+                        const sizeLevels = [540, 720, 960, 1080, 1440];
 
                         const brIdx = bitRates.indexOf(streamBitRate.value);
                         if (brIdx > 0) {
@@ -7911,6 +8122,7 @@
                         };
                         ws.onmessage = async (event) => {
                             if (event.data instanceof ArrayBuffer) {
+                                _recordAudioSample(event.data.byteLength);
                                 enqueueAudioPcm(event.data);
                                 return;
                             }
@@ -8012,6 +8224,8 @@
                             streamConnecting.value = false;
                             streamConnected.value = true;
                             streamLoadingText.value = 'Syncing stream metadata...';
+                            _resetTelemetry(false);
+                            _startTelemetryLoops(ws, connectToken);
                             // Stop polling when stream connects
                             stopPreviewAutoRefresh();
                         };
@@ -8020,6 +8234,7 @@
                             if (connectToken !== streamConnectToken || ws !== streamWs) return;
                             if (event.data instanceof ArrayBuffer) {
                                 // Binary: JPEG frame
+                                _recordVideoSample(event.data.byteLength);
                                 renderFrame(event.data);
                                 fpsCounter++;
                             } else {
@@ -8038,6 +8253,8 @@
                             streamReady.value = false;
                             streamLoadingText.value = 'Connecting...';
                             _finishOrientationSwitchProgress(false);
+                            _stopTelemetryLoops();
+                            _resetTelemetry(true);
                             streamWs = null;
                             disconnectAudioStream();
                             autoAdaptLowFpsStreak = 0;
@@ -8057,6 +8274,8 @@
                     function disconnectStream() {
                         streamConnectToken += 1;
                         _finishOrientationSwitchProgress(false);
+                        _stopTelemetryLoops();
+                        _resetTelemetry(true);
                         if (streamWs) {
                             try { streamWs.close(); } catch (e) { }
                             streamWs = null;
@@ -8075,7 +8294,12 @@
                     }
 
                     function applyStreamSettings() {
-                        if (!previewDeviceId.value) return;
+                        if (!previewDeviceId.value) {
+                            showToast('请先选择设备', 'warning');
+                            return;
+                        }
+                        streamReady.value = false;
+                        streamLoadingText.value = 'Reconnecting...';
                         connectStream(previewDeviceId.value, true);
                     }
 
@@ -8089,16 +8313,6 @@
                         if (!previewDeviceId.value) return;
                         streamReady.value = false;
                         streamLoadingText.value = 'Switching control mode...';
-                        await connectStream(previewDeviceId.value, true);
-                    }
-
-                    async function reconnectPreviewStream() {
-                        if (!previewDeviceId.value) {
-                            showToast('请先选择设备', 'warning');
-                            return;
-                        }
-                        streamReady.value = false;
-                        streamLoadingText.value = 'Reconnecting...';
                         await connectStream(previewDeviceId.value, true);
                     }
 
@@ -8251,6 +8465,7 @@
                         if (msg.type === 'stream_info') {
                             deviceScreenWidth.value = msg.width || 0;
                             deviceScreenHeight.value = msg.height || 0;
+                            streamControlActive.value = !!msg.control;
                             streamAudioCodec.value = msg.audio_codec || streamAudioCodec.value;
                             streamDisplayRotation.value = _normalizeRotation(msg.rotation);
                             streamSourceWidth.value = msg.video_width || streamSourceWidth.value;
@@ -8289,6 +8504,8 @@
                         } else if (msg.type === 'rotation_recovery_failed') {
                             _finishOrientationSwitchProgress(false);
                             showToast('旋转重连失败，请手动重连', 'warning');
+                        } else if (msg.type === 'latency_probe_ack') {
+                            _handleLatencyProbeAck(msg);
                         } else if (msg.type === 'ping') {
                             if (streamWs && streamWs.readyState === WebSocket.OPEN) {
                                 streamWs.send(JSON.stringify({ type: 'pong' }));
@@ -8928,8 +9145,16 @@
                         streamBitRate,
                         streamAutoAdapt,
                         streamUseScrcpyControl,
+                        streamControlActive,
                         streamAudioEnabled,
                         streamAudioConnected,
+                        streamVideoBitrateLabel,
+                        streamAudioBitrateLabel,
+                        streamTotalBitrateLabel,
+                        streamLatencyMs,
+                        streamLatencyJitterMs,
+                        streamFrameJitterMs,
+                        streamAudioJitterMs,
                         canvasWidth,
                         canvasHeight,
                         previewCanvas,
@@ -8938,7 +9163,6 @@
                         applyStreamSettings,
                         toggleScrcpyControlInject,
                         toggleAudioPassthrough,
-                        reconnectPreviewStream,
                         onCanvasMouseDown,
                         onCanvasMouseMove,
                         onCanvasMouseUp,

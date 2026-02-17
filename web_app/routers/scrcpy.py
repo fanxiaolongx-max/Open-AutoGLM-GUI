@@ -245,6 +245,12 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
                     elif msg_type == "pong":
                         pass
 
+                    elif msg_type == "latency_probe":
+                        await websocket.send_text(json.dumps({
+                            "type": "latency_probe_ack",
+                            "id": message.get("id", 0),
+                        }))
+
                 except json.JSONDecodeError:
                     pass
 

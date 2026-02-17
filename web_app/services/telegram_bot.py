@@ -4,6 +4,7 @@ Telegram Bot service for remote task execution and monitoring.
 """
 
 import asyncio
+import html
 import logging
 import socket
 from typing import Optional, Dict, Any
@@ -3771,29 +3772,36 @@ class TelegramBotService:
         status_text = status_map.get(status, status)
 
         text = (
-            "🌐 **LAN / 公网访问**\n\n"
-            f"• LAN 访问: `{self._escape_markdown(lan_url)}`\n"
-            f"• 公网状态: {status_text}\n"
+            "🌐 <b>LAN / 公网访问</b>\n\n"
+            f"• LAN 访问: <code>{html.escape(lan_url)}</code>\n"
+            f"• 公网状态: {html.escape(status_text)}\n"
         )
         if public_url:
-            text += f"• 公网 URL(含 token): `{self._escape_markdown(public_url)}`\n"
+            safe_url_text = html.escape(public_url)
+            safe_url_attr = html.escape(public_url, quote=True)
+            text += (
+                f"• 公网 URL(含 token): <code>{safe_url_text}</code>\n"
+                f"• 直达链接: <a href=\"{safe_url_attr}\">点击打开</a>\n"
+            )
         if not installed:
-            text += "\n⚠️ `cloudflared` 未安装，无法开启公网。\n"
+            text += "\n⚠️ <code>cloudflared</code> 未安装，无法开启公网。\n"
         if error_msg:
-            text += f"\n⚠️ 错误: `{self._escape_markdown(error_msg)}`\n"
+            text += f"\n⚠️ 错误: <code>{html.escape(error_msg)}</code>\n"
 
         keyboard = []
         if status == "running":
             keyboard.append([InlineKeyboardButton("🛑 关闭公网", callback_data="tunnel_stop")])
         else:
             keyboard.append([InlineKeyboardButton("🚀 开启公网", callback_data="tunnel_start")])
+        if public_url:
+            keyboard.append([InlineKeyboardButton("🌐 打开公网链接", url=public_url)])
         keyboard.append([InlineKeyboardButton("🔄 刷新状态", callback_data="tunnel_status")])
         self._add_back_button(keyboard, "menu_advanced")
 
         await query.edit_message_text(
             text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown',
+            parse_mode='HTML',
             disable_web_page_preview=True,
         )
 
@@ -3821,10 +3829,16 @@ class TelegramBotService:
         if ok and enable:
             await query.answer("✅ 公网已开启", show_alert=False)
             if public_url:
+                safe_url_text = html.escape(public_url)
+                safe_url_attr = html.escape(public_url, quote=True)
                 await query.message.reply_text(
-                    "✅ **公网访问已开启**\n\n"
-                    f"URL(含 token): `{self._escape_markdown(public_url)}`",
-                    parse_mode='Markdown',
+                    "✅ <b>公网访问已开启</b>\n\n"
+                    f"🔗 直达链接: <a href=\"{safe_url_attr}\">点击打开</a>\n"
+                    f"📎 URL(含 token): <code>{safe_url_text}</code>",
+                    parse_mode='HTML',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🌐 打开公网链接", url=public_url)]
+                    ]),
                     disable_web_page_preview=True,
                 )
         elif ok and not enable:
@@ -3834,8 +3848,8 @@ class TelegramBotService:
             await query.answer(f"❌ {'开启' if enable else '关闭'}失败", show_alert=True)
             if detail:
                 await query.message.reply_text(
-                    f"❌ 公网{ '开启' if enable else '关闭' }失败: `{self._escape_markdown(detail)}`",
-                    parse_mode='Markdown',
+                    f"❌ 公网{ '开启' if enable else '关闭' }失败: <code>{html.escape(detail)}</code>",
+                    parse_mode='HTML',
                 )
 
         await self._show_network_access_menu(query)

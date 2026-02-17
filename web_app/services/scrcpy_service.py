@@ -813,7 +813,7 @@ class ScrcpyService:
         # Output size for rawvideo frames (long edge follows requested max_size).
         out_width = 0
         out_height = [0]
-        target_long_edge = int(max(240, min(1440, max_size)))
+        target_long_edge = int(max(240, min(2160, max_size)))
 
         def _ensure_even(v: int) -> int:
             iv = int(max(2, round(v)))
@@ -1031,7 +1031,7 @@ class ScrcpyService:
             out_width = _ensure_even(out_width)
             out_height[0] = _ensure_even(out_height[0])
         else:
-            out_width = _ensure_even(min(target_long_edge, 960))
+            out_width = _ensure_even(target_long_edge)
             if w > 0 and h > 0:
                 out_height[0] = _ensure_even(int(round(h * out_width / w)))
             else:
