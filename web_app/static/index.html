@@ -2956,11 +2956,13 @@
                                         <td>
                                             <span class="badge" :style="{
                                                 background: service.protocol === 'openai' ? '#10a37f' :
+                                                           service.protocol === 'ollama' ? '#1f2937' :
                                                            service.protocol === 'anthropic' ? '#d97706' :
                                                            service.protocol === 'gemini' ? '#4285f4' : '#666',
                                                 color: 'white'
                                             }">
                                                 {{ service.protocol === 'openai' ? 'OpenAI' :
+                                                service.protocol === 'ollama' ? 'Ollama' :
                                                 service.protocol === 'anthropic' ? 'Anthropic' :
                                                 service.protocol === 'gemini' ? 'Gemini' : 'Unknown' }}
                                             </span>
@@ -3023,6 +3025,23 @@
                                 </div>
                             </div>
 
+                            <!-- Ollama 协议 -->
+                            <div v-if="getPresetsByCategory('Ollama 协议').length > 0" style="margin-bottom: 16px;">
+                                <div
+                                    style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                    <span
+                                        style="background: #1f2937; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">Ollama</span>
+                                    <span>本地协议 (默认端口 11434)</span>
+                                </div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                    <button v-for="preset in getPresetsByCategory('Ollama 协议')" :key="preset.id"
+                                        class="btn btn-sm btn-secondary" @click="addFromPreset(preset)"
+                                        :title="preset.description" style="border-color: #1f2937;">
+                                        {{ preset.name }}
+                                    </button>
+                                </div>
+                            </div>
+
                             <!-- Anthropic 协议 -->
                             <div v-if="getPresetsByCategory('Anthropic 协议').length > 0" style="margin-bottom: 16px;">
                                 <div
@@ -3074,13 +3093,16 @@
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">协议类型 *</label>
-                                    <select v-model="modelForm.protocol" class="form-select">
+                                    <select v-model="modelForm.protocol" class="form-select"
+                                        @change="onModelProtocolChange">
                                         <option value="openai">OpenAI 协议 (/v1/chat/completions)</option>
+                                        <option value="ollama">Ollama 协议 (OpenAI 兼容 /v1)</option>
                                         <option value="anthropic">Anthropic 协议 (/v1/messages)</option>
                                         <option value="gemini">Gemini 协议 (Google AI)</option>
                                     </select>
                                     <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;">
                                         <span v-if="modelForm.protocol === 'openai'">适用于大多数兼容OpenAI API的服务</span>
+                                        <span v-else-if="modelForm.protocol === 'ollama'">适用于本地 Ollama 服务（自动兼容 /v1）</span>
                                         <span v-else-if="modelForm.protocol === 'anthropic'">适用于Anthropic Claude
                                             API</span>
                                         <span v-else-if="modelForm.protocol === 'gemini'">适用于Google Gemini API</span>
@@ -3089,17 +3111,17 @@
                                 <div class="form-group">
                                     <label class="form-label">Base URL *</label>
                                     <input type="text" v-model="modelForm.base_url" class="form-input"
-                                        :placeholder="modelForm.protocol === 'openai' ? 'https://api.openai.com/v1' : modelForm.protocol === 'anthropic' ? 'https://api.anthropic.com/v1/messages' : 'https://generativelanguage.googleapis.com/v1beta'">
+                                        :placeholder="modelForm.protocol === 'openai' ? 'https://api.openai.com/v1' : modelForm.protocol === 'ollama' ? 'http://127.0.0.1:11434/v1' : modelForm.protocol === 'anthropic' ? 'https://api.anthropic.com/v1/messages' : 'https://generativelanguage.googleapis.com/v1beta'">
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">模型名称 *</label>
                                     <input type="text" v-model="modelForm.model_name" class="form-input"
-                                        :placeholder="modelForm.protocol === 'openai' ? 'gpt-4o' : modelForm.protocol === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gemini-2.0-flash'">
+                                        :placeholder="modelForm.protocol === 'openai' ? 'gpt-4o' : modelForm.protocol === 'ollama' ? 'qwen2.5:7b' : modelForm.protocol === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gemini-2.0-flash'">
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">API Key</label>
                                     <input type="password" v-model="modelForm.api_key" class="form-input"
-                                        placeholder="sk-...">
+                                        :placeholder="modelForm.protocol === 'ollama' ? '可留空（默认 ollama）' : 'sk-...'">
                                 </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                                     <div class="form-group">
@@ -4053,6 +4075,18 @@
                             category: '',
                         };
                     }
+
+                    function onModelProtocolChange() {
+                        if (modelForm.value.protocol !== 'ollama') {
+                            return;
+                        }
+                        if (!modelForm.value.base_url) {
+                            modelForm.value.base_url = 'http://127.0.0.1:11434/v1';
+                        }
+                        if (!modelForm.value.model_name) {
+                            modelForm.value.model_name = 'qwen2.5:7b';
+                        }
+                    }
                     const emailConfig = ref({});
                     const screenshotConfig = ref({
                         max_dimension: 1920,
@@ -4414,7 +4448,7 @@
                             modelsCurrentActive: '当前激活', modelsActivated: '已激活', modelsNotActivated: '未激活',
                             modelsActivateTitle: '激活此模型', modelsTestTitle: '测试连接', modelsEditTitle: '编辑',
                             modelsDeleteTitle: '删除', modelsNewModel: '新增模型', modelsQuickTemplates: '快速添加预设模板',
-                            modelsOpenAI: 'OpenAI 协议', modelsAnthropic: 'Anthropic 协议', modelsGemini: 'Gemini 协议',
+                            modelsOpenAI: 'OpenAI 协议', modelsOllama: 'Ollama 协议', modelsAnthropic: 'Anthropic 协议', modelsGemini: 'Gemini 协议',
                             modelsCreateModel: '创建模型', modelsEditModel: '编辑模型', modelsFormName: '服务名称',
                             modelsFormProtocol: '协议类型', modelsFormDescription: '描述',
                             filesSelectDevice: '选择设备', filesPleaseSelect: '请选择设备', filesCurrentPath: '当前路径',
@@ -4495,7 +4529,7 @@
                             modelsCurrentActive: 'Currently Active', modelsActivated: 'Activated', modelsNotActivated: 'Not Activated',
                             modelsActivateTitle: 'Activate this model', modelsTestTitle: 'Test connection', modelsEditTitle: 'Edit',
                             modelsDeleteTitle: 'Delete', modelsNewModel: 'New Model', modelsQuickTemplates: 'Quick Templates',
-                            modelsOpenAI: 'OpenAI Protocol', modelsAnthropic: 'Anthropic Protocol', modelsGemini: 'Gemini Protocol',
+                            modelsOpenAI: 'OpenAI Protocol', modelsOllama: 'Ollama Protocol', modelsAnthropic: 'Anthropic Protocol', modelsGemini: 'Gemini Protocol',
                             modelsCreateModel: 'Create Model', modelsEditModel: 'Edit Model', modelsFormName: 'Service Name',
                             modelsFormProtocol: 'Protocol Type', modelsFormDescription: 'Description',
                             filesSelectDevice: 'Select Device', filesPleaseSelect: 'Please select a device', filesCurrentPath: 'Current Path',
@@ -7186,6 +7220,7 @@
                                     base_url: modelForm.value.base_url,
                                     api_key: modelForm.value.api_key,
                                     model_name: modelForm.value.model_name,
+                                    protocol: modelForm.value.protocol || 'openai',
                                 }),
                             });
                             showToast(data.message, data.success ? 'success' : 'error');
@@ -9014,6 +9049,7 @@
                         saveModel,
                         deleteModel,
                         testModelConfig,
+                        onModelProtocolChange,
                         addFromPreset,
                         loadModelPresets,
                         getPresetsByCategory,

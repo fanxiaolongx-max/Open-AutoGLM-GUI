@@ -2,7 +2,7 @@
 """
 模型服务配置管理模块
 支持多个第三方模型服务的配置、测试和激活
-支持多协议：OpenAI、Anthropic、Gemini
+支持多协议：OpenAI、Anthropic、Gemini、Ollama
 """
 
 import json
@@ -40,6 +40,7 @@ class ModelProtocol(str, Enum):
     OPENAI = "openai"           # OpenAI 兼容协议 (/v1/chat/completions)
     ANTHROPIC = "anthropic"     # Anthropic 协议 (/v1/messages)
     GEMINI = "gemini"           # Google Gemini 协议
+    OLLAMA = "ollama"           # Ollama 协议（基于 OpenAI 兼容端点 /v1）
 
     @classmethod
     def detect_from_url(cls, url: str) -> "ModelProtocol":
@@ -61,6 +62,16 @@ class ModelProtocol(str, Enum):
         ]):
             return cls.GEMINI
 
+        # Ollama 协议检测
+        if any(pattern in url_lower for pattern in [
+            "localhost:11434",
+            "127.0.0.1:11434",
+            "/api/chat",
+            "/api/generate",
+            "ollama",
+        ]):
+            return cls.OLLAMA
+
         # 默认使用 OpenAI 协议
         return cls.OPENAI
 
@@ -71,6 +82,7 @@ class ModelProtocol(str, Enum):
             cls.OPENAI.value: "OpenAI 协议",
             cls.ANTHROPIC.value: "Anthropic 协议",
             cls.GEMINI.value: "Gemini 协议",
+            cls.OLLAMA.value: "Ollama 协议",
         }
         return names.get(protocol, protocol)
 
@@ -211,6 +223,20 @@ PRESET_SERVICES = [
         temperature=0.7,
         max_tokens=4000,
     ),
+
+    # ===== Ollama 协议 =====
+    ModelServiceConfig(
+        id="ollama_local",
+        name="Ollama 本地",
+        base_url="http://127.0.0.1:11434/v1",
+        api_key="ollama",
+        model_name="qwen2.5:7b",
+        description="本地 Ollama（推荐模型：qwen2.5:7b）",
+        protocol=ModelProtocol.OLLAMA.value,
+        category="Ollama 协议",
+        max_tokens=3000,
+        temperature=0.2,
+    ),
 ]
 
 
@@ -294,9 +320,20 @@ class ModelServicesManager:
                 frequency_penalty=preset.frequency_penalty,
                 is_active=preset.is_active,
                 description=preset.description,
+                protocol=preset.protocol,
+                category=preset.category,
             )
             self.services.append(service)
         self._save()
+
+    @staticmethod
+    def _normalize_openai_like_base_url(base_url: str, protocol: str) -> str:
+        """Normalize OpenAI-compatible base URL for provider-specific quirks."""
+        normalized = (base_url or "").rstrip("/")
+        if protocol == ModelProtocol.OLLAMA.value and normalized:
+            if not normalized.endswith("/v1"):
+                normalized = f"{normalized}/v1"
+        return normalized
 
     def _save(self):
         """保存服务配置到数据库"""
@@ -386,12 +423,14 @@ class ModelServicesManager:
         if not service.model_name:
             return False, "模型名称不能为空"
 
-        protocol = service.protocol or ModelProtocol.OPENAI.value
+        protocol = (service.protocol or ModelProtocol.OPENAI.value).lower()
 
         if protocol == ModelProtocol.ANTHROPIC.value:
             return self._test_anthropic_service(service)
         elif protocol == ModelProtocol.GEMINI.value:
             return self._test_gemini_service(service)
+        elif protocol == ModelProtocol.OLLAMA.value:
+            return self._test_ollama_service(service)
         else:
             return self._test_openai_service(service)
 
@@ -401,8 +440,10 @@ class ModelServicesManager:
             return False, "OpenAI 模块未安装，无法测试连接"
 
         try:
+            protocol = (service.protocol or ModelProtocol.OPENAI.value).lower()
+            normalized_base_url = self._normalize_openai_like_base_url(service.base_url, protocol)
             client = OpenAI(
-                base_url=service.base_url,
+                base_url=normalized_base_url or service.base_url,
                 api_key=service.api_key or "EMPTY",
                 timeout=30,
             )
@@ -432,6 +473,25 @@ class ModelServicesManager:
                     return False, f"连接测试失败: {str(chat_error)[:100]}"
         except Exception as e:
             return False, f"连接错误: {str(e)[:100]}"
+
+    def _test_ollama_service(self, service: ModelServiceConfig) -> tuple[bool, str]:
+        """测试 Ollama 协议服务（走 OpenAI 兼容路径）"""
+        if not service.base_url:
+            return False, "Ollama 服务地址不能为空"
+        # Ollama 的 OpenAI 兼容路径应为 /v1，自动补齐后复用 OpenAI 测试流程
+        service_for_test = ModelServiceConfig(
+            **{
+                **asdict(service),
+                "base_url": self._normalize_openai_like_base_url(
+                    service.base_url, ModelProtocol.OLLAMA.value
+                ),
+                "api_key": service.api_key or "ollama",
+            }
+        )
+        ok, msg = self._test_openai_service(service_for_test)
+        if ok:
+            return True, f"{msg} (Ollama)"
+        return False, msg
 
     def _test_anthropic_service(self, service: ModelServiceConfig) -> tuple[bool, str]:
         """测试 Anthropic 协议服务"""

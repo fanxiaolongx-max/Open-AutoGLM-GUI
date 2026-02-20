@@ -26,6 +26,14 @@ if not logger.handlers:
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 
+def _normalize_openai_like_base_url(base_url: str, protocol: str) -> str:
+    """Normalize OpenAI-compatible base URL for provider-specific quirks."""
+    normalized = (base_url or "").rstrip("/")
+    if protocol == "ollama" and normalized and not normalized.endswith("/v1"):
+        normalized = f"{normalized}/v1"
+    return normalized
+
+
 class RunTaskRequest(BaseModel):
     task_content: str
     device_ids: list[str]
@@ -172,8 +180,16 @@ async def decompose_task(
             logger.info("[API调用] 收到 Anthropic 响应")
 
         else:
-            # 默认使用 OpenAI 协议
-            client = OpenAI(base_url=active_model.base_url, api_key=active_model.api_key)
+            # 默认使用 OpenAI 兼容协议（包含 Ollama）
+            normalized_base_url = _normalize_openai_like_base_url(active_model.base_url, protocol)
+            if protocol == "ollama":
+                api_key = active_model.api_key or "ollama"
+            else:
+                api_key = active_model.api_key or "EMPTY"
+            client = OpenAI(
+                base_url=normalized_base_url or active_model.base_url,
+                api_key=api_key,
+            )
 
             logger.info("[API调用] 正在发送请求到模型...")
             response = client.chat.completions.create(

@@ -48,7 +48,7 @@ class ModelConfig:
     frequency_penalty: float = 0.2
     extra_body: dict[str, Any] = field(default_factory=dict)
     lang: str = "cn"  # Language for UI messages: 'cn' or 'en'
-    protocol: str = "openai"  # Protocol type: 'openai', 'anthropic', 'gemini'
+    protocol: str = "openai"  # Protocol type: 'openai', 'ollama', 'anthropic', 'gemini'
 
 
 @dataclass
@@ -74,6 +74,7 @@ class ModelClient:
 
     Supported protocols:
     - openai: OpenAI-compatible API
+    - ollama: Ollama (OpenAI-compatible /v1 endpoint)
     - anthropic: Anthropic Claude API
     - gemini: Google Gemini API
 
@@ -126,8 +127,24 @@ class ModelClient:
                 )
             self.client = genai.GenerativeModel(self.config.model_name)
         else:
-            # Default to OpenAI protocol
-            self.client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
+            # Default to OpenAI-compatible protocol (including Ollama)
+            base_url = self._normalize_openai_like_base_url(self.config.base_url, protocol)
+            if protocol == "ollama":
+                api_key = self.config.api_key or "ollama"
+            else:
+                api_key = self.config.api_key or "EMPTY"
+            self.client = OpenAI(
+                base_url=base_url or self.config.base_url,
+                api_key=api_key,
+            )
+
+    @staticmethod
+    def _normalize_openai_like_base_url(base_url: str, protocol: str) -> str:
+        """Normalize OpenAI-compatible base URL for provider-specific quirks."""
+        normalized = (base_url or "").rstrip("/")
+        if protocol == "ollama" and normalized and not normalized.endswith("/v1"):
+            normalized = f"{normalized}/v1"
+        return normalized
 
     def request(self, messages: list[dict[str, Any]]) -> ModelResponse:
         """

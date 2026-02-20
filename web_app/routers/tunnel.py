@@ -7,6 +7,7 @@ via a temporary *.trycloudflare.com URL. No account required.
 
 import asyncio
 import logging
+import os
 import re
 import secrets
 import shutil
@@ -165,9 +166,16 @@ async def tunnel_start(_: bool = Depends(verify_token)):
         port = 8080
 
     try:
+        null_config = os.devnull
+        logger.info(
+            f"[TUNNEL-CONFIG] start cloudflared with explicit null config: {null_config}"
+        )
         _process = await asyncio.create_subprocess_exec(
-            "cloudflared", "tunnel",
-            "--config", "/dev/null",
+            # Keep --config as a global flag (before subcommand) so cloudflared
+            # won't auto-load ~/.cloudflared/config.yaml|config.yml.
+            "cloudflared",
+            "--config", null_config,
+            "tunnel",
             "--url", f"http://127.0.0.1:{port}",
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
