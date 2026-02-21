@@ -2443,7 +2443,8 @@
                             <div class="chat-input-stack">
                                 <textarea v-model="chatInput" class="chat-input" :placeholder="t('chatInputPlaceholder')"
                                     rows="1" @keydown="handleChatInputKeydown"
-                                    @input="adjustChatInputHeight" :disabled="chatRunning"></textarea>
+                                    @input="adjustChatInputHeight" @click="syncChatCursor" @keyup="syncChatCursor"
+                                    :disabled="chatRunning"></textarea>
                                 <div v-if="isAdbCommandMode && filteredAdbQuickCommands.length > 0"
                                     class="adb-command-suggestions">
                                     <div class="adb-command-hint">⚡ Slash 命令模式：回车后直接执行 ADB，不调用模型</div>
@@ -2455,12 +2456,24 @@
                                         <div class="adb-command-item-desc">{{ item.desc }}</div>
                                     </button>
                                 </div>
+                                <div v-if="isDeviceMentionMode && filteredDeviceMentionSuggestions.length > 0"
+                                    class="adb-command-suggestions device-mention-suggestions">
+                                    <div class="adb-command-hint">📱 @设备模式：上下键选择，回车补全设备</div>
+                                    <button v-for="item in filteredDeviceMentionSuggestions" :key="item.id"
+                                        class="adb-command-item device-mention-item"
+                                        :class="{ active: item.id === activeDeviceMentionSuggestionId }"
+                                        @click="applyDeviceMentionSuggestion(item)">
+                                        <div class="adb-command-item-main">@{{ item.mentionToken }}</div>
+                                        <div class="adb-command-item-desc">{{ item.name || item.id }} · {{ item.id }}
+                                        </div>
+                                    </button>
+                                </div>
                             </div>
                             <button v-if="chatRunning" class="chat-stop-btn" @click="stopChatTask" title="停止任务">
                                 ⏹
                             </button>
                             <button v-else class="chat-send-btn" @click="sendChatMessage"
-                                :disabled="!chatInput.trim() || !chatDeviceId">
+                                :disabled="!canSendChatMessage">
                                 ➤
                             </button>
                         </div>
@@ -4339,6 +4352,7 @@
                     const chatInput = ref('');
                     const chatDeviceId = ref('');
                     const chatRunning = ref(false);
+                    const chatSegmentSequenceRunning = ref(false);
                     const chatMessagesRef = ref(null);
                     const chatAutoEmail = ref(false);  // Default: no auto email in chat mode
                     const complexTaskMode = ref(false);  // 复杂任务模式：先拆解成todolist再逐个执行
@@ -4356,7 +4370,9 @@
                     let subtaskCountdownTimer = null;  // 倒计时定时器
                     let currentChatTaskId = null;
                     let chatScrollPosition = 0;  // 保存 Chat 滚动位置
+                    const chatCursorPos = ref(0);
                     const adbSuggestionIndex = ref(-1);
+                    const deviceMentionSuggestionIndex = ref(-1);
                     const adbQuickCommands = [
                         { command: '/help', desc: '查看 Slash 指令帮助' },
                         { command: '/shell input keyevent 26', desc: '点亮/熄灭屏幕（电源键）' },
@@ -4441,6 +4457,93 @@
                         if (!list.length) return '';
                         if (adbSuggestionIndex.value < 0 || adbSuggestionIndex.value >= list.length) return '';
                         return list[adbSuggestionIndex.value].command;
+                    });
+                    function normalizeMentionToken(token) {
+                        return (token || '')
+                            .trim()
+                            .replace(/[，,。;；:：!?！？]+$/g, '');
+                    }
+                    function compactMentionToken(token) {
+                        return (token || '')
+                            .toLowerCase()
+                            .replace(/[\s_\-]+/g, '');
+                    }
+                    function formatDeviceMentionToken(device) {
+                        const name = (device?.name || '').trim();
+                        if (name) {
+                            const compactName = name.replace(/\s+/g, '').replace(/[^\w.\-]/g, '');
+                            if (compactName) return compactName;
+                        }
+                        return (device?.id || '').replace(/[^\w.\-:]/g, '');
+                    }
+                    function getMentionContext(input, cursorPos) {
+                        const text = input || '';
+                        const safeCursor = Math.max(0, Math.min(typeof cursorPos === 'number' ? cursorPos : text.length, text.length));
+                        const head = text.slice(0, safeCursor);
+                        const match = head.match(/(^|[\s，,。;；:：])@([^\s@]*)$/);
+                        if (!match) {
+                            return { active: false, query: '', start: -1, end: -1 };
+                        }
+                        const query = match[2] || '';
+                        const start = safeCursor - query.length - 1;
+                        return { active: true, query, start, end: safeCursor };
+                    }
+                    const mentionContext = Vue.computed(() => getMentionContext(chatInput.value || '', chatCursorPos.value));
+                    const isDeviceMentionMode = Vue.computed(() =>
+                        !isAdbCommandMode.value && mentionContext.value.active
+                    );
+                    const filteredDeviceMentionSuggestions = Vue.computed(() => {
+                        if (!isDeviceMentionMode.value) return [];
+                        const queryRaw = normalizeMentionToken(mentionContext.value.query || '');
+                        const queryLower = queryRaw.toLowerCase();
+                        const queryCompact = compactMentionToken(queryRaw);
+                        const items = (devices.value || []).map(device => {
+                            const name = (device.name || '').trim();
+                            return {
+                                id: device.id,
+                                name: name,
+                                mentionToken: formatDeviceMentionToken(device),
+                                idLower: (device.id || '').toLowerCase(),
+                                nameLower: name.toLowerCase(),
+                                idCompact: compactMentionToken(device.id || ''),
+                                nameCompact: compactMentionToken(name),
+                            };
+                        });
+                        if (!queryRaw) {
+                            return items;
+                        }
+                        const score = (item) => {
+                            if (item.idLower === queryLower || item.nameLower === queryLower || item.nameCompact === queryCompact) return 0;
+                            if (item.idLower.startsWith(queryLower) || item.nameLower.startsWith(queryLower) || item.nameCompact.startsWith(queryCompact)) return 1;
+                            if (item.idCompact.startsWith(queryCompact)) return 2;
+                            if (item.idLower.includes(queryLower) || item.nameLower.includes(queryLower) || item.nameCompact.includes(queryCompact)) return 3;
+                            if (item.idCompact.includes(queryCompact)) return 4;
+                            return -1;
+                        };
+                        return items
+                            .map(item => ({ item, score: score(item) }))
+                            .filter(entry => entry.score >= 0)
+                            .sort((a, b) => a.score - b.score)
+                            .map(entry => ({
+                                id: entry.item.id,
+                                name: entry.item.name,
+                                mentionToken: entry.item.mentionToken,
+                            }));
+                    });
+                    const activeDeviceMentionSuggestionId = Vue.computed(() => {
+                        const list = filteredDeviceMentionSuggestions.value || [];
+                        if (!list.length) return '';
+                        if (deviceMentionSuggestionIndex.value < 0 || deviceMentionSuggestionIndex.value >= list.length) return '';
+                        return list[deviceMentionSuggestionIndex.value].id;
+                    });
+                    const hasAtMention = Vue.computed(() => /(^|[\s，,。;；:：])@[^\s@]+/.test((chatInput.value || '').trim()));
+                    const canSendChatMessage = Vue.computed(() => {
+                        const text = (chatInput.value || '').trim();
+                        if (!text || chatRunning.value) return false;
+                        if (text.startsWith('/')) {
+                            return !!chatDeviceId.value;
+                        }
+                        return hasAtMention.value || !!chatDeviceId.value;
                     });
 
                     // Tap preview modal state (debug mode)
@@ -4995,6 +5098,7 @@
                                 // 检查最后一条消息是否是复杂任务（有 todoList）
                                 const lastMsgForToast = chatMessages.value.length > 0 ? chatMessages.value[chatMessages.value.length - 1] : null;
                                 const isComplexTask = lastMsgForToast && lastMsgForToast.todoList && lastMsgForToast.todoList.length > 0;
+                                const isSegmentSequenceTask = chatSegmentSequenceRunning.value;
 
                                 if (isComplexTask) {
                                     // 复杂任务子任务完成，显示简短提示
@@ -5002,6 +5106,9 @@
                                     if (currentIdx !== undefined && currentIdx >= 0 && currentIdx < lastMsgForToast.todoList.length) {
                                         showToast(`子任务 ${currentIdx + 1}/${lastMsgForToast.todoList.length} ${data.success ? '完成' : '失败'}`, data.success ? 'success' : 'error');
                                     }
+                                } else if (isSegmentSequenceTask) {
+                                    // @设备分段模式：每段完成由主循环继续调度，避免这里提前结束 chatRunning
+                                    showToast(`分段步骤${data.success ? '完成' : '失败'}，继续执行下一步...`, data.success ? 'success' : 'error');
                                 } else {
                                     // 普通任务，显示完整提示
                                     showToast(data.message, data.success ? 'success' : 'error');
@@ -5009,7 +5116,7 @@
                                 // Update chat message status and use screenshot from WebSocket
                                 // 复杂任务模式下（消息有todoList），不要在这里修改状态，让循环自己控制
                                 // 普通任务（消息没有todoList）才在这里更新状态
-                                if (chatRunning.value && chatMessages.value.length > 0 && !isComplexTask) {
+                                if (chatRunning.value && chatMessages.value.length > 0 && !isComplexTask && !isSegmentSequenceTask) {
                                     const lastMsg = chatMessages.value[chatMessages.value.length - 1];
                                     if (lastMsg.role === 'assistant' && lastMsg.status === 'running') {
                                         lastMsg.status = data.success ? 'success' : 'error';
@@ -5671,6 +5778,17 @@
                         const el = e.target;
                         el.style.height = 'auto';
                         el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+                        chatCursorPos.value = typeof el.selectionStart === 'number'
+                            ? el.selectionStart
+                            : (el.value || '').length;
+                    }
+
+                    function syncChatCursor(e) {
+                        const el = e?.target;
+                        if (!el) return;
+                        chatCursorPos.value = typeof el.selectionStart === 'number'
+                            ? el.selectionStart
+                            : (el.value || '').length;
                     }
 
                     // 监听输入内容变化，自动调整高度
@@ -5688,19 +5806,24 @@
                             }
                         });
 
-                        const list = filteredAdbQuickCommands.value || [];
-                        if (!isAdbCommandMode.value || list.length === 0) {
+                        const slashList = filteredAdbQuickCommands.value || [];
+                        if (!isAdbCommandMode.value || slashList.length === 0) {
                             adbSuggestionIndex.value = -1;
-                            return;
-                        }
-                        if (adbSuggestionIndex.value < 0) {
-                            adbSuggestionIndex.value = 0;
+                        } else {
+                            if (adbSuggestionIndex.value < 0 || adbSuggestionIndex.value >= slashList.length) {
+                                adbSuggestionIndex.value = 0;
+                            }
                             ensureActiveAdbSuggestionVisible();
-                            return;
                         }
-                        if (adbSuggestionIndex.value >= list.length) {
-                            adbSuggestionIndex.value = 0;
-                            ensureActiveAdbSuggestionVisible();
+
+                        const mentionList = filteredDeviceMentionSuggestions.value || [];
+                        if (!isDeviceMentionMode.value || mentionList.length === 0) {
+                            deviceMentionSuggestionIndex.value = -1;
+                        } else {
+                            if (deviceMentionSuggestionIndex.value < 0 || deviceMentionSuggestionIndex.value >= mentionList.length) {
+                                deviceMentionSuggestionIndex.value = 0;
+                            }
+                            ensureActiveDeviceMentionSuggestionVisible();
                         }
                     });
 
@@ -5716,11 +5839,23 @@
                         ensureActiveAdbSuggestionVisible();
                     });
 
-                    function ensureActiveAdbSuggestionVisible() {
+                    watch(filteredDeviceMentionSuggestions, (list) => {
+                        const items = list || [];
+                        if (!isDeviceMentionMode.value || items.length === 0) {
+                            deviceMentionSuggestionIndex.value = -1;
+                            return;
+                        }
+                        if (deviceMentionSuggestionIndex.value < 0 || deviceMentionSuggestionIndex.value >= items.length) {
+                            deviceMentionSuggestionIndex.value = 0;
+                        }
+                        ensureActiveDeviceMentionSuggestionVisible();
+                    });
+
+                    function ensureSuggestionVisible(panelSelector, itemSelector) {
                         Vue.nextTick(() => {
-                            const panel = document.querySelector('.adb-command-suggestions');
+                            const panel = document.querySelector(panelSelector);
                             if (!panel) return;
-                            const activeItem = panel.querySelector('.adb-command-item.active');
+                            const activeItem = panel.querySelector(itemSelector);
                             if (!activeItem) return;
 
                             const panelTop = panel.scrollTop;
@@ -5735,6 +5870,14 @@
                                 panel.scrollTop = Math.max(0, itemBottom - panel.clientHeight + padding);
                             }
                         });
+                    }
+
+                    function ensureActiveAdbSuggestionVisible() {
+                        ensureSuggestionVisible('.adb-command-suggestions', '.adb-command-item.active');
+                    }
+
+                    function ensureActiveDeviceMentionSuggestionVisible() {
+                        ensureSuggestionVisible('.device-mention-suggestions', '.device-mention-item.active');
                     }
 
                     // Retry a previous message
@@ -5758,19 +5901,77 @@
                         });
                     }
 
-                    function handleChatInputKeydown(event) {
-                        const candidates = filteredAdbQuickCommands.value || [];
-                        const inSlashMode = isAdbCommandMode.value && candidates.length > 0;
-                        if (inSlashMode && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
-                            event.preventDefault();
-                            if (event.key === 'ArrowDown') {
-                                adbSuggestionIndex.value = (adbSuggestionIndex.value + 1 + candidates.length) % candidates.length;
-                            } else {
-                                adbSuggestionIndex.value = adbSuggestionIndex.value <= 0
-                                    ? candidates.length - 1
-                                    : adbSuggestionIndex.value - 1;
+                    function applyDeviceMentionSuggestion(item) {
+                        if (!item || !item.id) return;
+                        const ctx = mentionContext.value;
+                        if (!ctx.active || ctx.start < 0 || ctx.end < 0) return;
+
+                        const text = chatInput.value || '';
+                        const before = text.slice(0, ctx.start);
+                        const after = text.slice(ctx.end);
+                        const mentionToken = item.mentionToken || item.id;
+                        const spacer = after.startsWith(' ') || after.length === 0 ? ' ' : ' ';
+                        const nextValue = `${before}@${mentionToken}${spacer}${after}`;
+
+                        chatInput.value = nextValue;
+                        const nextCursor = (before.length + mentionToken.length + 2); // '@' + trailing space
+                        chatCursorPos.value = nextCursor;
+                        deviceMentionSuggestionIndex.value = -1;
+
+                        Vue.nextTick(() => {
+                            const el = document.querySelector('.chat-input');
+                            if (el) {
+                                el.focus();
+                                el.setSelectionRange(nextCursor, nextCursor);
                             }
-                            ensureActiveAdbSuggestionVisible();
+                        });
+                    }
+
+                    function handleChatInputKeydown(event) {
+                        const inputEl = event?.target;
+                        if (inputEl && typeof inputEl.selectionStart === 'number') {
+                            chatCursorPos.value = inputEl.selectionStart;
+                        }
+
+                        const slashCandidates = filteredAdbQuickCommands.value || [];
+                        const mentionCandidates = filteredDeviceMentionSuggestions.value || [];
+                        const inSlashMode = isAdbCommandMode.value && slashCandidates.length > 0;
+                        const inMentionMode = isDeviceMentionMode.value && mentionCandidates.length > 0;
+
+                        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                            if (inSlashMode) {
+                                event.preventDefault();
+                                if (event.key === 'ArrowDown') {
+                                    adbSuggestionIndex.value = (adbSuggestionIndex.value + 1 + slashCandidates.length) % slashCandidates.length;
+                                } else {
+                                    adbSuggestionIndex.value = adbSuggestionIndex.value <= 0
+                                        ? slashCandidates.length - 1
+                                        : adbSuggestionIndex.value - 1;
+                                }
+                                ensureActiveAdbSuggestionVisible();
+                                return;
+                            }
+                            if (inMentionMode) {
+                                event.preventDefault();
+                                if (event.key === 'ArrowDown') {
+                                    deviceMentionSuggestionIndex.value = (deviceMentionSuggestionIndex.value + 1 + mentionCandidates.length) % mentionCandidates.length;
+                                } else {
+                                    deviceMentionSuggestionIndex.value = deviceMentionSuggestionIndex.value <= 0
+                                        ? mentionCandidates.length - 1
+                                        : deviceMentionSuggestionIndex.value - 1;
+                                }
+                                ensureActiveDeviceMentionSuggestionVisible();
+                                return;
+                            }
+                        }
+
+                        if (event.key === 'Tab' && inMentionMode) {
+                            event.preventDefault();
+                            const idx = deviceMentionSuggestionIndex.value >= 0 ? deviceMentionSuggestionIndex.value : 0;
+                            const selected = mentionCandidates[idx];
+                            if (selected) {
+                                applyDeviceMentionSuggestion(selected);
+                            }
                             return;
                         }
 
@@ -5785,8 +5986,17 @@
                         if (event.isComposing || event.keyCode === 229) {
                             return;
                         }
+                        if (inMentionMode) {
+                            event.preventDefault();
+                            const idx = deviceMentionSuggestionIndex.value >= 0 ? deviceMentionSuggestionIndex.value : 0;
+                            const selected = mentionCandidates[idx];
+                            if (selected) {
+                                applyDeviceMentionSuggestion(selected);
+                            }
+                            return;
+                        }
                         if (inSlashMode && adbSuggestionIndex.value >= 0) {
-                            const selected = candidates[adbSuggestionIndex.value];
+                            const selected = slashCandidates[adbSuggestionIndex.value];
                             const raw = (chatInput.value || '').trim();
                             // In command-search mode (only prefix, no args yet), Enter applies selected command.
                             if (selected && (raw === '/' || !raw.includes(' '))) {
@@ -6277,9 +6487,157 @@
                         scrollChatToBottom();
                     }
 
+                    function findDeviceForMention(mentionToken, deviceIndex) {
+                        const cleaned = normalizeMentionToken(mentionToken);
+                        const lowered = cleaned.toLowerCase();
+                        const compact = compactMentionToken(cleaned);
+                        if (!cleaned || !deviceIndex.length) {
+                            return { status: 'not_found' };
+                        }
+
+                        const exact = deviceIndex.filter(d =>
+                            d.idLower === lowered ||
+                            d.nameLower === lowered ||
+                            d.nameCompact === compact
+                        );
+                        if (exact.length === 1) return { status: 'ok', device: exact[0] };
+                        if (exact.length > 1) return { status: 'ambiguous', devices: exact };
+
+                        const prefix = deviceIndex.filter(d =>
+                            d.idLower.startsWith(lowered) ||
+                            d.nameLower.startsWith(lowered) ||
+                            d.nameCompact.startsWith(compact) ||
+                            d.idCompact.startsWith(compact)
+                        );
+                        if (prefix.length === 1) return { status: 'ok', device: prefix[0] };
+                        if (prefix.length > 1) return { status: 'ambiguous', devices: prefix };
+
+                        const contains = deviceIndex.filter(d =>
+                            d.idLower.includes(lowered) ||
+                            d.nameLower.includes(lowered) ||
+                            d.nameCompact.includes(compact) ||
+                            d.idCompact.includes(compact)
+                        );
+                        if (contains.length === 1) return { status: 'ok', device: contains[0] };
+                        if (contains.length > 1) return { status: 'ambiguous', devices: contains };
+
+                        return { status: 'not_found' };
+                    }
+
+                    function parseAtDeviceTaskSequence(rawContent) {
+                        const text = rawContent || '';
+                        const mentionRegex = /(^|[\s，,。;；:：])@([^\s@]+)/g;
+                        const mentions = [];
+                        let match;
+                        while ((match = mentionRegex.exec(text)) !== null) {
+                            const prefix = match[1] || '';
+                            const token = match[2] || '';
+                            const atStart = match.index + prefix.length;
+                            const atEnd = atStart + 1 + token.length;
+                            mentions.push({ token, atStart, atEnd });
+                        }
+
+                        if (!mentions.length) {
+                            return {
+                                hasMentions: false,
+                                sequence: [],
+                                unresolved: [],
+                                ambiguous: [],
+                                emptyTasks: [],
+                            };
+                        }
+
+                        const deviceIndex = (devices.value || []).map(device => ({
+                            id: device.id,
+                            name: device.name || '',
+                            idLower: (device.id || '').toLowerCase(),
+                            nameLower: (device.name || '').toLowerCase(),
+                            idCompact: compactMentionToken(device.id || ''),
+                            nameCompact: compactMentionToken(device.name || ''),
+                        }));
+
+                        const sequence = [];
+                        const unresolved = [];
+                        const ambiguous = [];
+                        const emptyTasks = [];
+
+                        for (let i = 0; i < mentions.length; i++) {
+                            const current = mentions[i];
+                            const next = mentions[i + 1];
+                            const segStart = current.atEnd;
+                            const segEnd = next ? next.atStart : text.length;
+                            const segmentRaw = text.slice(segStart, segEnd);
+                            const taskContent = segmentRaw
+                                .replace(/^[\s，,。;；:：\-—–]+/g, '')
+                                .replace(/[\s，,。;；:：\-—–]+$/g, '')
+                                .trim();
+
+                            const resolved = findDeviceForMention(current.token, deviceIndex);
+                            if (resolved.status === 'ambiguous') {
+                                ambiguous.push(current.token);
+                                continue;
+                            }
+                            if (resolved.status !== 'ok' || !resolved.device) {
+                                unresolved.push(current.token);
+                                continue;
+                            }
+                            if (!taskContent) {
+                                emptyTasks.push(current.token);
+                                continue;
+                            }
+
+                            sequence.push({
+                                mentionToken: current.token,
+                                deviceId: resolved.device.id,
+                                deviceName: resolved.device.name || resolved.device.id,
+                                taskContent,
+                            });
+                        }
+
+                        return {
+                            hasMentions: true,
+                            sequence,
+                            unresolved,
+                            ambiguous,
+                            emptyTasks,
+                        };
+                    }
+
                     async function sendChatMessage() {
-                        const content = chatInput.value.trim();
-                        if (!content || !chatDeviceId.value || chatRunning.value) return;
+                        const rawContent = chatInput.value.trim();
+                        if (!rawContent || chatRunning.value) return;
+
+                        const isSlashCommand = rawContent.startsWith('/');
+                        const mentionSequence = !isSlashCommand ? parseAtDeviceTaskSequence(rawContent) : null;
+                        const hasMentionSequence = !!mentionSequence?.hasMentions;
+
+                        if (hasMentionSequence) {
+                            if ((mentionSequence.unresolved || []).length > 0) {
+                                showToast(`未识别设备: ${mentionSequence.unresolved.join(', ')}`, 'error');
+                                return;
+                            }
+                            if ((mentionSequence.ambiguous || []).length > 0) {
+                                showToast(`设备匹配不唯一: ${mentionSequence.ambiguous.join(', ')}`, 'error');
+                                return;
+                            }
+                            if ((mentionSequence.emptyTasks || []).length > 0) {
+                                showToast(`以下 @设备 后缺少任务内容: ${mentionSequence.emptyTasks.join(', ')}`, 'warning');
+                                return;
+                            }
+                            if ((mentionSequence.sequence || []).length === 0) {
+                                showToast('未匹配到可执行设备', 'error');
+                                return;
+                            }
+                        } else if (!chatDeviceId.value) {
+                            showToast('请先选择设备或输入 @设备', 'warning');
+                            return;
+                        }
+
+                        const taskContent = rawContent;
+                        const targetDeviceIds = hasMentionSequence
+                            ? mentionSequence.sequence.map(item => item.deviceId)
+                            : [chatDeviceId.value];
+                        const primaryTargetDeviceId = targetDeviceIds[0];
 
                         // 确保有会话存在，如果没有则创建
                         if (!currentSessionId.value) {
@@ -6297,7 +6655,7 @@
                                 method: 'POST',
                                 body: JSON.stringify({
                                     role: 'user',
-                                    content: content
+                                    content: rawContent
                                 })
                             });
 
@@ -6318,12 +6676,13 @@
                         // Add user message to local state
                         chatMessages.value.push({
                             role: 'user',
-                            content: content,
+                            content: rawContent,
                             timestamp: new Date().toISOString()
                         });
 
                         // Clear input
                         chatInput.value = '';
+                        chatCursorPos.value = 0;
 
                         // Get current active model name
                         let currentModelName = null;
@@ -6355,13 +6714,19 @@
 
                         scrollChatToBottom();
                         chatRunning.value = true;
+                        if (targetDeviceIds.length > 1) {
+                            const deviceOrder = targetDeviceIds.join(' → ');
+                            assistantMsg.content = `🧭 多设备顺序执行：${deviceOrder}`;
+                            saveCurrentSession();
+                        }
+                        const useComplexTaskMode = complexTaskMode.value && targetDeviceIds.length === 1;
 
                         try {
                             // Slash command mode: direct ADB execution, bypass model/task pipeline
-                            if (content.startsWith('/')) {
+                            if (isSlashCommand) {
                                 await executeSlashAdbCommand(
-                                    content,
-                                    chatDeviceId.value,
+                                    rawContent,
+                                    primaryTargetDeviceId,
                                     assistantMsg,
                                     serverSessionId,
                                     serverMessageId,
@@ -6371,15 +6736,95 @@
                                 return;
                             }
 
-                            // 复杂任务模式：先拆解任务
-                            if (complexTaskMode.value) {
+                            // @设备分段模式：每个 @设备 作为独立任务，按出现顺序串行执行
+                            if (hasMentionSequence) {
+                                chatSegmentSequenceRunning.value = true;
+                                try {
+                                    if (complexTaskMode.value) {
+                                        showToast('检测到 @设备 分段，复杂任务模式已自动跳过拆解并顺序执行', 'info');
+                                    }
+                                    const sequence = mentionSequence.sequence || [];
+                                    const totalSegments = sequence.length;
+
+                                    for (let i = 0; i < totalSegments; i++) {
+                                        const segment = sequence[i];
+                                        if (!chatRunning.value) {
+                                            await apiCall('/api/tasks/stop', { method: 'POST' }).catch(() => { });
+                                            throw new Error('用户取消了任务');
+                                        }
+
+                                        assistantMsg.content = `🔄 (${i + 1}/${totalSegments}) @${segment.mentionToken} · ${segment.taskContent}`;
+                                        saveCurrentSession();
+                                        scrollChatToBottom();
+
+                                        const runResult = await apiCall('/api/tasks/run', {
+                                            method: 'POST',
+                                            body: JSON.stringify({
+                                                task_content: segment.taskContent,
+                                                device_ids: [segment.deviceId],
+                                                send_email: false,
+                                                no_auto_lock: i < totalSegments - 1,
+                                                task_type: "chat",
+                                                session_id: serverSessionId,
+                                                message_id: serverMessageId,
+                                                debug_mode: debugMode.value,
+                                            }),
+                                        });
+                                        if (runResult && runResult.task_id) {
+                                            assistantMsg.taskId = runResult.task_id;
+                                        }
+
+                                        let taskCompleted = false;
+                                        let waitAttempts = 0;
+                                        const maxWaitAttempts = 600; // up to ~10min
+                                        while (!taskCompleted && waitAttempts < maxWaitAttempts) {
+                                            if (!chatRunning.value) {
+                                                await apiCall('/api/tasks/stop', { method: 'POST' }).catch(() => { });
+                                                throw new Error('用户取消了任务');
+                                            }
+                                            await new Promise(resolve => setTimeout(resolve, 1000));
+                                            const status = await apiCall('/api/tasks/status');
+                                            if (!status.running) {
+                                                taskCompleted = true;
+                                                const finishedStatus = status.task?.status;
+                                                if (finishedStatus && finishedStatus !== 'completed') {
+                                                    throw new Error(`步骤 ${i + 1} 执行失败 (${finishedStatus})`);
+                                                }
+                                                break;
+                                            }
+                                            waitAttempts++;
+                                        }
+
+                                        if (!taskCompleted) {
+                                            await apiCall('/api/tasks/stop', { method: 'POST' }).catch(() => { });
+                                            throw new Error(`步骤 ${i + 1} 执行超时`);
+                                        }
+                                    }
+
+                                    assistantMsg.status = 'success';
+                                    assistantMsg.content = `✅ 已按顺序完成 ${totalSegments} 个 @设备任务`;
+                                    assistantMsg.timestamp = new Date().toISOString();
+                                    chatRunning.value = false;
+                                    saveCurrentSession();
+                                    scrollChatToBottom();
+                                    return;
+                                } finally {
+                                    chatSegmentSequenceRunning.value = false;
+                                }
+                            }
+
+                            // 复杂任务模式：先拆解任务（暂不支持 @ 多设备）
+                            if (complexTaskMode.value && targetDeviceIds.length > 1) {
+                                showToast('检测到 @ 多设备，已切换为普通顺序执行模式', 'info');
+                            }
+                            if (useComplexTaskMode) {
                                 assistantMsg.content = '🧩 正在分析任务...';
                                 saveCurrentSession();
 
                                 // 调用任务拆解API
                                 const decomposeResult = await apiCall('/api/tasks/decompose', {
                                     method: 'POST',
-                                    body: JSON.stringify({ task_content: content }),
+                                    body: JSON.stringify({ task_content: taskContent }),
                                 });
 
                                 if (decomposeResult.success && decomposeResult.todoList) {
@@ -6514,7 +6959,7 @@
                                                     method: 'POST',
                                                     body: JSON.stringify({
                                                         task_content: todoItem.content,
-                                                        device_ids: [chatDeviceId.value],
+                                                        device_ids: [primaryTargetDeviceId],
                                                         send_email: false,  // 子任务不发邮件
                                                         no_auto_lock: true,  // 所有子任务都不自动锁屏，最后统一处理
                                                         task_type: "chat",  // 标记为 chat 任务，避免日志出现在 Run Task 页面
@@ -6657,7 +7102,7 @@
                                     // 在锁屏前截取最终截图并保存到数据库
                                     try {
                                         console.log('[复杂任务] 截取最终截图...');
-                                        const screenshotResponse = await fetch(`/api/devices/${chatDeviceId.value}/screenshot/base64`);
+                                        const screenshotResponse = await fetch(`/api/devices/${primaryTargetDeviceId}/screenshot/base64`);
                                         if (screenshotResponse.ok) {
                                             const screenshotData = await screenshotResponse.json();
                                             // API 返回的是 {"image": "base64..."} 格式
@@ -6697,7 +7142,7 @@
                                     // 截图完成后锁屏
                                     try {
                                         console.log('[复杂任务] 锁定设备...');
-                                        await apiCall(`/api/devices/${chatDeviceId.value}/lock`, { method: 'POST' });
+                                        await apiCall(`/api/devices/${primaryTargetDeviceId}/lock`, { method: 'POST' });
                                         console.log('[复杂任务] 设备已锁定');
                                     } catch (lockError) {
                                         console.error('[复杂任务] 锁屏失败:', lockError);
@@ -6721,7 +7166,7 @@
                                             const emailResult = await apiCall('/api/tasks/send-complex-email', {
                                                 method: 'POST',
                                                 body: JSON.stringify({
-                                                    task_name: content,
+                                                    task_name: taskContent,
                                                     subtasks: assistantMsg.todoList.map(t => ({
                                                         content: t.content,
                                                         status: t.status,
@@ -6748,8 +7193,8 @@
                                 const runResult = await apiCall('/api/tasks/run', {
                                     method: 'POST',
                                     body: JSON.stringify({
-                                        task_content: content,
-                                        device_ids: [chatDeviceId.value],
+                                        task_content: taskContent,
+                                        device_ids: targetDeviceIds,
                                         send_email: chatAutoEmail.value,
                                         task_type: "chat",  // 标记为 chat 任务，避免日志出现在 Run Task 页面
                                         session_id: serverSessionId,  // 传递会话ID
@@ -6783,7 +7228,7 @@
                         }
 
                         // 复杂任务模式下，执行完成后重置状态
-                        if (complexTaskMode.value) {
+                        if (useComplexTaskMode) {
                             chatRunning.value = false;
                         }
 
@@ -6796,6 +7241,7 @@
                         try {
                             await apiCall('/api/tasks/stop', { method: 'POST' });
                             showToast('正在停止任务...');
+                            chatSegmentSequenceRunning.value = false;
 
                             // Update chat message status
                             if (chatMessages.value.length > 0) {
@@ -9534,11 +9980,17 @@
                         chatDeviceId,
                         chatRunning,
                         chatMessagesRef,
+                        canSendChatMessage,
                         isAdbCommandMode,
+                        isDeviceMentionMode,
                         filteredAdbQuickCommands,
+                        filteredDeviceMentionSuggestions,
                         activeAdbSuggestionCommand,
+                        activeDeviceMentionSuggestionId,
                         applyAdbQuickCommand,
+                        applyDeviceMentionSuggestion,
                         handleChatInputKeydown,
+                        syncChatCursor,
                         chatAutoEmail,
                         complexTaskMode,
                         debugMode,
