@@ -7,7 +7,7 @@ import os
 import tempfile
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from web_app.auth import verify_token
@@ -42,6 +42,11 @@ class WirelessPairRequest(BaseModel):
 
 class TcpConnectRequest(BaseModel):
     connect_address: str
+
+
+class AdbCommandRequest(BaseModel):
+    command: str
+    timeout_seconds: int = Field(default=20, ge=3, le=120)
 
 
 @router.get("", response_model=list[DeviceResponse])
@@ -302,3 +307,20 @@ async def delete_file(
     """Delete a file on the device."""
     success, message = await device_service.delete_file(device_id, path)
     return {"success": success, "message": message}
+
+
+@router.post("/{device_id}/adb/execute")
+async def execute_adb_command(
+    device_id: str,
+    request: AdbCommandRequest,
+    _: bool = Depends(verify_token)
+):
+    """
+    Execute slash-style ADB command for chat direct mode.
+    This endpoint intentionally returns structured result even on command failure.
+    """
+    return await device_service.execute_adb_chat_command(
+        device_id=device_id,
+        command=request.command,
+        timeout_seconds=request.timeout_seconds,
+    )

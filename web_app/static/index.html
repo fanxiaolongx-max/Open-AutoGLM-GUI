@@ -770,6 +770,89 @@
             align-items: flex-end;
         }
 
+        .chat-input-stack {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .adb-command-suggestions {
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            background: rgba(239, 246, 255, 0.8);
+            border-radius: 12px;
+            padding: 8px;
+            max-height: 210px;
+            overflow-y: auto;
+        }
+
+        [data-theme="dark"] .adb-command-suggestions {
+            background: rgba(15, 23, 42, 0.75);
+            border-color: rgba(59, 130, 246, 0.45);
+        }
+
+        .adb-command-hint {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin: 0 0 6px 2px;
+        }
+
+        .adb-command-item {
+            width: 100%;
+            text-align: left;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 8px;
+            padding: 6px 8px;
+            cursor: pointer;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+            transition: all 0.15s ease;
+        }
+
+        .adb-command-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .adb-command-item:hover {
+            border-color: rgba(59, 130, 246, 0.6);
+            transform: translateY(-1px);
+        }
+
+        .adb-command-item.active {
+            border-color: rgba(37, 99, 235, 0.8);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+            transform: translateY(-1px);
+        }
+
+        [data-theme="dark"] .adb-command-item {
+            background: rgba(30, 41, 59, 0.85);
+            border-color: rgba(148, 163, 184, 0.32);
+        }
+
+        .adb-command-item-main {
+            font-size: 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            color: #2563eb;
+        }
+
+        [data-theme="dark"] .adb-command-item-main {
+            color: #93c5fd;
+        }
+
+        .adb-command-item-desc {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .chat-content-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+
         [data-theme="dark"] .chat-input-container {
             background: rgba(15, 23, 42, 0.6);
             border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -2201,13 +2284,13 @@
                                 <div class="chat-bubble" :class="msg.status || ''">
                                     <div v-if="msg.role === 'user'">
                                         <span v-if="msg.source === 'telegram'" title="来自 Telegram Bot"
-                                            style="margin-right: 4px;">✈️</span>{{ msg.content }}
+                                            style="margin-right: 4px;">✈️</span><span class="chat-content-text">{{ msg.content }}</span>
                                     </div>
                                     <div v-else>
                                         <div v-if="msg.status === 'running'">
                                             <span class="mini-spinner"></span>正在执行任务...
                                         </div>
-                                        <div v-else>{{ msg.content }}</div>
+                                        <div v-else class="chat-content-text">{{ msg.content }}</div>
                                         <!-- TodoList 显示 (复杂任务模式) -->
                                         <div v-if="msg.todoList && msg.todoList.length > 0" class="todo-list-card">
                                             <div class="todo-list-header">📋 任务清单</div>
@@ -2313,8 +2396,7 @@
                                                             {{ item.content }}
                                                         </div>
                                                         <div v-for="(log, li) in item.logs.slice(-3)" :key="li"
-                                                            class="task-log-item">{{ typeof log === 'object' ?
-                                                            (log.content || JSON.stringify(log)) : log }}</div>
+                                                            class="task-log-item">{{ formatTaskLogPreview(log) }}</div>
                                                         <div v-if="item.logs.length > 3" class="task-log-more">... 共 {{
                                                             item.logs.length }} 条</div>
                                                     </div>
@@ -2324,8 +2406,7 @@
                                             <template v-else-if="msg.logs && msg.logs.length > 0">
                                                 <div v-for="(log, i) in msg.logs.slice(-3)" :key="i"
                                                     class="task-log-item">
-                                                    {{ typeof log === 'object' ? (log.content || JSON.stringify(log)) :
-                                                    log }}
+                                                    {{ formatTaskLogPreview(log) }}
                                                 </div>
                                             </template>
                                             <div class="task-result-hint">点击查看详情和截图 →</div>
@@ -2359,9 +2440,22 @@
 
                         <!-- Input Area -->
                         <div class="chat-input-container">
-                            <textarea v-model="chatInput" class="chat-input" :placeholder="t('chatInputPlaceholder')"
-                                rows="1" @keydown.enter.exact.prevent="sendChatMessage" @input="adjustChatInputHeight"
-                                :disabled="chatRunning"></textarea>
+                            <div class="chat-input-stack">
+                                <textarea v-model="chatInput" class="chat-input" :placeholder="t('chatInputPlaceholder')"
+                                    rows="1" @keydown="handleChatInputKeydown"
+                                    @input="adjustChatInputHeight" :disabled="chatRunning"></textarea>
+                                <div v-if="isAdbCommandMode && filteredAdbQuickCommands.length > 0"
+                                    class="adb-command-suggestions">
+                                    <div class="adb-command-hint">⚡ Slash 命令模式：回车后直接执行 ADB，不调用模型</div>
+                                    <button v-for="item in filteredAdbQuickCommands" :key="item.command"
+                                        class="adb-command-item"
+                                        :class="{ active: item.command === activeAdbSuggestionCommand }"
+                                        @click="applyAdbQuickCommand(item)">
+                                        <div class="adb-command-item-main">{{ item.command }}</div>
+                                        <div class="adb-command-item-desc">{{ item.desc }}</div>
+                                    </button>
+                                </div>
+                            </div>
                             <button v-if="chatRunning" class="chat-stop-btn" @click="stopChatTask" title="停止任务">
                                 ⏹
                             </button>
@@ -4262,6 +4356,92 @@
                     let subtaskCountdownTimer = null;  // 倒计时定时器
                     let currentChatTaskId = null;
                     let chatScrollPosition = 0;  // 保存 Chat 滚动位置
+                    const adbSuggestionIndex = ref(-1);
+                    const adbQuickCommands = [
+                        { command: '/help', desc: '查看 Slash 指令帮助' },
+                        { command: '/shell input keyevent 26', desc: '点亮/熄灭屏幕（电源键）' },
+                        { command: '/shell input keyevent 82', desc: '解锁滑动前唤醒菜单键' },
+                        { command: '/shell screencap -p /sdcard/Download/shot.png', desc: '截图到设备存储' },
+                        { command: '/shell settings get secure android_id', desc: '查看 Android ID' },
+                        { command: '/shell wm size', desc: '查看屏幕分辨率' },
+                        { command: '/shell wm density', desc: '查看屏幕密度' },
+                        { command: '/shell settings get system screen_brightness', desc: '查看亮度值' },
+                        { command: '/shell dumpsys battery', desc: '查看电池状态' },
+                        { command: '/shell dumpsys power', desc: '查看电源状态' },
+                        { command: '/shell dumpsys window', desc: '查看窗口与焦点信息' },
+                        { command: '/shell dumpsys display', desc: '查看显示状态' },
+                        { command: '/shell dumpsys activity activities', desc: '查看 Activity 栈' },
+                        { command: '/shell dumpsys package', desc: '查看包管理信息' },
+                        { command: '/shell dumpsys meminfo', desc: '查看内存概览' },
+                        { command: '/shell getprop ro.product.model', desc: '查看设备型号' },
+                        { command: '/shell getprop ro.build.version.release', desc: '查看 Android 版本' },
+                        { command: '/shell getprop ro.build.version.sdk', desc: '查看 SDK 版本' },
+                        { command: '/shell getprop ro.product.brand', desc: '查看品牌' },
+                        { command: '/shell pm list packages', desc: '查看已安装应用' },
+                        { command: '/shell pm list packages -3', desc: '查看第三方应用' },
+                        { command: '/shell pm list packages -s', desc: '查看系统应用' },
+                        { command: '/shell pm path com.android.settings', desc: '查看应用 APK 路径' },
+                        { command: '/shell ls /sdcard', desc: '查看 SDCard 根目录' },
+                        { command: '/shell ls /sdcard/Download', desc: '查看下载目录' },
+                        { command: '/shell df -h', desc: '查看磁盘占用' },
+                        { command: '/shell free -h', desc: '查看内存占用（设备支持时）' },
+                        { command: '/shell ip addr', desc: '查看网络地址（设备支持时）' },
+                        { command: '/shell settings list system', desc: '查看系统设置项' },
+                        { command: '/shell settings list secure', desc: '查看安全设置项' },
+                        { command: '/shell settings list global', desc: '查看全局设置项' },
+                        { command: '/shell ip route', desc: '查看路由表（设备支持时）' },
+                        { command: '/shell cat /proc/meminfo', desc: '查看内存详情' },
+                        { command: '/key KEYCODE_HOME', desc: '按 Home 键' },
+                        { command: '/key KEYCODE_BACK', desc: '按返回键' },
+                        { command: '/tap 540 1800', desc: '点击坐标' },
+                        { command: '/swipe 540 1800 540 400 260', desc: '上滑手势' },
+                        { command: '/text hello%sworld', desc: '输入文本（空格用 %s）' },
+                        { command: '/am start -a android.settings.SETTINGS', desc: '打开系统设置' },
+                        { command: '/am force-stop com.tencent.mm', desc: '强制停止 App（修改）' },
+                        { command: '/pm clear com.tencent.mm', desc: '清除 App 数据（修改）' },
+                        { command: '/pm disable-user --user 0 com.android.browser', desc: '禁用应用（修改）' },
+                        { command: '/pm enable com.android.browser', desc: '启用应用（修改）' },
+                        { command: '/settings put system screen_brightness 120', desc: '设置亮度（修改）' },
+                        { command: '/settings put system screen_off_timeout 600000', desc: '设置息屏超时10分钟（修改）' },
+                        { command: '/settings put secure show_touches 1', desc: '开启触摸点显示（修改）' },
+                        { command: '/settings put secure show_touches 0', desc: '关闭触摸点显示（修改）' },
+                        { command: '/settings put global animator_duration_scale 0.5', desc: '动画速度 0.5x（修改）' },
+                        { command: '/settings put global transition_animation_scale 0.5', desc: '过渡动画 0.5x（修改）' },
+                        { command: '/settings put global window_animation_scale 0.5', desc: '窗口动画 0.5x（修改）' },
+                        { command: '/settings put global adb_enabled 1', desc: '开启 adb 调试标记（修改，需权限）' },
+                        { command: '/svc wifi enable', desc: '开启 Wi-Fi（修改）' },
+                        { command: '/svc wifi disable', desc: '关闭 Wi-Fi（修改）' },
+                        { command: '/svc data enable', desc: '开启移动数据（修改）' },
+                        { command: '/svc data disable', desc: '关闭移动数据（修改）' },
+                        { command: '/setprop debug.layout true', desc: '开启布局边界（修改，需支持）' },
+                        { command: '/setprop debug.layout false', desc: '关闭布局边界（修改，需支持）' },
+                        { command: '/appops set com.tencent.mm SYSTEM_ALERT_WINDOW allow', desc: '授予悬浮窗权限（修改）' },
+                        { command: '/broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/shot.png', desc: '通知系统刷新媒体库（修改）' },
+                    ];
+                    const isAdbCommandMode = Vue.computed(() => {
+                        const text = (chatInput.value || '').trim();
+                        return text.startsWith('/');
+                    });
+                    const filteredAdbQuickCommands = Vue.computed(() => {
+                        const keyword = (chatInput.value || '').trim().toLowerCase();
+                        if (!keyword.startsWith('/')) {
+                            return [];
+                        }
+                        if (keyword.length <= 1) {
+                            return adbQuickCommands;
+                        }
+                        const candidates = adbQuickCommands.filter(item =>
+                            item.command.toLowerCase().includes(keyword) ||
+                            item.desc.toLowerCase().includes(keyword.slice(1))
+                        );
+                        return candidates;
+                    });
+                    const activeAdbSuggestionCommand = Vue.computed(() => {
+                        const list = filteredAdbQuickCommands.value || [];
+                        if (!list.length) return '';
+                        if (adbSuggestionIndex.value < 0 || adbSuggestionIndex.value >= list.length) return '';
+                        return list[adbSuggestionIndex.value].command;
+                    });
 
                     // Tap preview modal state (debug mode)
                     const showTapPreview = ref(false);
@@ -5507,12 +5687,113 @@
                                 }
                             }
                         });
+
+                        const list = filteredAdbQuickCommands.value || [];
+                        if (!isAdbCommandMode.value || list.length === 0) {
+                            adbSuggestionIndex.value = -1;
+                            return;
+                        }
+                        if (adbSuggestionIndex.value < 0) {
+                            adbSuggestionIndex.value = 0;
+                            ensureActiveAdbSuggestionVisible();
+                            return;
+                        }
+                        if (adbSuggestionIndex.value >= list.length) {
+                            adbSuggestionIndex.value = 0;
+                            ensureActiveAdbSuggestionVisible();
+                        }
                     });
+
+                    watch(filteredAdbQuickCommands, (list) => {
+                        const items = list || [];
+                        if (!isAdbCommandMode.value || items.length === 0) {
+                            adbSuggestionIndex.value = -1;
+                            return;
+                        }
+                        if (adbSuggestionIndex.value < 0 || adbSuggestionIndex.value >= items.length) {
+                            adbSuggestionIndex.value = 0;
+                        }
+                        ensureActiveAdbSuggestionVisible();
+                    });
+
+                    function ensureActiveAdbSuggestionVisible() {
+                        Vue.nextTick(() => {
+                            const panel = document.querySelector('.adb-command-suggestions');
+                            if (!panel) return;
+                            const activeItem = panel.querySelector('.adb-command-item.active');
+                            if (!activeItem) return;
+
+                            const panelTop = panel.scrollTop;
+                            const panelBottom = panelTop + panel.clientHeight;
+                            const itemTop = activeItem.offsetTop;
+                            const itemBottom = itemTop + activeItem.offsetHeight;
+
+                            const padding = 6;
+                            if (itemTop < panelTop) {
+                                panel.scrollTop = Math.max(0, itemTop - padding);
+                            } else if (itemBottom > panelBottom) {
+                                panel.scrollTop = Math.max(0, itemBottom - panel.clientHeight + padding);
+                            }
+                        });
+                    }
 
                     // Retry a previous message
                     function retryMessage(content) {
                         if (chatRunning.value) return;
                         chatInput.value = content;
+                        sendChatMessage();
+                    }
+
+                    function applyAdbQuickCommand(item) {
+                        if (!item || !item.command) return;
+                        chatInput.value = item.command;
+                        const idx = filteredAdbQuickCommands.value.findIndex(x => x.command === item.command);
+                        adbSuggestionIndex.value = idx >= 0 ? idx : -1;
+                        Vue.nextTick(() => {
+                            const el = document.querySelector('.chat-input');
+                            if (el) {
+                                el.focus();
+                                el.setSelectionRange(el.value.length, el.value.length);
+                            }
+                        });
+                    }
+
+                    function handleChatInputKeydown(event) {
+                        const candidates = filteredAdbQuickCommands.value || [];
+                        const inSlashMode = isAdbCommandMode.value && candidates.length > 0;
+                        if (inSlashMode && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                            event.preventDefault();
+                            if (event.key === 'ArrowDown') {
+                                adbSuggestionIndex.value = (adbSuggestionIndex.value + 1 + candidates.length) % candidates.length;
+                            } else {
+                                adbSuggestionIndex.value = adbSuggestionIndex.value <= 0
+                                    ? candidates.length - 1
+                                    : adbSuggestionIndex.value - 1;
+                            }
+                            ensureActiveAdbSuggestionVisible();
+                            return;
+                        }
+
+                        if (event.key !== 'Enter') {
+                            return;
+                        }
+                        // Shift+Enter keeps newline editing behavior.
+                        if (event.shiftKey) {
+                            return;
+                        }
+                        // IME composing state should not trigger send.
+                        if (event.isComposing || event.keyCode === 229) {
+                            return;
+                        }
+                        if (inSlashMode && adbSuggestionIndex.value >= 0) {
+                            const selected = candidates[adbSuggestionIndex.value];
+                            const raw = (chatInput.value || '').trim();
+                            // In command-search mode (only prefix, no args yet), Enter applies selected command.
+                            if (selected && (raw === '/' || !raw.includes(' '))) {
+                                chatInput.value = selected.command;
+                            }
+                        }
+                        event.preventDefault();
                         sendChatMessage();
                     }
 
@@ -5862,6 +6143,140 @@
                         tapPreviewAdjustedY.value = Math.round(y * scaleY);
                     }
 
+                    function formatTaskLogPreview(log, maxLen = 220) {
+                        const raw = typeof log === 'object'
+                            ? (log.content || JSON.stringify(log))
+                            : (log || '');
+                        const compact = String(raw).replace(/\s+/g, ' ').trim();
+                        if (!compact) return '';
+                        return compact.length > maxLen ? `${compact.slice(0, maxLen)} ...` : compact;
+                    }
+
+                    function formatOutputSummaryPreview(text, maxLen = 180) {
+                        const compact = String(text || '').replace(/\s+/g, ' ').trim();
+                        if (!compact) return '';
+                        return compact.length > maxLen ? `${compact.slice(0, maxLen)} ...` : compact;
+                    }
+
+                    function buildSlashHelpText() {
+                        const lines = [
+                            '📚 Slash 指令帮助（不走模型，直接 ADB）',
+                            '',
+                            '常用前缀：',
+                            '• /shell <cmd...>',
+                            '• /tap <x> <y>',
+                            '• /swipe <x1> <y1> <x2> <y2> [duration_ms]',
+                            '• /text <content>',
+                            '• /key <KEYCODE>',
+                            '• /am <args...>',
+                            '• /settings <get|put|delete ...>',
+                            '• /svc <wifi|data ...>',
+                            '• /setprop <key> <value>',
+                            '• /appops <args...>',
+                            '• /broadcast <args...>',
+                            '',
+                            '查看类示例：',
+                        ];
+                        const inspection = adbQuickCommands.filter(item =>
+                            (item.command.startsWith('/shell ') || item.command.startsWith('/help'))
+                            && !item.desc.includes('（修改）')
+                        ).slice(0, 14);
+                        inspection.forEach(item => {
+                            lines.push(`• ${item.command}  ——  ${item.desc}`);
+                        });
+                        lines.push('');
+                        lines.push('修改类示例：');
+                        const mutation = adbQuickCommands.filter(item =>
+                            item.desc.includes('（修改）') || item.command.startsWith('/settings put ')
+                        ).slice(0, 12);
+                        mutation.forEach(item => {
+                            lines.push(`• ${item.command}  ——  ${item.desc}`);
+                        });
+                        lines.push('');
+                        lines.push('提示：');
+                        lines.push('• Enter 发送，Shift+Enter 换行');
+                        lines.push('• 长日志可在“完整执行日志”查看');
+                        return lines.join('\n');
+                    }
+
+                    async function syncSlashCommandResultToServer(sessionId, messageId, msg, logs) {
+                        if (!sessionId || !messageId) return;
+                        try {
+                            await apiCall(`/api/chat/sessions/${sessionId}/messages/${messageId}`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({
+                                    content: msg.content,
+                                    status: msg.status,
+                                    tokens: 0,
+                                }),
+                            });
+
+                            const mergedLogs = (logs || []).filter(Boolean).join('\n');
+                            if (mergedLogs) {
+                                await apiCall(`/api/chat/sessions/${sessionId}/messages/${messageId}/logs`, {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        content: mergedLogs,
+                                        log_type: msg.status === 'success' ? 'info' : 'error',
+                                    }),
+                                });
+                            }
+                        } catch (e) {
+                            console.warn('Failed to sync slash command result to server:', e);
+                        }
+                    }
+
+                    async function executeSlashAdbCommand(command, deviceId, assistantMsg, sessionId, messageId) {
+                        const normalizedInput = (command || '').trim().toLowerCase();
+                        if (normalizedInput === '/help' || normalizedInput === '/help adb' || normalizedInput === '/?') {
+                            const helpText = buildSlashHelpText();
+                            assistantMsg.logs = ['[HELP] Slash command help'];
+                            assistantMsg.status = 'success';
+                            assistantMsg.content = helpText;
+                            assistantMsg.timestamp = new Date().toISOString();
+                            await syncSlashCommandResultToServer(sessionId, messageId, assistantMsg, [helpText]);
+                            saveCurrentSession();
+                            scrollChatToBottom();
+                            return;
+                        }
+
+                        assistantMsg.content = `⚡ 执行指令中: ${command}`;
+                        assistantMsg.logs = [];
+                        saveCurrentSession();
+
+                        const result = await apiCall(`/api/devices/${encodeURIComponent(deviceId)}/adb/execute`, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                command,
+                                timeout_seconds: 25,
+                            }),
+                        });
+
+                        const exitCodeText = result.exit_code === null || result.exit_code === undefined
+                            ? 'N/A'
+                            : String(result.exit_code);
+                        const stdout = result.stdout || '';
+                        const stderr = result.stderr || '';
+                        const logs = [
+                            `[ADB] ${result.normalized_command || command}`,
+                            `[Exit] ${exitCodeText} · ${result.duration_ms || 0}ms`,
+                        ];
+                        if (stdout) logs.push(`[STDOUT]\n${stdout}`);
+                        if (stderr) logs.push(`[STDERR]\n${stderr}`);
+
+                        assistantMsg.logs = logs;
+                        assistantMsg.status = result.success ? 'success' : 'error';
+                        const stdoutPreview = formatOutputSummaryPreview(stdout);
+                        const stderrPreview = formatOutputSummaryPreview(stderr);
+                        assistantMsg.content = result.success
+                            ? `✅ 指令执行完成\n命令: ${result.normalized_command || command}\n退出码: ${exitCodeText}\n耗时: ${result.duration_ms || 0}ms${stdoutPreview ? `\nSTDOUT: ${stdoutPreview}` : ''}${stderrPreview ? `\nSTDERR: ${stderrPreview}` : ''}\n\n📝 完整输出请点击下方执行日志查看`
+                            : `❌ 指令执行失败: ${result.message || 'Unknown error'}\n命令: ${result.normalized_command || command}\n退出码: ${exitCodeText}\n耗时: ${result.duration_ms || 0}ms${stdoutPreview ? `\nSTDOUT: ${stdoutPreview}` : ''}${stderrPreview ? `\nSTDERR: ${stderrPreview}` : ''}\n\n📝 完整输出请点击下方执行日志查看`;
+                        assistantMsg.timestamp = new Date().toISOString();
+                        await syncSlashCommandResultToServer(sessionId, messageId, assistantMsg, logs);
+                        saveCurrentSession();
+                        scrollChatToBottom();
+                    }
+
                     async function sendChatMessage() {
                         const content = chatInput.value.trim();
                         if (!content || !chatDeviceId.value || chatRunning.value) return;
@@ -5942,6 +6357,20 @@
                         chatRunning.value = true;
 
                         try {
+                            // Slash command mode: direct ADB execution, bypass model/task pipeline
+                            if (content.startsWith('/')) {
+                                await executeSlashAdbCommand(
+                                    content,
+                                    chatDeviceId.value,
+                                    assistantMsg,
+                                    serverSessionId,
+                                    serverMessageId,
+                                );
+                                chatRunning.value = false;
+                                saveCurrentSession();
+                                return;
+                            }
+
                             // 复杂任务模式：先拆解任务
                             if (complexTaskMode.value) {
                                 assistantMsg.content = '🧩 正在分析任务...';
@@ -9105,6 +9534,11 @@
                         chatDeviceId,
                         chatRunning,
                         chatMessagesRef,
+                        isAdbCommandMode,
+                        filteredAdbQuickCommands,
+                        activeAdbSuggestionCommand,
+                        applyAdbQuickCommand,
+                        handleChatInputKeydown,
                         chatAutoEmail,
                         complexTaskMode,
                         debugMode,
@@ -9121,6 +9555,7 @@
                         t,
                         subtaskTimeoutSeconds,
                         subtaskCountdown,
+                        formatTaskLogPreview,
                         sendChatMessage,
                         retryMessage,
                         skipSubtask,

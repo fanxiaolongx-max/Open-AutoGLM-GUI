@@ -8,6 +8,9 @@ import asyncio
 import base64
 import json
 import logging
+import shlex
+import subprocess
+import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
@@ -630,6 +633,218 @@ class DeviceService:
             return False, "删除超时"
         except Exception as e:
             return False, f"删除错误: {str(e)}"
+
+    @staticmethod
+    def _build_adb_args_from_chat_command(command: str) -> tuple[list[str], str]:
+        """
+        Parse chat slash command and convert to adb args.
+        Supported formats:
+        - /adb <raw adb args>
+        - /shell <cmd...>
+        - /tap <x> <y>
+        - /swipe <x1> <y1> <x2> <y2> [duration_ms]
+        - /text <content>
+        - /key <keycode>
+        - /keyevent <keycode>
+        - /am <args...>
+        - /input <args...>
+        - /pm|wm|dumpsys|getprop|settings|cmd|ime|svc <args...>
+        """
+        content = (command or "").strip()
+        if not content.startswith("/"):
+            raise ValueError("命令必须以 / 开头")
+
+        raw = content[1:].strip()
+        if not raw:
+            raise ValueError("空命令，请输入例如 /shell wm size")
+
+        try:
+            tokens = shlex.split(raw)
+        except ValueError as e:
+            raise ValueError(f"命令解析失败: {e}") from e
+
+        if not tokens:
+            raise ValueError("空命令，请输入例如 /shell wm size")
+
+        head = tokens[0].lower()
+        tail = tokens[1:]
+        shell_heads = {
+            "pm",
+            "wm",
+            "dumpsys",
+            "getprop",
+            "setprop",
+            "settings",
+            "cmd",
+            "ime",
+            "svc",
+            "appops",
+            "content",
+            "device_config",
+            "monkey",
+            "logcat",
+        }
+
+        if head == "adb":
+            if not tail:
+                raise ValueError("缺少 adb 参数，例如 /adb shell wm size")
+            adb_args = tail
+        elif head == "shell":
+            if not tail:
+                raise ValueError("缺少 shell 参数，例如 /shell wm size")
+            adb_args = ["shell", *tail]
+        elif head == "tap":
+            if len(tail) != 2:
+                raise ValueError("tap 用法: /tap <x> <y>")
+            adb_args = ["shell", "input", "tap", tail[0], tail[1]]
+        elif head == "swipe":
+            if len(tail) not in (4, 5):
+                raise ValueError("swipe 用法: /swipe <x1> <y1> <x2> <y2> [duration_ms]")
+            adb_args = ["shell", "input", "swipe", *tail]
+        elif head == "text":
+            if not tail:
+                raise ValueError("text 用法: /text <内容>")
+            text_payload = " ".join(tail).replace(" ", "%s")
+            adb_args = ["shell", "input", "text", text_payload]
+        elif head in ("key", "keyevent"):
+            if len(tail) != 1:
+                raise ValueError("key 用法: /key <KEYCODE_HOME|3>")
+            adb_args = ["shell", "input", "keyevent", tail[0]]
+        elif head == "am":
+            if not tail:
+                raise ValueError("am 用法: /am start -n package/.Activity")
+            adb_args = ["shell", "am", *tail]
+        elif head == "broadcast":
+            if not tail:
+                raise ValueError("broadcast 用法: /broadcast -a ACTION ...")
+            adb_args = ["shell", "am", "broadcast", *tail]
+        elif head == "input":
+            if not tail:
+                raise ValueError("input 用法: /input keyevent 3")
+            adb_args = ["shell", "input", *tail]
+        elif head in shell_heads:
+            adb_args = ["shell", head, *tail]
+        else:
+            raise ValueError(
+                "不支持的命令。可用前缀: /adb /shell /tap /swipe /text /key /keyevent /am /input /pm /wm /dumpsys /getprop /settings /cmd /ime /svc"
+            )
+
+        return adb_args, "adb " + " ".join(adb_args)
+
+    async def execute_adb_chat_command(
+        self,
+        device_id: str,
+        command: str,
+        timeout_seconds: int = 20,
+    ) -> dict:
+        """Execute a slash-style adb command for chat direct mode."""
+        if timeout_seconds < 3:
+            timeout_seconds = 3
+        if timeout_seconds > 120:
+            timeout_seconds = 120
+
+        if not device_id:
+            return {
+                "success": False,
+                "message": "缺少设备 ID",
+                "command": command,
+                "normalized_command": "",
+                "exit_code": None,
+                "stdout": "",
+                "stderr": "",
+                "duration_ms": 0,
+                "truncated": False,
+            }
+
+        # Use cached device list check to avoid obvious errors.
+        if device_id not in self._devices:
+            await self.refresh_devices()
+        if device_id not in self._devices:
+            return {
+                "success": False,
+                "message": f"设备未连接: {device_id}",
+                "command": command,
+                "normalized_command": "",
+                "exit_code": None,
+                "stdout": "",
+                "stderr": "",
+                "duration_ms": 0,
+                "truncated": False,
+            }
+
+        try:
+            adb_args, normalized = self._build_adb_args_from_chat_command(command)
+        except ValueError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "command": command,
+                "normalized_command": "",
+                "exit_code": None,
+                "stdout": "",
+                "stderr": "",
+                "duration_ms": 0,
+                "truncated": False,
+            }
+
+        loop = asyncio.get_event_loop()
+
+        def run_sync():
+            started = time.perf_counter()
+            result = subprocess.run(
+                ["adb", "-s", device_id, *adb_args],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout_seconds,
+            )
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            return result, duration_ms
+
+        try:
+            result, duration_ms = await loop.run_in_executor(None, run_sync)
+            stdout = (result.stdout or "").strip()
+            stderr = (result.stderr or "").strip()
+            ok = result.returncode == 0
+            return {
+                "success": ok,
+                "message": "命令执行成功" if ok else "命令执行失败",
+                "command": command,
+                "normalized_command": normalized,
+                "exit_code": result.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "duration_ms": duration_ms,
+                "truncated": False,
+            }
+        except subprocess.TimeoutExpired as e:
+            stdout = (e.stdout or "") if isinstance(e.stdout, str) else ""
+            stderr = (e.stderr or "") if isinstance(e.stderr, str) else ""
+            return {
+                "success": False,
+                "message": f"命令执行超时（>{timeout_seconds}s）",
+                "command": command,
+                "normalized_command": normalized,
+                "exit_code": None,
+                "stdout": stdout.strip(),
+                "stderr": stderr.strip(),
+                "duration_ms": timeout_seconds * 1000,
+                "truncated": False,
+            }
+        except Exception as e:
+            logger.exception("Failed to execute adb chat command")
+            return {
+                "success": False,
+                "message": f"执行异常: {e}",
+                "command": command,
+                "normalized_command": normalized,
+                "exit_code": None,
+                "stdout": "",
+                "stderr": str(e),
+                "duration_ms": 0,
+                "truncated": False,
+            }
 
     def set_telegram_bot(self, telegram_bot):
         """Set telegram bot reference for notifications."""
