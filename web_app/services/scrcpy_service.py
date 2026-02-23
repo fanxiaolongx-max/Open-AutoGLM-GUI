@@ -663,6 +663,22 @@ class ScrcpyService:
                     if idx < len(scrcpy_profiles):
                         await asyncio.sleep(0.4)
 
+            # If all retries failed due to ADB timeout, auto-restart ADB server
+            if last_error and ("timed out" in str(last_error) or "timeout" in str(last_error).lower()):
+                logger.warning(f"[ADB-RECOVERY] ADB appears stuck for {device_id}, restarting ADB server...")
+                try:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: subprocess.run(["adb", "kill-server"], capture_output=True, timeout=10)
+                    )
+                    await asyncio.sleep(2)
+                    await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: subprocess.run(["adb", "start-server"], capture_output=True, timeout=10)
+                    )
+                    logger.info("[ADB-RECOVERY] ADB server restarted successfully")
+                except Exception as recovery_err:
+                    logger.error(f"[ADB-RECOVERY] failed to restart ADB server: {recovery_err}")
             raise RuntimeError(f"scrcpy stream failed for {device_id}: {last_error}")
 
     # ──────────────────────────────────────────────────────────────────────
@@ -823,18 +839,40 @@ class ScrcpyService:
 
         def _deploy_and_connect():
             """Push JAR, start server, connect socket (blocking)."""
+            # Clean residual forward ports for this device to prevent ADB congestion
+            try:
+                fwd_result = subprocess.run(
+                    ["adb", "-s", device_id, "forward", "--list"],
+                    capture_output=True, text=True, timeout=15
+                )
+                for line in (fwd_result.stdout or "").strip().split('\n'):
+                    line = line.strip()
+                    if line and device_id in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                subprocess.run(
+                                    ["adb", "-s", device_id, "forward", "--remove", parts[1]],
+                                    capture_output=True, timeout=15
+                                )
+                                logger.debug(f"cleaned residual forward: {line}")
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.debug(f"forward cleanup before start for {device_id}: {e}")
+
             # Push server JAR
             subprocess.run(
                 ["adb", "-s", device_id, "push", _scrcpy_server_jar,
                  "/data/local/tmp/scrcpy-server.jar"],
-                capture_output=True, timeout=10
+                capture_output=True, timeout=20
             )
 
             # Setup adb forward
             subprocess.run(
                 ["adb", "-s", device_id, "forward",
                  f"tcp:{local_port}", f"localabstract:scrcpy_{scid}"],
-                capture_output=True, timeout=5
+                capture_output=True, timeout=15
             )
 
             # Start server process
@@ -1797,7 +1835,7 @@ class ScrcpyService:
             try:
                 subprocess.run(
                     ["adb", "-s", device_id, "forward", f"--remove", f"tcp:{session._local_port}"],
-                    capture_output=True, timeout=5
+                    capture_output=True, timeout=15
                 )
             except subprocess.TimeoutExpired as e:
                 logger.warning(f"adb forward remove timeout for {device_id}: {e}")
@@ -1812,7 +1850,7 @@ class ScrcpyService:
         def _get():
             result = subprocess.run(
                 ["adb", "-s", device_id, "shell", "wm", "size"],
-                capture_output=True, text=True, timeout=5
+                capture_output=True, text=True, timeout=15
             )
             for line in result.stdout.strip().split('\n'):
                 if 'size' in line.lower():
@@ -2198,7 +2236,7 @@ class ScrcpyService:
                         lambda: subprocess.run(
                             ["adb", "-s", device_id, "shell", "input", "swipe",
                              str(sx), str(sy), str(ex), str(ey), "300"],
-                            capture_output=True, timeout=5
+                            capture_output=True, timeout=10
                         )
                     )
                 except subprocess.TimeoutExpired:
@@ -2221,7 +2259,7 @@ class ScrcpyService:
                             lambda: subprocess.run(
                                 ["adb", "-s", device_id, "shell", "input", "swipe",
                                  str(sx), str(sy), str(sx), str(sy), str(hold_ms)],
-                                capture_output=True, timeout=5
+                                capture_output=True, timeout=10
                             )
                         )
                     except subprocess.TimeoutExpired:
@@ -2241,7 +2279,7 @@ class ScrcpyService:
                         lambda: subprocess.run(
                             ["adb", "-s", device_id, "shell", "input", "tap",
                              str(device_x), str(device_y)],
-                            capture_output=True, timeout=5
+                            capture_output=True, timeout=10
                         )
                     )
                 except subprocess.TimeoutExpired:
@@ -2331,7 +2369,7 @@ class ScrcpyService:
                 lambda: subprocess.run(
                     ["adb", "-s", device_id, "shell", "input", "swipe",
                      str(device_x), str(sy), str(device_x), str(ey), "220"],
-                    capture_output=True, timeout=5
+                    capture_output=True, timeout=10
                 )
             )
         except subprocess.TimeoutExpired:
@@ -2374,7 +2412,7 @@ class ScrcpyService:
                 None,
                 lambda: subprocess.run(
                     ["adb", "-s", device_id, "shell", "input", "keyevent", str(keycode)],
-                    capture_output=True, timeout=5
+                    capture_output=True, timeout=10
                 )
             )
         except subprocess.TimeoutExpired:

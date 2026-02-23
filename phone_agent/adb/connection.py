@@ -129,7 +129,7 @@ class ADBConnection:
                 [self.adb_path, "devices", "-l"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=15,
             )
 
             devices = []
