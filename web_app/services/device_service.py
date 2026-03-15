@@ -245,6 +245,95 @@ class DeviceService:
 
         return False
 
+    async def launch_camera_app(self, device_id: str) -> tuple[bool, str]:
+        """
+        Launch the device camera app via ADB so the phone can be used as a remote monitor.
+        Uses standard Android camera intent; the user can then view the camera via real-time preview (scrcpy).
+        """
+        device = self._devices.get(device_id)
+        if not device or device.status != "connected":
+            return False, "设备未连接或不可用"
+
+        try:
+            loop = asyncio.get_event_loop()
+
+            def launch_sync():
+                base = ["adb"]
+                if device_id:
+                    base.extend(["-s", device_id])
+                # Standard Android camera intent (still image / back camera)
+                cmd = base + ["shell", "am", "start", "-a", "android.media.action.STILL_IMAGE_CAMERA"]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                out = (result.stdout or "").strip() + (result.stderr or "").strip()
+                if result.returncode == 0:
+                    return True, "摄像头应用已启动"
+                # Fallback: IMAGE_CAPTURE (some OEMs)
+                cmd2 = base + ["shell", "am", "start", "-a", "android.media.action.IMAGE_CAPTURE"]
+                r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=10)
+                if r2.returncode == 0:
+                    return True, "摄像头应用已启动"
+                return False, out or "启动摄像头失败"
+
+            return await loop.run_in_executor(None, launch_sync)
+        except subprocess.TimeoutExpired:
+            return False, "启动超时"
+        except Exception as e:
+            logger.error(f"Error launching camera for {device_id}: {e}")
+            return False, str(e)
+
+    async def launch_ipwebcam_app(self, device_id: str) -> tuple[bool, str]:
+        """
+        Launch IP Webcam app (com.pas.webcam) via ADB so user can start the MJPEG server on the phone.
+        User must tap "Start server" in the app after this.
+        """
+        device = self._devices.get(device_id)
+        if not device or device.status != "connected":
+            return False, "设备未连接或不可用"
+
+        try:
+            loop = asyncio.get_event_loop()
+
+            def launch_sync():
+                cmd = ["adb"]
+                if device_id:
+                    cmd.extend(["-s", device_id])
+                cmd.extend(["shell", "monkey", "-p", "com.pas.webcam", "1"])
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                if result.returncode == 0:
+                    return True, "IP Webcam 已打开，请在手机上点击「Start server」"
+                out = (result.stdout or "").strip() + (result.stderr or "").strip()
+                return False, out or "启动失败（请确认已安装 IP Webcam）"
+
+            return await loop.run_in_executor(None, launch_sync)
+        except subprocess.TimeoutExpired:
+            return False, "启动超时"
+        except Exception as e:
+            logger.error(f"Error launching IP Webcam for {device_id}: {e}")
+            return False, str(e)
+
+    def get_device_wlan_ip(self, device_id: str) -> Optional[str]:
+        """
+        Get the device's WiFi IP for building IP Webcam stream URL.
+        If device_id is already in form ip:port (e.g. 192.168.1.100:5555), return the IP part.
+        Otherwise try to get wlan0 IP via adb shell (may not work on all devices).
+        """
+        if ":" in device_id and device_id.split(":")[-1].isdigit():
+            return device_id.rsplit(":", 1)[0]
+        try:
+            cmd = ["adb"]
+            if device_id:
+                cmd.extend(["-s", device_id])
+            cmd.extend(["shell", "ip", "-4", "addr", "show", "wlan0"])
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            import re
+            # inet 192.168.1.100/24 ...
+            m = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", result.stdout or "")
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+        return None
+
     async def wireless_pair(self, pair_address: str, pair_code: str) -> tuple[bool, str, list[str]]:
         """
         Perform ADB wireless pairing.

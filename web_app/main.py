@@ -41,6 +41,8 @@ from web_app.routers import (
     tunnel_router,
     scrcpy_router,
     database_router,
+    camera_router,
+    streams_router,
 )
 from web_app.services.scheduler_service import scheduler_service
 from web_app.services.device_service import device_service
@@ -348,6 +350,8 @@ app.include_router(rules_router)
 app.include_router(telegram_router)
 app.include_router(tunnel_router)
 app.include_router(scrcpy_router)
+app.include_router(camera_router)
+app.include_router(streams_router)
 app.include_router(database_router)
 
 # Mount static files

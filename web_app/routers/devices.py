@@ -113,6 +113,39 @@ async def unlock_device(
     return {"success": True, "message": "Device unlocked"}
 
 
+@router.post("/{device_id}/camera/start")
+async def start_camera(
+    device_id: str,
+    _: bool = Depends(verify_token)
+):
+    """Launch the device camera app via ADB for use as remote monitor."""
+    success, message = await device_service.launch_camera_app(device_id)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+    return {"success": True, "message": message}
+
+
+@router.post("/{device_id}/camera/launch-ipwebcam")
+async def launch_ipwebcam(
+    device_id: str,
+    _: bool = Depends(verify_token)
+):
+    """Launch IP Webcam app (com.pas.webcam) on the device. User then taps Start server in the app."""
+    success, message = await device_service.launch_ipwebcam_app(device_id)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+    return {"success": True, "message": message}
+
+
+@router.get("/{device_id}/camera/wlan-ip")
+async def get_device_wlan_ip(device_id: str, _: bool = Depends(verify_token)):
+    """Get device WiFi IP for building IP Webcam stream URL (e.g. http://IP:8080/videofeed)."""
+    ip = device_service.get_device_wlan_ip(device_id)
+    if not ip:
+        raise HTTPException(status_code=404, detail="无法获取设备 IP（请使用无线 ADB 或手动输入）")
+    return {"ip": ip, "suggested_url": f"http://{ip}:8080/videofeed"}
+
+
 @router.post("/{device_id}/lock")
 async def lock_device(
     device_id: str,

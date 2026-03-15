@@ -4,12 +4,13 @@ Simple token-based authentication for the web API.
 """
 
 from fastapi import HTTPException, Security, status
-from fastapi.security import APIKeyHeader
+from fastapi.security import APIKeyHeader, APIKeyQuery
 
 from web_app.config import config_manager
 
 # API key header
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+api_key_query = APIKeyQuery(name="api_key", auto_error=False)
 
 
 async def verify_token(api_key: str = Security(api_key_header)) -> bool:
@@ -40,6 +41,30 @@ async def verify_token(api_key: str = Security(api_key_header)) -> bool:
             headers={"WWW-Authenticate": "ApiKey"},
         )
 
+    return True
+
+
+async def verify_token_header_or_query(
+    api_key_header_val: str = Security(api_key_header),
+    api_key_query_val: str = Security(api_key_query),
+) -> bool:
+    """Verify token from either X-API-Key header or api_key query (for img src etc.)."""
+    config = config_manager.get_config()
+    if not config.auth_enabled:
+        return True
+    token = api_key_header_val or api_key_query_val
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key required (X-API-Key header or api_key query)",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    if not config_manager.validate_token(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
     return True
 
 
