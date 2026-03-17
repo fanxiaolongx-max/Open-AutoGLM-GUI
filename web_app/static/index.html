@@ -1711,6 +1711,10 @@
             font-size: 12px;
             color: #f87171;
         }
+        @keyframes grid-record-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
 
         .phone-preview-toggle {
             position: fixed;
@@ -3263,6 +3267,13 @@
                             <h2 class="card-title">📺 {{ t('gridTitle') }}</h2>
                             <button class="btn btn-secondary btn-sm" @click="loadStreamConfig">{{ t('commonRefresh') }}</button>
                             <button class="btn btn-secondary btn-sm" @click="gridConfigExpanded = !gridConfigExpanded">{{ t('gridConfig') }}</button>
+                            <button v-if="!gridRecording" class="btn btn-danger btn-sm" @click="startGridRecord" :disabled="!hasAnyGridStream">
+                                🔴 {{ t('gridRecordStart') }}
+                            </button>
+                            <button v-else class="btn btn-danger btn-sm" @click="stopGridRecord" style="animation: grid-record-pulse 1s infinite;">
+                                ⏹️ {{ t('gridRecordStop') }}
+                            </button>
+                            <span v-if="gridRecording" style="font-size: 12px; color: var(--danger);">{{ t('gridRecording') }}</span>
                         </div>
                         <p style="color: var(--text-secondary); margin-bottom: 12px; font-size: 13px;">{{ t('gridDesc') }}</p>
                         <div v-if="gridConfigExpanded" style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color);">
@@ -3277,7 +3288,7 @@
                             <div v-for="i in 4" :key="i" class="stream-grid-cell">
                                 <div class="stream-cell-label">{{ streamConfig[i-1] && streamConfig[i-1].name ? streamConfig[i-1].name : (t('gridCamera') + ' ' + i) }}</div>
                                 <template v-if="streamConfig[i-1] && streamConfig[i-1].url">
-                                    <img :src="streamMjpegUrl(i-1)" :alt="'Stream ' + i" class="stream-cell-img"
+                                    <img :ref="el => setGridImgRef(i-1, el)" :src="streamMjpegUrl(i-1)" :alt="'Stream ' + i" class="stream-cell-img"
                                         @error="streamErrors[i-1] = true" @load="streamErrors[i-1] = false">
                                     <div v-if="streamErrors[i-1]" class="stream-cell-error">{{ t('gridStreamError') }}</div>
                                 </template>
@@ -3285,6 +3296,7 @@
                             </div>
                         </div>
                         <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">{{ t('gridTunnelHint') }}</div>
+                        <canvas ref="gridRecordCanvas" width="1280" height="720" style="position: absolute; left: -9999px; top: 0; pointer-events: none; width: 0; height: 0;"></canvas>
                     </div>
                 </div>
 
@@ -5049,6 +5061,12 @@
                     const streamConfig = ref([{ url: '', name: '摄像头 1' }, { url: '', name: '摄像头 2' }, { url: '', name: '摄像头 3' }, { url: '', name: '摄像头 4' }]);
                     const gridConfigExpanded = ref(false);
                     const streamErrors = ref([false, false, false, false]);
+                    const gridImgRefs = ref([null, null, null, null]);
+                    const gridRecordCanvas = ref(null);
+                    const gridRecording = ref(false);
+                    let gridMediaRecorder = null;
+                    let gridRecordChunks = [];
+                    let gridRecordAnimationId = null;
                     const apkLogs = ref([]);
                     const apkFileInput = ref(null);
                     // File manager state
@@ -5486,6 +5504,7 @@
                             monitorIpCamHint: '推荐应用：IP Webcam（免费，支持 MJPEG）。若设备已无线 ADB 连接，可点「根据设备填地址」自动填入手机 IP。',
                             navGrid: '四宫格监控', gridTitle: 'RTSP 四宫格', gridDesc: '服务器拉取 RTSP 流并转成 MJPEG，通过本页同源输出；支持 Cloudflare 隧道外网观看。',
                             gridConfig: '配置流地址', gridName: '名称', gridCamera: '摄像头', gridNoUrl: '未配置 RTSP 地址', gridStreamError: '拉流失败（检查 ffmpeg 与地址）', gridTunnelHint: '通过 Cloudflare 隧道访问时，画面由本服务器拉流后转发，无需设备直连。需在运行本服务的机器上安装 ffmpeg。',
+                            gridRecordStart: '开始录制', gridRecordStop: '停止录制', gridRecording: '录制中…',
                             dbTitle: '数据库管理', dbSelectTable: '选择表', dbSearch: '搜索记录...', dbRefresh: '刷新',
                             dbAddRow: '添加记录', dbEditRow: '编辑记录', dbDeleteRow: '删除记录', dbNoTable: '请选择一个数据表',
                             dbNoData: '此表暂无数据', dbDeleteConfirm: '确定要删除这条记录吗？此操作不可撤销。',
@@ -5581,6 +5600,7 @@
                             monitorIpCamHint: 'Recommended: IP Webcam (free, MJPEG). If device is on wireless ADB, use "Fill from device" to auto-fill the phone IP.',
                             navGrid: 'Grid Monitor', gridTitle: 'RTSP 4-Grid', gridDesc: 'Server pulls RTSP and serves as MJPEG (same-origin). Works through Cloudflare tunnel.',
                             gridConfig: 'Config streams', gridName: 'Name', gridCamera: 'Camera', gridNoUrl: 'No RTSP URL', gridStreamError: 'Stream failed (check ffmpeg & URL)', gridTunnelHint: 'When using Cloudflare tunnel, streams are pulled by the server and forwarded; no direct device access needed. Install ffmpeg on the server.',
+                            gridRecordStart: 'Start record', gridRecordStop: 'Stop', gridRecording: 'Recording…',
                             dbTitle: 'Database Management', dbSelectTable: 'Select Table', dbSearch: 'Search records...', dbRefresh: 'Refresh',
                             dbAddRow: 'Add Record', dbEditRow: 'Edit Record', dbDeleteRow: 'Delete Record', dbNoTable: 'Please select a table',
                             dbNoData: 'No data in this table', dbDeleteConfirm: 'Are you sure you want to delete this record? This cannot be undone.',
@@ -8338,6 +8358,80 @@
                             if (c && c.auth_enabled && c.token) u += '?api_key=' + encodeURIComponent(c.token);
                         } catch (e) { }
                         return u;
+                    }
+
+                    const hasAnyGridStream = Vue.computed(() => {
+                        const c = streamConfig.value;
+                        return c && c.some(s => s && (s.url || '').trim().length > 0);
+                    });
+
+                    function setGridImgRef(index, el) {
+                        if (index >= 0 && index < 4) gridImgRefs.value[index] = el;
+                    }
+
+                    function drawGridToCanvas() {
+                        const canvas = gridRecordCanvas.value;
+                        if (!canvas || !gridRecording.value) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        const w = canvas.width;
+                        const h = canvas.height;
+                        const halfW = w / 2;
+                        const halfH = h / 2;
+                        ctx.fillStyle = '#111';
+                        ctx.fillRect(0, 0, w, h);
+                        const imgs = gridImgRefs.value || [];
+                        for (let i = 0; i < 4; i++) {
+                            const img = imgs[i];
+                            if (!img || !img.complete || img.naturalWidth === 0) continue;
+                            const sx = (i % 2) * halfW;
+                            const sy = Math.floor(i / 2) * halfH;
+                            ctx.drawImage(img, sx, sy, halfW, halfH);
+                        }
+                        gridRecordAnimationId = requestAnimationFrame(drawGridToCanvas);
+                    }
+
+                    function startGridRecord() {
+                        const canvas = gridRecordCanvas.value;
+                        if (!canvas || gridRecording.value) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        gridRecording.value = true;
+                        gridRecordChunks = [];
+                        try {
+                            const stream = canvas.captureStream(15);
+                            const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+                            gridMediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2500000 });
+                            gridMediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) gridRecordChunks.push(e.data); };
+                            gridMediaRecorder.onstop = () => {
+                                if (gridRecordChunks.length === 0) return;
+                                const blob = new Blob(gridRecordChunks, { type: mime });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'grid-record-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.webm';
+                                a.click();
+                                URL.revokeObjectURL(url);
+                            };
+                            gridMediaRecorder.start(1000);
+                            drawGridToCanvas();
+                        } catch (e) {
+                            gridRecording.value = false;
+                            showToast(e.message || '录制失败', 'error');
+                        }
+                    }
+
+                    function stopGridRecord() {
+                        gridRecording.value = false;
+                        if (gridRecordAnimationId != null) {
+                            cancelAnimationFrame(gridRecordAnimationId);
+                            gridRecordAnimationId = null;
+                        }
+                        if (gridMediaRecorder && gridMediaRecorder.state !== 'inactive') {
+                            gridMediaRecorder.stop();
+                            gridMediaRecorder = null;
+                        }
+                        showToast(currentLanguage.value === 'zh' ? '录制已停止，正在生成文件…' : 'Recording stopped, generating file…');
                     }
 
                     // Wireless pairing functions
@@ -11333,6 +11427,13 @@
                         loadStreamConfig,
                         saveStreamConfig,
                         streamMjpegUrl,
+                        gridImgRefs,
+                        gridRecordCanvas,
+                        gridRecording,
+                        hasAnyGridStream,
+                        setGridImgRef,
+                        startGridRecord,
+                        stopGridRecord,
                         // File manager
                         fileDevice,
                         filePath,
