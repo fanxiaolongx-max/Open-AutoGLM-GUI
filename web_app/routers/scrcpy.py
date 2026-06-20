@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 from web_app.auth import verify_token
 from web_app.config import config_manager
 from web_app.services.scrcpy_service import scrcpy_service
+from web_app.services.auth_service import SESSION_COOKIE_NAME, auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ def _parse_stream_params(qs):
 
 
 async def _verify_ws_auth(websocket: WebSocket) -> bool:
+    if auth_service.verify_session(websocket.cookies.get(SESSION_COOKIE_NAME, "")):
+        return True
     config = config_manager.get_config()
     if not config.auth_enabled:
         return True

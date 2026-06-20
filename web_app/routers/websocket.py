@@ -11,6 +11,7 @@ from typing import Set, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from web_app.config import config_manager
+from web_app.services.auth_service import SESSION_COOKIE_NAME, auth_service
 from web_app.services.task_service import task_service
 from web_app.services.device_service import device_service
 
@@ -176,7 +177,10 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates."""
     # Check authentication if enabled
     config = config_manager.get_config()
-    if config.auth_enabled:
+    browser_session_valid = auth_service.verify_session(
+        websocket.cookies.get(SESSION_COOKIE_NAME, "")
+    )
+    if config.auth_enabled and not browser_session_valid:
         # Try to get token from query params
         token = websocket.query_params.get("token", "")
         if not config_manager.validate_token(token):
@@ -407,4 +411,3 @@ def create_tap_preview_callback():
             return (True, x, y)
     
     return tap_preview_sync
-

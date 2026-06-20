@@ -3,17 +3,21 @@
 Simple token-based authentication for the web API.
 """
 
-from fastapi import HTTPException, Security, status
+from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader, APIKeyQuery
 
 from web_app.config import config_manager
+from web_app.services.auth_service import SESSION_COOKIE_NAME, auth_service
 
 # API key header
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 api_key_query = APIKeyQuery(name="api_key", auto_error=False)
 
 
-async def verify_token(api_key: str = Security(api_key_header)) -> bool:
+async def verify_token(
+    request: Request,
+    api_key: str = Security(api_key_header),
+) -> bool:
     """
     Verify the API token.
 
@@ -21,6 +25,9 @@ async def verify_token(api_key: str = Security(api_key_header)) -> bool:
     If enabled, validates the token against the configured value.
     """
     config = config_manager.get_config()
+
+    if auth_service.verify_session(request.cookies.get(SESSION_COOKIE_NAME, "")):
+        return True
 
     # If auth is not enabled, allow all requests
     if not config.auth_enabled:
@@ -45,11 +52,14 @@ async def verify_token(api_key: str = Security(api_key_header)) -> bool:
 
 
 async def verify_token_header_or_query(
+    request: Request,
     api_key_header_val: str = Security(api_key_header),
     api_key_query_val: str = Security(api_key_query),
 ) -> bool:
     """Verify token from either X-API-Key header or api_key query (for img src etc.)."""
     config = config_manager.get_config()
+    if auth_service.verify_session(request.cookies.get(SESSION_COOKIE_NAME, "")):
+        return True
     if not config.auth_enabled:
         return True
     token = api_key_header_val or api_key_query_val

@@ -2,6 +2,9 @@ name: Build Release
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
       - 'v*'  # 推送 tag 时触发，如 v1.0.0
   workflow_dispatch:  # 支持手动触发

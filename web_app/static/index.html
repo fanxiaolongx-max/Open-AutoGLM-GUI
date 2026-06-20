@@ -66,6 +66,70 @@
             display: none;
         }
 
+        .login-screen {
+            position: fixed;
+            inset: 0;
+            z-index: 20000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.18), transparent 34%),
+                radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.16), transparent 36%),
+                var(--bg-primary);
+        }
+
+        .login-card {
+            width: min(420px, 100%);
+            padding: 36px;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            background: var(--bg-card);
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+        }
+
+        .login-logo {
+            width: 58px;
+            height: 58px;
+            margin-bottom: 20px;
+            display: grid;
+            place-items: center;
+            border-radius: 16px;
+            color: white;
+            font-size: 28px;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            box-shadow: 0 10px 28px rgba(59, 130, 246, 0.3);
+        }
+
+        .login-card h1 {
+            margin: 0 0 8px;
+            font-size: 26px;
+            color: var(--text-primary);
+        }
+
+        .login-card .login-subtitle {
+            margin: 0 0 26px;
+            color: var(--text-secondary);
+        }
+
+        .login-error {
+            margin-bottom: 16px;
+            padding: 10px 12px;
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            border-radius: 8px;
+            color: #dc2626;
+            background: rgba(239, 68, 68, 0.08);
+            font-size: 13px;
+        }
+
+        .login-default-hint {
+            margin-top: 16px;
+            color: var(--text-muted);
+            font-size: 12px;
+            text-align: center;
+        }
+
         /* System Alert Banners */
         .system-alerts-container {
             position: fixed;
@@ -1253,9 +1317,19 @@
             transform-origin: center;
         }
 
+        body.preview-open,
+        body.preview-open *,
         body.preview-dragging,
         body.preview-dragging * {
+            -webkit-user-select: none !important;
             user-select: none !important;
+        }
+
+        body.preview-open input,
+        body.preview-open textarea,
+        body.preview-open [contenteditable="true"] {
+            -webkit-user-select: text !important;
+            user-select: text !important;
         }
 
         .phone-preview-header {
@@ -2045,9 +2119,15 @@
             /* Above connection status */
             left: 20px;
             right: 20px;
-            display: flex;
-            gap: 10px;
-            justify-content: space-between;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .sidebar-bottom-controls .control-button {
+            min-width: 0;
+            gap: 4px;
+            padding: 10px 4px;
         }
 
         .control-button {
@@ -2083,6 +2163,7 @@
         }
 
         .control-icon {
+            flex: 0 0 auto;
             font-size: 16px;
             transition: transform 0.3s ease;
         }
@@ -2094,6 +2175,9 @@
         .control-label {
             font-weight: 500;
             font-size: 12px;
+            line-height: 1;
+            white-space: nowrap;
+            word-break: keep-all;
         }
 
         /* ===== Database Management Page ===== */
@@ -2584,8 +2668,41 @@
 
 <body>
     <div id="app" v-cloak>
+        <div v-if="!authChecking && !isAuthenticated" class="login-screen">
+            <form class="login-card" @submit.prevent="login">
+                <div class="login-logo">📱</div>
+                <h1>登录 AutoGLM</h1>
+                <p class="login-subtitle">登录后方可使用设备控制与管理功能</p>
+                <div v-if="loginError" class="login-error">{{ loginError }}</div>
+                <div class="form-group">
+                    <label class="form-label">账号</label>
+                    <input v-model.trim="loginForm.username" class="form-input" type="text"
+                        autocomplete="username" autofocus required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码</label>
+                    <input v-model="loginForm.password" class="form-input" type="password"
+                        autocomplete="current-password" required>
+                </div>
+                <button class="btn btn-primary" type="submit" :disabled="loginLoading"
+                    style="width: 100%; justify-content: center; margin-top: 8px;">
+                    {{ loginLoading ? '登录中...' : '登录' }}
+                </button>
+                <div v-if="defaultCredentials" class="login-default-hint">
+                    首次登录账号：admin，密码：admin；登录后请在设置中修改
+                </div>
+            </form>
+        </div>
+
+        <div v-if="authChecking" class="login-screen">
+            <div class="login-card" style="text-align: center;">
+                <div class="stream-loading-spinner" style="margin: 0 auto 16px;"></div>
+                <p class="login-subtitle" style="margin: 0;">正在检查登录状态...</p>
+            </div>
+        </div>
+
         <!-- System Alert Banners -->
-        <div class="system-alerts-container" v-if="systemAlerts && systemAlerts.length > 0">
+        <div class="system-alerts-container" v-if="isAuthenticated && systemAlerts && systemAlerts.length > 0">
             <div v-for="alert in systemAlerts" :key="alert.id" :class="['system-alert', 'system-alert-' + alert.level]">
                 <div class="system-alert-icon">
                     <span v-if="alert.level === 'warning'">⚠️</span>
@@ -2600,7 +2717,7 @@
                 <button class="system-alert-close" @click="dismissSystemAlert(alert.id)">✕</button>
             </div>
         </div>
-        <div class="app-container">
+        <div v-if="isAuthenticated" class="app-container">
             <!-- Sidebar -->
             <aside class="sidebar">
                 <div class="sidebar-header">
@@ -2703,6 +2820,10 @@
                         title="切换语言">
                         <span class="control-icon">🌐</span>
                         <span class="control-label">{{ currentLanguage === 'zh' ? '中文' : 'En' }}</span>
+                    </button>
+                    <button class="control-button" @click="logout" title="退出登录">
+                        <span class="control-icon">🚪</span>
+                        <span class="control-label">退出</span>
                     </button>
                 </div>
 
@@ -4049,6 +4170,38 @@
                 <div v-if="currentPage === 'settings'" class="fade-in">
                     <div class="card">
                         <div class="card-header">
+                            <h2 class="card-title">🔐 登录账号设置</h2>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">登录账号</label>
+                            <input type="text" v-model.trim="credentialsForm.username" class="form-input"
+                                autocomplete="username" maxlength="64">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">当前密码</label>
+                            <input type="password" v-model="credentialsForm.current_password" class="form-input"
+                                autocomplete="current-password" placeholder="请输入当前密码">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">新密码</label>
+                            <input type="password" v-model="credentialsForm.new_password" class="form-input"
+                                autocomplete="new-password" placeholder="至少 4 个字符">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">确认新密码</label>
+                            <input type="password" v-model="credentialsForm.confirm_password" class="form-input"
+                                autocomplete="new-password" placeholder="再次输入新密码">
+                        </div>
+                        <button class="btn btn-primary" @click="saveCredentials" :disabled="credentialsSaving">
+                            {{ credentialsSaving ? '保存中...' : '保存登录设置' }}
+                        </button>
+                        <p style="font-size: 12px; color: var(--text-secondary); margin: 12px 0 0;">
+                            修改后其他已登录浏览器会立即退出，当前浏览器将保持登录。
+                        </p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
                             <h2 class="card-title">{{ t('settingsEmail') }}</h2>
                         </div>
 
@@ -4935,7 +5088,7 @@
         </div>
 
         <!-- Phone Preview Toggle Button -->
-        <button v-if="!showPhonePreview && devices.length > 0" class="phone-preview-toggle" @click="openPhonePreview"
+        <button v-if="isAuthenticated && !showPhonePreview && devices.length > 0" class="phone-preview-toggle" @click="openPhonePreview"
             title="Show Phone Preview">
             📱
         </button>
@@ -4957,6 +5110,21 @@
                 setup() {
                     // State
                     const currentPage = ref('chat');  // Default to chat page
+                    const authChecking = ref(true);
+                    const isAuthenticated = ref(false);
+                    const currentUsername = ref('');
+                    const defaultCredentials = ref(false);
+                    const loginLoading = ref(false);
+                    const loginError = ref('');
+                    const loginForm = ref({ username: 'admin', password: '' });
+                    const credentialsSaving = ref(false);
+                    const credentialsForm = ref({
+                        username: '',
+                        current_password: '',
+                        new_password: '',
+                        confirm_password: '',
+                    });
+                    let authenticatedAppInitialized = false;
                     const devices = ref([]);
                     const selectedDevices = ref([]);
                     const taskContent = ref('');
@@ -5821,6 +5989,139 @@
                         systemAlerts.value = systemAlerts.value.filter(a => a.id !== alertId);
                     }
 
+                    async function checkAuth() {
+                        authChecking.value = true;
+                        try {
+                            const response = await fetch('/api/auth/status', { cache: 'no-store' });
+                            const data = await response.json();
+                            isAuthenticated.value = Boolean(data.authenticated);
+                            currentUsername.value = data.username || '';
+                            defaultCredentials.value = Boolean(data.default_credentials);
+                            if (isAuthenticated.value) {
+                                loginForm.value.username = currentUsername.value;
+                            }
+                        } catch (error) {
+                            isAuthenticated.value = false;
+                            loginError.value = '无法连接服务器，请稍后重试';
+                        } finally {
+                            authChecking.value = false;
+                        }
+                    }
+
+                    function initializeAuthenticatedApp() {
+                        if (authenticatedAppInitialized || !isAuthenticated.value) return;
+                        authenticatedAppInitialized = true;
+                        connectWebSocket();
+                        refreshDevices();
+                        loadModels();
+                        loadDevicePins();
+                        initChatSessions();
+                        checkTunnelStatus();
+                    }
+
+                    async function login() {
+                        loginLoading.value = true;
+                        loginError.value = '';
+                        try {
+                            const response = await fetch('/api/auth/login', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(loginForm.value),
+                            });
+                            const data = await response.json();
+                            if (!response.ok) {
+                                throw new Error(data.detail || '登录失败');
+                            }
+                            isAuthenticated.value = true;
+                            currentUsername.value = data.username || loginForm.value.username;
+                            defaultCredentials.value = (
+                                loginForm.value.username === 'admin'
+                                && loginForm.value.password === 'admin'
+                            );
+                            loginForm.value.password = '';
+                            initializeAuthenticatedApp();
+                        } catch (error) {
+                            loginError.value = error.message || '登录失败';
+                        } finally {
+                            loginLoading.value = false;
+                        }
+                    }
+
+                    function clearAuthenticatedConnections() {
+                        authenticatedAppInitialized = false;
+                        if (reconnectTimer) {
+                            clearTimeout(reconnectTimer);
+                            reconnectTimer = null;
+                        }
+                        if (ws) {
+                            ws.onclose = null;
+                            ws.close();
+                            ws = null;
+                        }
+                        disconnectStream();
+                        disconnectAudioStream();
+                        showPhonePreview.value = false;
+                        wsConnected.value = false;
+                    }
+
+                    async function logout() {
+                        try {
+                            await fetch('/api/auth/logout', { method: 'POST' });
+                        } finally {
+                            clearAuthenticatedConnections();
+                            isAuthenticated.value = false;
+                            currentUsername.value = '';
+                            loginForm.value.password = '';
+                            loginError.value = '';
+                        }
+                    }
+
+                    async function loadCredentials() {
+                        try {
+                            const data = await apiCall('/api/auth/credentials');
+                            credentialsForm.value.username = data.username || currentUsername.value;
+                        } catch (error) {
+                            console.error('Failed to load login credentials:', error);
+                        }
+                    }
+
+                    async function saveCredentials() {
+                        const form = credentialsForm.value;
+                        if (!form.username.trim()) {
+                            showToast('登录账号不能为空', 'error');
+                            return;
+                        }
+                        if (form.new_password.length < 4) {
+                            showToast('新密码至少需要 4 个字符', 'error');
+                            return;
+                        }
+                        if (form.new_password !== form.confirm_password) {
+                            showToast('两次输入的新密码不一致', 'error');
+                            return;
+                        }
+
+                        credentialsSaving.value = true;
+                        try {
+                            const data = await apiCall('/api/auth/credentials', {
+                                method: 'PUT',
+                                body: JSON.stringify({
+                                    username: form.username,
+                                    current_password: form.current_password,
+                                    new_password: form.new_password,
+                                }),
+                            });
+                            currentUsername.value = data.username;
+                            defaultCredentials.value = false;
+                            loginForm.value.username = data.username;
+                            credentialsForm.value.current_password = '';
+                            credentialsForm.value.new_password = '';
+                            credentialsForm.value.confirm_password = '';
+                            showToast('登录账号和密码已更新', 'success');
+                        } finally {
+                            credentialsSaving.value = false;
+                        }
+                    }
+
                     // API calls
                     async function apiCall(url, options = {}) {
                         try {
@@ -5833,6 +6134,11 @@
                             });
                             const data = await response.json();
                             if (!response.ok) {
+                                if (response.status === 401) {
+                                    clearAuthenticatedConnections();
+                                    isAuthenticated.value = false;
+                                    loginError.value = '登录已失效，请重新登录';
+                                }
                                 throw new Error(data.detail || 'API Error');
                             }
                             return data;
@@ -5844,6 +6150,7 @@
 
                     // WebSocket connection
                     function connectWebSocket() {
+                        if (!isAuthenticated.value) return;
                         try {
                             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                             const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -5857,7 +6164,9 @@
                             ws.onclose = () => {
                                 wsConnected.value = false;
                                 console.log('WebSocket disconnected');
-                                reconnectTimer = setTimeout(connectWebSocket, 3000);
+                                if (isAuthenticated.value) {
+                                    reconnectTimer = setTimeout(connectWebSocket, 3000);
+                                }
                             };
 
                             ws.onmessage = (event) => {
@@ -10822,6 +11131,7 @@
 
                     // Watch showPhonePreview to start/stop auto refresh
                     watch(showPhonePreview, (show) => {
+                        document.body.classList.toggle('preview-open', show);
                         if (show) {
                             // openPhonePreview/onclose will decide whether to start fallback polling.
                             Vue.nextTick(() => ensurePreviewInViewport());
@@ -11099,14 +11409,8 @@
                     }
 
                     // Lifecycle
-                    onMounted(() => {
+                    onMounted(async () => {
                         console.log('App mounted, initializing...');
-                        connectWebSocket();
-                        refreshDevices();
-                        loadModels();
-                        loadDevicePins();
-                        initChatSessions();  // Initialize chat sessions from localStorage
-                        checkTunnelStatus(); // Check if tunnel is already running
 
                         // Initialize dark mode
                         const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -11128,18 +11432,23 @@
                                 applyTheme(e.matches ? 'dark' : 'light');
                             }
                         });
+
+                        await checkAuth();
+                        initializeAuthenticatedApp();
                     });
 
                     onUnmounted(() => {
                         if (ws) ws.close();
                         if (reconnectTimer) clearTimeout(reconnectTimer);
                         disconnectAudioStream();
+                        document.body.classList.remove('preview-open', 'preview-dragging');
                         window.removeEventListener('resize', handleWindowResize);
                         document.removeEventListener('keydown', handlePreviewKeyboard, true);
                     });
 
                     // Watch page changes to load data
                     watch(currentPage, (page, oldPage) => {
+                        if (!isAuthenticated.value) return;
                         // 离开 Chat 页面时保存滚动位置
                         if (oldPage === 'chat' && chatMessagesRef.value) {
                             chatScrollPosition = chatMessagesRef.value.scrollTop;
@@ -11163,6 +11472,7 @@
                             loadModelPresets();
                         }
                         if (page === 'settings') {
+                            loadCredentials();
                             loadEmailConfig();
                             loadScreenshotConfig();
                             loadTelegramConfig();
@@ -11186,6 +11496,18 @@
 
                     return {
                         currentPage,
+                        authChecking,
+                        isAuthenticated,
+                        currentUsername,
+                        defaultCredentials,
+                        loginLoading,
+                        loginError,
+                        loginForm,
+                        login,
+                        logout,
+                        credentialsForm,
+                        credentialsSaving,
+                        saveCredentials,
                         devices,
                         selectedDevices,
                         taskContent,

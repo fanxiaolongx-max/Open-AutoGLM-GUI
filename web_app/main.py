@@ -16,7 +16,7 @@ from urllib.parse import parse_qs
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -43,7 +43,9 @@ from web_app.routers import (
     database_router,
     camera_router,
     streams_router,
+    auth_router,
 )
+from web_app.services.auth_service import SESSION_COOKIE_NAME, auth_service
 from web_app.services.scheduler_service import scheduler_service
 from web_app.services.device_service import device_service
 
@@ -152,6 +154,76 @@ class TunnelAccessTokenMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_cookie)
+
+
+class LoginRequiredMiddleware:
+    """Require a valid browser session for every functional endpoint."""
+
+    PUBLIC_PATHS = {
+        "/",
+        "/health",
+        "/api/auth/status",
+        "/api/auth/login",
+        "/api/auth/logout",
+    }
+    PROTECTED_PREFIXES = ("/api", "/ws", "/docs", "/redoc", "/openapi.json")
+
+    def __init__(self, app):
+        self.app = app
+
+    @staticmethod
+    def _cookie_token(scope) -> str:
+        cookie_header = TunnelAccessTokenMiddleware._header(scope, b"cookie")
+        if not cookie_header:
+            return ""
+        cookie = SimpleCookie()
+        try:
+            cookie.load(cookie_header)
+        except Exception:
+            return ""
+        morsel = cookie.get(SESSION_COOKIE_NAME)
+        return morsel.value if morsel else ""
+
+    @classmethod
+    def _requires_login(cls, path: str) -> bool:
+        if path in cls.PUBLIC_PATHS or path.startswith("/static/"):
+            return False
+        return any(
+            path == prefix or path.startswith(f"{prefix}/")
+            for prefix in cls.PROTECTED_PREFIXES
+        )
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if (
+            scope["type"] == "http"
+            and scope.get("method") == "OPTIONS"
+        ) or not self._requires_login(path):
+            await self.app(scope, receive, send)
+            return
+
+        if auth_service.verify_session(self._cookie_token(scope)):
+            await self.app(scope, receive, send)
+            return
+
+        if scope["type"] == "websocket":
+            await send({
+                "type": "websocket.close",
+                "code": 4401,
+                "reason": "Login required",
+            })
+            return
+
+        response = JSONResponse(
+            {"detail": "请先登录"},
+            status_code=401,
+            headers={"Cache-Control": "no-store"},
+        )
+        await response(scope, receive, send)
 
 
 @asynccontextmanager
@@ -330,6 +402,7 @@ app = FastAPI(
 # Configure CORS
 config = config_manager.get_config()
 app.add_middleware(TunnelAccessTokenMiddleware)
+app.add_middleware(LoginRequiredMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.cors_origins,
@@ -339,6 +412,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(tasks_router)
 app.include_router(scheduler_router)

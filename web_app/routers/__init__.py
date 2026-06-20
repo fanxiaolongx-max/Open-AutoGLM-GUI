@@ -15,6 +15,7 @@ from web_app.routers.scrcpy import router as scrcpy_router
 from web_app.routers.camera import router as camera_router
 from web_app.routers.streams import router as streams_router
 from web_app.routers.database import router as database_router
+from web_app.routers.auth_router import router as auth_router
 
 __all__ = [
     "devices_router",
@@ -31,4 +32,5 @@ __all__ = [
     "camera_router",
     "streams_router",
     "database_router",
+    "auth_router",
 ]
