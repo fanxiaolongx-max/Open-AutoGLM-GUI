@@ -6507,6 +6507,10 @@
                                     }).catch(err => console.warn('Failed to sync session title:', err));
                                 }
                             }
+                            
+                            // 重新按更新时间排序会话列表
+                            chatSessions.value.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                            
                             saveSessions();
 
                             // 同步 assistant 消息的 status 和 todoList 到服务器数据库
@@ -6518,6 +6522,19 @@
                     // 🆕 使用防抖避免频繁请求
                     let saveMessageTimer = null;
                     let lastSavedMessageStates = new Map(); // 记录每条消息上次保存的状态
+
+                    function syncLastSavedStates() {
+                        lastSavedMessageStates.clear();
+                        if (chatMessages.value && chatMessages.value.length > 0) {
+                            chatMessages.value.forEach(msg => {
+                                if (msg.role === 'assistant' && msg.id) {
+                                    const state = `${msg.status || ''}-${JSON.stringify(msg.todoList || null)}-${msg.tokens || 0}-${msg.model_name || ''}`;
+                                    lastSavedMessageStates.set(msg.id, state);
+                                }
+                            });
+                        }
+                    }
+
                     async function saveMessageStatusToServer() {
                         // 清除之前的定时器
                         if (saveMessageTimer) {
@@ -6540,6 +6557,9 @@
                                         continue;
                                     }
 
+                                    // 先乐观更新本地状态，防止网络延迟导致的并发堆叠
+                                    lastSavedMessageStates.set(msg.id, currentState);
+
                                     try {
                                         await apiCall(`/api/chat/sessions/${currentSessionId.value}/messages/${msg.id}`, {
                                             method: 'PATCH',
@@ -6552,9 +6572,9 @@
                                             })
                                         });
 
-                                        // 记录保存成功的状态
-                                        lastSavedMessageStates.set(msg.id, currentState);
                                     } catch (error) {
+                                        // 失败时恢复状态，以便下次重试
+                                        lastSavedMessageStates.delete(msg.id);
                                         // 静默失败，不影响用户体验
                                         console.debug('Failed to save message status to server:', error);
                                     }
@@ -6654,6 +6674,8 @@
                                     chatMessages.value = session.messages || [];
                                 }
                             }
+                            
+                            syncLastSavedStates();
 
                             // 使用 nextTick 确保 DOM 更新后再滚动
                             Vue.nextTick(() => {
@@ -6775,6 +6797,7 @@
                             } else {
                                 chatMessages.value = [];
                             }
+                            syncLastSavedStates();
 
                             // 尝试从服务器加载完整的消息数据（包括 screenshots）
                             // 这样可以确保服务重启后也能看到截图
@@ -6835,6 +6858,7 @@
 
                                     // 更新会话中的消息数据
                                     mostRecent.messages = chatMessages.value;
+                                    syncLastSavedStates();
                                     saveSessions();
                                 }
                             } catch (error) {
