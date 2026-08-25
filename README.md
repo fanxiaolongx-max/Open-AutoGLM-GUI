@@ -1,6 +1,8 @@
+
+
 # Open-AutoGLM
 
-[Readme in English](README_EN.md)
+[Readme in English](README_en.md)
 
 <div align="center">
 <img src="resources/logo.svg" width="20%"/>
