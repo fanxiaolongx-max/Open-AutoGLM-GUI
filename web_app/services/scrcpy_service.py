@@ -56,10 +56,13 @@ except ValueError:
 if _scrcpy_first_frame_timeout < 5:
     _scrcpy_first_frame_timeout = 5.0
 
+_default_scrcpy_auto_stop_delay = 10 * 60
 try:
-    _scrcpy_auto_stop_delay = int(os.getenv("SCRCPY_AUTO_STOP_DELAY", "0"))
+    _scrcpy_auto_stop_delay = int(
+        os.getenv("SCRCPY_AUTO_STOP_DELAY", str(_default_scrcpy_auto_stop_delay))
+    )
 except ValueError:
-    _scrcpy_auto_stop_delay = 0
+    _scrcpy_auto_stop_delay = _default_scrcpy_auto_stop_delay
 if _scrcpy_auto_stop_delay < 0:
     _scrcpy_auto_stop_delay = 0
 
@@ -2482,9 +2485,15 @@ class ScrcpyService:
                 f"No-viewer auto-stop disabled for {device_id}; stream kept alive"
             )
             return
+        if session._auto_stop_task and not session._auto_stop_task.done():
+            return
         if _main_loop and not _main_loop.is_closed():
             session._auto_stop_task = asyncio.ensure_future(
                 self._auto_stop_after_delay(device_id, _scrcpy_auto_stop_delay)
+            )
+            logger.info(
+                f"Auto-stop scheduled for {device_id} after "
+                f"{_scrcpy_auto_stop_delay}s without viewers"
             )
 
     def add_viewer(self, device_id: str, websocket) -> ScrcpySession:
