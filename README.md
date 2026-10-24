@@ -9,7 +9,7 @@
 [![Android ADB](https://img.shields.io/badge/Android-ADB%20%7C%20Scrcpy-brightgreen.svg)](https://github.com/Genymobile/scrcpy)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-[English README](README_EN.md) · [核心特性](#-核心功能速览) · [解决的痛点](#-为什么选择本项目解决的核心痛点) · [快速上手](#-快速上手) · [常见问题](#-常见问题与排查)
+[English README](README_EN.md) · [痛点与特性](#-为什么选择本项目解决的核心痛点) · [主界面逐一详解](#-系统核心主界面逐一详解真实运行数据) · [快速上手](#-快速上手) · [常见问题](#-常见问题与排查)
 
 </div>
 
@@ -21,75 +21,148 @@
 
 **Open-AutoGLM-GUI** 专为解决多设备实机环境下的**「难维护、难复用、缺管控、难远程」**四大痛点而生：
 
-| 传统手机自动化与纯脚本 | 纯学术 Agent / 命令行工具 | **Open-AutoGLM-GUI (鱼塘管理器)** |
+| 传统手机自动化与脚本 | 纯学术 Agent / 命令行工具 | **Open-AutoGLM-GUI (鱼塘管理器)** |
 |---|---|---|
-| **控件经常变动，维护成本极高**<br>App UI 迭代后选择器失效，需重写代码 | **黑盒运行，无可视化**<br>控制台文字滚动，中途卡死无感知 | **多模态视觉 Agent + 实时可视化**<br>大模型直接“看懂”界面语义，自适应 UI 变化；右下角悬浮窗毫秒级实时流。 |
-| **规则硬编码，缺乏泛化能力**<br>只能按死步骤执行，无法应对弹窗与变化 | **纯 AI 决策，耗时且昂贵**<br>每次重复任务都消耗大量 Token，耗时几分钟 | **示教录制 ➔ 配方沉淀 ➔ 参数化重放**<br>一次示教沉淀为可复用配方，支持 `{keyword}` 动态参数，兼具 AI 的泛化与脚本的极速。 |
+| **控件变动频繁，维护成本高**<br>App UI 迭代后选择器失效，需重写代码 | **黑盒运行，无可视化界面**<br>控制台文字滚动，中途卡死无感知 | **多模态视觉 Agent + 实时可视化**<br>大模型直接“看懂”界面语义，自适应 UI 变化；右下角悬浮窗毫秒级实时推流。 |
+| **规则硬编码，缺乏泛化能力**<br>只能按死步骤执行，无法应对弹窗与变化 | **纯 AI 逐帧推理，耗时且昂贵**<br>每次重复任务都消耗大量 Token，耗时几分钟 | **示教录制 ➔ 配方沉淀 ➔ 参数化重放**<br>一次示教沉淀为可复用配方，支持 `{keyword}` 动态参数，兼具 AI 的泛化与脚本的极速。 |
 | **遇到验证码/支付直接报错中断**<br>缺乏人机协作机制 | **无接管路径**<br>遇到敏感权限只能抛异常退出 | **人工接管 (Take-over) & 智能后验**<br>遇到人脸/支付主动暂停并提醒接管；任务执行完毕自动结合历史上下文智能校验结果。 |
-| **仅限单机 USB，多设备切换混乱**<br>多部设备来回插拔，管理繁琐 | **无法外网远程协同**<br>离开局域网便无法控制 | **集中管控 + 一键公网穿透 + Telegram 联动**<br>一键平滑切换所有设备；内置 Cloudflare Tunnel 零配置公网访问；Telegram 远程随时下发。 |
+| **仅限单机 USB，多设备管理割裂**<br>多部设备来回插拔，切换繁琐 | **无法外网远程协同**<br>离开局域网便无法控制 | **集中群控 + 一键公网穿透 + Telegram 联动**<br>一键平滑切换所有设备；内置 Cloudflare Tunnel 零配置公网访问；Telegram 远程随时下发。 |
 
 ---
 
-## 🌟 核心功能速览
+## 🖥️ 系统核心主界面逐一详解（真实运行数据）
 
-### 1. 📱 任务执行与多设备对话中心
-用自然语言描述需求（如 *“打开美团搜索附近的火锅店并按评分排序”*、*“在小红书收藏第三篇露营攻略”*），多模态 AI 智能体直接基于视觉理解界面，自主拆解并执行 Tap、Type、Swipe、Launch 等操作。
+本项目提供开箱即用的一站式 Web 管理工作台，以下为系统 11 大核心功能页面的真实截图与功能介绍：
 
+### 01. 💬 任务对话与执行工作台 (Chat Workbench)
+
+智能体任务的调度核心。支持用自然语言直接向指定设备下发指令，完整展现多模态大模型的思考推理链（CoT）、上下文压缩与执行日志，右下角内嵌低延迟悬浮手机窗。
+
+- **自然语言指令下发**：直接输入“在美团搜索附近的火锅店并按评分排序”即可自主拆解执行。
 - **思考链 (CoT) 过程透明**：每一步的意图拆解、识别坐标与执行结果实时可见。
-- **上下文智能压缩 (Context Compaction)**：自动裁剪冗余历史步骤，降低 50%+ 显存与 Token 开销。
-- **智能后验校验**：任务完成自动后验界面状态，容忍滚动后视图，杜绝误判与假死。
-- **任务历史与标签追溯**：清晰标记手动（manual）、计划（scheduled）、触发（trigger）、试运行（trial）不同来源。
+- **右下角悬浮手机窗**：毫秒级 Scrcpy 视频流推流，集成「实（实时控制）/ 录（示教录制）/ 回（动作回放）」三大统一入口，键鼠按键直接透传。
 
-<div align="center">
-  <img src="resources/screenshots/task_execution.png" alt="任务执行中心" width="92%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
-  <p><em>图 1：任务执行中心（多设备选择、自然语言下发、思考链可视化与任务日志）</em></p>
-</div>
+![01 任务对话与执行工作台](./resources/screenshots/01_chat_workbench.png)
 
 ---
 
-### 2. 🧪 自动化工作台：示教录制与配方沉淀
-不仅能依赖大模型实时决策，更提供工业级**自动化工程沉淀能力**：
+### 02. 📱 设备管理中心 (Device Center)
 
-- **示教录制 (Demonstration)**：直接在悬浮手机窗上操作，系统自动捕获交互并转化为可编辑的步骤流。
-- **配方化沉淀 (Recipes)**：将成功任务一键提取为结构化配方，支持 `{keyword}`、`{city}` 等参数模板，随取随用。
-- **条件触发与定时计划**：支持基于时间（Cron / 周期）与基于系统状态（设备上线、电量充饱、前序配方成功）自动排期触发。
-- **持久化后台运行**：由后端异步调度引擎驱动，关闭浏览器仍稳定运行，不漏跑、不重复。
+管理全部物理连接与无线配对的 Android 设备。提供设备状态卡片、网络信息、锁屏 PIN 码管理与无线调试配对向导。
 
-<div align="center">
-  <img src="resources/screenshots/automation_recipe.png" alt="自动化工作台与配方" width="85%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
-  <p><em>图 2：自动化工作台（参数化配方库、步骤编排与一键试运行）</em></p>
-</div>
+- **设备状态卡片**：展示设备型号（如 MEIZU_20）、状态（connected/offline）、连接类型（USB/WiFi）、屏幕分辨率与实时电量。
+- **无线配对向导**：支持输入局域网 `IP:Port` 快速无线连接，或通过配对码进行 Android 11+ 无线调试配对。
+- **设备安全管理**：配置锁屏 PIN 码，自动化启动时自动执行唤醒与点亮解锁时序。
+
+![02 设备管理中心](./resources/screenshots/02_device_management.png)
 
 ---
 
-### 3. 🎮 悬浮手机窗与毫秒级直通控制
-告别多设备分散乱象，所有设备交互收拢于统一的悬浮手机预览窗：
+### 03. 📷 设备运行监控看板 (Device Monitor)
 
-- **毫秒级低延迟视频流**：基于 `scrcpy-server + ffmpeg` WebSocket 视频流直出，支持自适应码率与多设备平滑热切换。
-- **触控与键盘直通**：鼠标点击、长按、滑动即时映射；PC 键盘按键与中文输入全局透传。
-- **统一工具箱**：窗内集成 **「实（实时控制）/ 录（示教录制）/ 回（动作回放）」** 极简入口，避免界面到处散落重复按钮。
-- **多设备矩阵墙 (Grid)**：支持网格平铺查看所有已连接设备屏幕与在线状态。
+针对受控设备与运行环境的实时健康度监控。
 
----
+- **性能状态追踪**：监控设备屏幕实时刷新帧率、后台自动化服务状态。
+- **设备硬件指标**：清晰查看设备 CPU 占用、内存消耗趋势、电池温度与供电状态。
+- **异常自愈检测**：设备异常掉线或 ADB 链路阻塞时即时感知并告警。
 
-### 4. 🎯 规则引擎与系统配置
-提供高度可定制的规则与策略系统，保障 Agent 执行的稳定与合规：
-
-- **智能应用映射**：内置 50+ 款主流 Android 社交、电商、外卖、出行应用的包名与主 Activity。
-- **自定义动作规则**：支持规则优先级覆盖、动作白名单/黑名单限制。
-- **自定义系统提示词 (Prompt)**：可根据业务需要注入定制化的先验规则与业务约束。
-
-<div align="center">
-  <img src="resources/screenshots/rules_config.png" alt="规则引擎配置" width="92%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
-  <p><em>图 3：规则引擎与应用映射管理</em></p>
-</div>
+![03 设备运行监控看板](./resources/screenshots/03_device_monitor.png)
 
 ---
 
-### 5. 🌐 远程协作与通知生态
-- **Cloudflare Tunnel 一键公网访问**：内置隧道支持，在 Web 侧边栏一键切换 `Public`，即刻生成临时公网访问链接，支持自动访问令牌认证，无需公网 IP 和端口转发。
-- **Telegram 远程控制机器人**：绑定后可在 Telegram 中直接发送文字指令下发任务、查看手机截屏、管理定时排期。
-- **邮件图文报告**：长周期或无人值守任务完成后，自动生成包含执行耗时、步骤日志和界面截图的完整图文邮件通知。
+### 04. 📺 多设备实时视频矩阵墙 (Device Matrix Grid)
+
+多机并发与群控集中观察大屏。
+
+- **多机位平铺观察**：将所有在线受控设备的实时屏幕以网格画幅形式集中平铺展现。
+- **批量并发监控**：多台设备同时执行不同自动化配方或批量任务时，一屏尽收眼底。
+- **一键主控切换**：点击任意设备卡片即可快速呼出控制通道或切换为主操作设备。
+
+![04 多设备实时视频矩阵墙](./resources/screenshots/04_device_grid.png)
+
+---
+
+### 05. ▶️ 任务管理与执行历史 (Task Management & History)
+
+全量任务的历史审计与可追溯性中心。
+
+- **任务来源标签清晰分类**：准确区分手动下发 (`manual`)、定时排期 (`scheduled`)、事件触发 (`trigger`)、试运行 (`trial`)。
+- **执行指标统计**：查看每项任务的开始时间、运行时长、执行步数及最终状态（已完成/接管中/失败）。
+- **步骤上下文追溯**：点击任务可直接查看完整执行流程，包括每一步的截图记录与模型决策入参。
+
+![05 任务管理与执行历史](./resources/screenshots/05_task_history.png)
+
+---
+
+### 06. ⏰ 定时任务与自动化配方工作台 (Automation & Scheduler)
+
+从“纯大模型探索”升级为“工业级自动化”的关键基石。
+
+- **示教录制 (Demonstration)**：在手机预览窗上直接手工操作一次，系统自动捕获交互并转化为可编辑的步骤流。
+- **参数化配方库 (Recipes)**：将成功步骤固化为配方，支持 `{keyword}`、`{city}` 等动态参数注入，大幅减少 Token 消耗。
+- **定时与条件触发**：支持基于时间（Cron / 周期）与基于系统状态（设备上线、电量充饱、前序配方成功）自动排期触发。
+
+![06 定时任务与自动化配方工作台](./resources/screenshots/06_automation_scheduler.png)
+
+---
+
+### 07. 🤖 多模型服务配置中心 (Model Services)
+
+多源 AI 模型的集中管理与连接测试中枢。
+
+- **多提供商全面支持**：开箱支持智谱 BigModel（原生云端推荐）、OpenAI 兼容接口、本地私有化 vLLM、Ollama 等。
+- **模型参数可视化配置**：直观调整 Temperature、Top_p、Max Steps（步数上限）、系统 Prompt 预设。
+- **连通性一键测试**：提供 API 连通性测试按钮，快速检测接口延迟与密钥有效性。
+
+![07 多模型服务配置中心](./resources/screenshots/07_model_services.png)
+
+---
+
+### 08. 📁 文件存储与多媒体管理 (File Storage)
+
+自动化执行与录制过程中沉淀的多媒体数字资产归档。
+
+- **截图流水记录**：按任务和时间分类浏览所有历史截图证据。
+- **操作录像存储**：示教录制与执行过程中生成的视频片段查看与下载。
+- **配置导出与导入**：支持将自动化配方、规则配置一键打包导出并迁移到其他实例。
+
+![08 文件存储与多媒体管理](./resources/screenshots/08_file_storage.png)
+
+---
+
+### 09. 📋 规则引擎与应用包名映射 (Rules Engine)
+
+保障 Agent 决策高准确度与安全边界的先验知识库。
+
+- **智能应用包名映射**：内置 50+ 款主流 Android 社交、电商、外卖、出行应用的包名与主 Activity 映射表。
+- **动作规则与黑白名单**：支持规则优先级覆盖，限制危险操作动作（如禁止随机点击支付确认）。
+- **自定义系统提示词 (Prompt)**：可根据业务实际需求注入定制先验规则与领域规范。
+
+![09 规则引擎与应用包名映射](./resources/screenshots/09_rule_engine.png)
+
+---
+
+### 10. ⚙️ 系统配置与远程通道集成 (System Settings)
+
+打通外网访问、多端提醒与系统级安全配置。
+
+- **Cloudflare Tunnel 一键公网访问**：在 Web 界面一键切换为 `Public`，即刻生成安全的临时公网链接，免公网 IP 和端口转发。
+- **Telegram 远程机器人**：绑定 Bot Token 与 Chat ID，随时随地在 Telegram 中发送任务指令与接收截图。
+- **SMTP 邮件图文通知**：任务完成或发生异常时自动生成包含图文日志的邮件报告推送给管理员。
+
+![10 系统配置与远程通道集成](./resources/screenshots/10_system_settings.png)
+
+---
+
+### 11. 🗄️ 数据库管理与历史记录审计 (Database Management)
+
+内置轻量级 SQLite 可视化管理视图。
+
+- **会话表 (Sessions)**：查看所有历史会话的创建时间、最后更新时序与绑定的设备 ID。
+- **消息表 (Messages)**：查看对话记录、用户指令与 AI 状态持久化详情。
+- **任务审计数据**：底层任务执行状态与事件游标直观审查，方便运维与调试。
+
+![11 数据库管理与历史记录审计](./resources/screenshots/11_database_viewer.png)
 
 ---
 
@@ -108,26 +181,26 @@
   sudo apt install adb
 
   # Windows
-  # 下载 Android SDK Platform Tools 并加入 PATH 环境变量
+  # 下载 Android SDK Platform Tools 并将目录加入系统 PATH 环境变量
   ```
 - **Android 手机设置**：
   1. 进入 **设置 → 关于手机**，连续点击“版本号” 7 次开启开发者选项。
   2. 进入 **系统 → 开发者选项**，开启 **USB 调试**。
-  3. *(重要)* 若为小米/vivo/OPPO 等机型，请同步开启 **USB 调试（安全设置）**（允许模拟点击）。
+  3. *(重要)* 若为国内品牌机型（小米/vivo/OPPO），请同步开启 **USB 调试（安全设置）**（允许模拟点击与输入）。
 
 ### 2. 三步启动工作台
 
 ```bash
 # 1. 克隆项目并安装依赖
-git clone https://github.com/zai-org/Open-AutoGLM.git
-cd Open-AutoGLM
+git clone https://github.com/fanxiaolongx-max/Open-AutoGLM-GUI.git
+cd Open-AutoGLM-GUI
 pip install -r requirements.txt
 
 # 2. 连接手机并确认连接正常
 adb devices
-# 输出示例：
+# 正确输出示例：
 # List of devices attached
-# 127.0.0.1:5555    device
+# 381QYFE32239E    device
 
 # 3. 启动 Web 工作台
 python run_web.py
@@ -137,23 +210,23 @@ python run_web.py
 
 ---
 
-## 🤖 模型服务配置
+## 🤖 模型服务接入指南
 
-系统支持多种主流模型接入方式，可在 Web 界面 **「模型服务」** 菜单中可视化配置与测试：
+系统支持多种主流模型接入方式，启动后在 Web 界面 **「模型服务」** 菜单中可视化配置即可：
 
 ### 方式一：智谱 BigModel（云端原生推荐）
-无需本地 GPU，开箱即用：
+无需本地 GPU 算力，开箱即用：
 1. 访问 [智谱开放平台](https://open.bigmodel.cn/) 获取 API Key。
-2. 在 Web 端或启动命令中配置：
+2. 在 Web 端或启动配置中填入：
    - **Base URL**: `https://open.bigmodel.cn/api/paas/v4`
    - **Model**: `autoglm-phone`
    - **API Key**: `YOUR_API_KEY`
 
-### 方式二：OpenAI 兼容接口 / 视觉大模型网关
-支持任何具备视觉输入能力的 OpenAI 兼容接口（如 GPT-4o、Claude 代理网关、Gemini 代理）：
+### 方式二：OpenAI 兼容接口 / 视觉网关
+支持任何具备多模态视觉输入能力的 OpenAI 兼容网关：
 - **Base URL**: `https://your-api-gateway/v1`
-- **Model**: `gpt-4o` / 自定义模型名
-- **API Key**: `your-token`
+- **Model**: `gpt-4o` / 自定义多模态模型名
+- **API Key**: `YOUR_TOKEN`
 
 ### 方式三：本地部署（vLLM / 私有化）
 适合拥有 24GB+ 显存 GPU 的私有化部署环境：
@@ -167,42 +240,27 @@ Web 配置对应连接 `http://localhost:8000/v1`。
 
 ---
 
-## 🛠️ CLI 命令行模式（脚本与自动化集成）
-
-除 Web 工作台外，系统完整保留轻量 CLI 模式，便于集成到外部流水线中：
-
-```bash
-# 单任务直接执行
-python main.py --apikey sk-xxxxx "打开小红书搜索露营"
-
-# 指定设备与步数上限
-python main.py --device-id 192.168.1.100:5555 --max-steps 30 "打开美团点咖啡"
-
-# 列出已支持的应用包名
-python main.py --list-apps
-```
-
----
-
-## 📁 项目结构
+## 📁 项目架构与目录结构
 
 ```
-Open-AutoGLM/
+Open-AutoGLM-GUI/
 ├── run_web.py                  # Web 工作台入口
 ├── main.py                     # 命令行 CLI 入口
 ├── phone_agent/                # Agent 智能体核心引擎
-│   ├── agent.py                # 决策与主循环（含上下文压缩与后验）
-│   ├── actions/                # ADB / HDC 动作执行器
-│   ├── adb/                    # ADB 连接与屏幕捕获
-│   ├── config/                 # 默认应用映射与 Prompts
-│   └── model/                  # 多模态模型客户端适配器
+│   ├── agent.py                # 决策主循环、上下文压缩与智能后验
+│   ├── actions/                # ADB / HDC 动作执行器与输入注入
+│   ├── adb/                    # ADB 连接管理与屏幕采集
+│   ├── config/                 # 默认应用映射与系统提示词
+│   └── model/                  # 多模态大模型客户端适配器
 ├── web_app/                    # Web 后端与交互服务 (FastAPI)
-│   ├── main.py                 # FastAPI 应用主路由与中间件
+│   ├── main.py                 # FastAPI 应用入口与中间件
 │   ├── routers/                # 业务路由 (chat, devices, automation, scrcpy 等)
-│   ├── services/               # 业务引擎 (调度排期、配方运行时、Scrcpy 视频流、Telegram Bot)
+│   ├── services/               # 业务引擎 (配方运行时、Scrcpy 推流、Telegram Bot、调度器)
 │   ├── models/                 # SQLite 数据持久化与 Pydantic 规范
-│   └── static/                 # 响应式前端页面与自动化工作台组件
-└── docs/                       # 架构设计与自动化工作台说明文档
+│   └── static/                 # 响应式前端工作台（Vue 3 单页架构）
+├── resources/                  # 静态多媒体资源
+│   └── screenshots/            # 系统 11 大核心界面真实高清截图
+└── docs/                       # 架构设计与自动化工作台开发手册
 ```
 
 ---
