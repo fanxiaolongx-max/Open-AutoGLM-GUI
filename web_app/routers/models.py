@@ -4,7 +4,7 @@ Models API router.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from web_app.auth import verify_token
@@ -25,6 +25,7 @@ class ModelServiceCreate(BaseModel):
     description: str = ""
     protocol: str = "openai"
     category: str = ""
+    context_window: int = Field(0, ge=0, le=10000000)
 
 
 class ModelServiceUpdate(BaseModel):
@@ -41,6 +42,7 @@ class ModelServiceUpdate(BaseModel):
     is_active: bool = False
     protocol: str = "openai"
     category: str = ""
+    context_window: int = Field(0, ge=0, le=10000000)
 
 
 class TestConfigRequest(BaseModel):
@@ -106,6 +108,10 @@ async def update_model(
         raise HTTPException(status_code=400, detail="Service ID mismatch")
 
     data = request.model_dump()
+    if 'context_window' not in request.model_fields_set:
+        previous = model_service.get_service_by_id(service_id)
+        if previous:
+            data['context_window'] = previous.get('context_window',0)
     success = model_service.update_service(data)
     if not success:
         raise HTTPException(status_code=404, detail="Service not found")

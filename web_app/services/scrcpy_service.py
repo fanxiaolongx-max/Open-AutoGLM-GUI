@@ -9,6 +9,7 @@ Pure scrcpy mode:
 """
 
 import asyncio
+from web_app.services.manual_control import manual_input
 import io
 import json
 import logging
@@ -2118,12 +2119,19 @@ class ScrcpyService:
     # Touch / Key input
     # ──────────────────────────────────────────────────────────────────────
 
+    @manual_input("touch")
     async def send_touch(self, device_id: str, action: str, x: float, y: float,
                           width: float, height: float):
         """Send touch event. Coordinates mapped from canvas to device screen."""
         session = self._sessions.get(device_id)
         if not session:
             return
+        if action not in {'down','move','up','cancel'}:
+            return False
+        if action != 'down' and not getattr(session, '_pointer_down', False):
+            return False
+        if action in {'up','cancel'}:
+            session._pointer_down = False
         if action == "down" and session.is_scrcpy:
             restarted_for_rotation = False
             try:
@@ -2164,11 +2172,13 @@ class ScrcpyService:
         device_x = max(0, min(device_x, session.screen_width - 1))
         device_y = max(0, min(device_y, session.screen_height - 1))
 
+        if action == 'down':
+            session._pointer_down = True
         if self._can_use_scrcpy_control(session):
-            action_map = {"down": 0, "up": 1, "move": 2}
+            action_map = {"down": 0, "up": 1, "move": 2, "cancel": 3}
             action_i = action_map.get(action)
             if action_i is not None:
-                pressure = 0.0 if action_i == 1 else 1.0
+                pressure = 0.0 if action_i in {1,3} else 1.0
                 if _scrcpy_control_debug and action in ("down", "up"):
                     logger.debug(
                         "[SCRCPY-CTRL] touch enqueue: "
@@ -2213,13 +2223,19 @@ class ScrcpyService:
     async def _send_touch_adb(self, device_id: str, session: ScrcpySession,
                                action: str, device_x: int, device_y: int):
         """Send touch via adb shell input."""
+        if action == 'cancel':
+            session._touch_start = None
+            session._touch_moved = False
+            return False
         if action == "down":
             session._touch_start = (device_x, device_y)
             session._touch_moved = False
             session._touch_start_time = time.monotonic()
             session._touch_last = (device_x, device_y)
         elif action == "move":
-            start = getattr(session, '_touch_start', (device_x, device_y))
+            start = getattr(session, '_touch_start', None)
+            if start is None:
+                return False
             sx, sy = start
             # Ignore tiny jitter so long-press is not misclassified as swipe.
             if abs(device_x - sx) > 12 or abs(device_y - sy) > 12:
@@ -2228,7 +2244,10 @@ class ScrcpyService:
         elif action == "up":
             loop = asyncio.get_event_loop()
             start = getattr(session, '_touch_start', None)
-            sx, sy = start if start else (device_x, device_y)
+            session._touch_start = None
+            if start is None:
+                return False
+            sx, sy = start
             press_ms = int((time.monotonic() - getattr(session, '_touch_start_time', time.monotonic())) * 1000)
             moved = getattr(session, '_touch_moved', False)
             if moved:
@@ -2296,6 +2315,7 @@ class ScrcpyService:
                         f"touch adb tap failed {device_id}: stderr={result.stderr.decode('utf-8', errors='replace').strip()}"
                     )
 
+    @manual_input("scroll")
     async def send_scroll(self, device_id: str, x: float, y: float,
                           width: float, height: float, delta_y: float):
         """Send wheel scroll as vertical swipe around pointer location."""
@@ -2387,6 +2407,7 @@ class ScrcpyService:
                 f"scroll adb failed {device_id}: stderr={result.stderr.decode('utf-8', errors='replace').strip()}"
             )
 
+    @manual_input("key")
     async def send_key(self, device_id: str, keycode: int):
         """Send key event. Common: Back=4, Home=3."""
         session = self._sessions.get(device_id)

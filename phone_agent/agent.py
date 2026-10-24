@@ -3,6 +3,7 @@
 import json
 import logging
 import traceback
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -43,6 +44,16 @@ class StepResult:
     message: str | None = None
 
 
+@dataclass
+class RunResult:
+    success: bool
+    reason: str
+    message: str
+    steps: int
+    error: str | None = None
+
+
+
 class PhoneAgent:
     """
     AI-powered agent for automating Android phone interactions.
@@ -69,7 +80,7 @@ class PhoneAgent:
         self,
         model_config: ModelConfig | None = None,
         agent_config: AgentConfig | None = None,
-        confirmation_callback: Callable[[str], bool] | None = None,
+        confirmation_callback: Callable[[str], bool | None] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
         tap_preview_callback: Callable[[int, int, int, int, str], tuple[bool, int, int]] | None = None,
     ):
@@ -84,6 +95,9 @@ class PhoneAgent:
             tap_preview_callback=tap_preview_callback if self.agent_config.debug_mode else None,
         )
 
+        self.event_callback = None
+        self.checkpoint_callback = None
+        self.last_result = None
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
         self._stop_requested = False  # Stop flag for graceful termination
@@ -100,50 +114,48 @@ class PhoneAgent:
         """Check if stop has been requested."""
         return self._stop_requested
 
+    def _emit(self, kind: str, **data) -> None:
+        if self.event_callback:
+            self.event_callback(kind, {"step": self._step_count, **data})
+
+    def _checkpoint(self) -> bool:
+        """Return True if a pause invalidated an in-flight decision."""
+        return bool(self.checkpoint_callback and self.checkpoint_callback())
+
     def run(self, task: str) -> str:
-        """
-        Run the agent to complete a task.
+        """CLI-compatible wrapper around the structured execution interface."""
+        self._stop_requested = False
+        return self.run_result(task).message
 
-        Args:
-            task: Natural language description of the task.
-
-        Returns:
-            Final message from the agent.
-        """
+    def run_result(self, task: str) -> RunResult:
         self._context = []
         self._step_count = 0
-        self._stop_requested = False  # Reset stop flag
-
-        # Set up ADB keyboard once at task start
-        self.action_handler.setup_keyboard()
-
+        self._action_history.clear()
+        self._loop_detected_count = 0
+        # Do not reset a stop requested between creation and worker startup.
+        outcome = RunResult(False, "max_steps", "Max steps reached", 0)
         try:
-            # Check stop before first step
-            if self._stop_requested:
-                return "Task stopped by user"
-
-            # First step with user prompt
-            result = self._execute_step(task, is_first=True)
-
-            if result.finished:
-                return result.message or "Task completed"
-
-            # Continue until finished or max steps reached
-            while not result.finished and self._step_count < self.agent_config.max_steps:
-                # Check stop flag before each step
+            self.action_handler.setup_keyboard()
+            while self._step_count < self.agent_config.max_steps:
+                self._checkpoint()
                 if self._stop_requested:
-                    print("\n⏹️ Task stopped by user")
-                    return "Task stopped by user"
-
-                result = self._execute_step(is_first=False)
-
-            if result.finished:
-                return result.message or "Task completed"
-
-            return "Max steps reached"
+                    outcome = RunResult(False, "stopped", "Task stopped by user", self._step_count)
+                    break
+                result = self._execute_step(task if not self._context else None, not self._context)
+                if result.finished:
+                    reason = "stopped" if self._stop_requested else ("completed" if result.success else "failed")
+                    outcome = RunResult(result.success and not self._stop_requested, reason,
+                                        result.message or reason, self._step_count)
+                    break
+            else:
+                outcome.steps = self._step_count
+        except Exception as exc:
+            outcome = RunResult(False, "error", str(exc), self._step_count, str(exc))
         finally:
-            # Restore original keyboard when task ends
             self.action_handler.restore_keyboard()
+        self.last_result = outcome
+        self._emit("finished", **outcome.__dict__)
+        return outcome
 
     def step(self, task: str | None = None) -> StepResult:
         """
@@ -187,12 +199,16 @@ class PhoneAgent:
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
         """Execute a single step of the agent loop."""
+        self._checkpoint()
         self._step_count += 1
+        step_started = time.monotonic()
 
         # Capture current screen state
         device_factory = get_device_factory()
         screenshot = device_factory.get_screenshot(self.agent_config.device_id)
         current_app = device_factory.get_current_app(self.agent_config.device_id)
+        self._emit("screen", image=screenshot.base64_data, width=screenshot.width,
+                   height=screenshot.height, sensitive=screenshot.is_sensitive, current_app=current_app)
 
         # Build messages
         if is_first:
@@ -218,6 +234,10 @@ class PhoneAgent:
                 )
             )
 
+        if getattr(self, "_resume_feedback", None):
+            self._context.append({"role": "user", "content": self._resume_feedback})
+            self._resume_feedback = None
+
         # Get model response with retry for empty responses
         max_retries = 2  # 最多重试2次
         response = None
@@ -239,6 +259,8 @@ class PhoneAgent:
 
                 response = self.model_client.request(self._context)
 
+                self._emit("model", input_tokens=response.input_tokens, output_tokens=response.output_tokens,
+                           total_tokens=response.total_tokens)
                 # Print token usage if available
                 if response.total_tokens > 0:
                     print(f"[TOKENS]{response.input_tokens},{response.output_tokens},{response.total_tokens}[/TOKENS]")
@@ -261,15 +283,16 @@ class PhoneAgent:
                     message=f"Model error: {e}",
                 )
 
+        if self._checkpoint():
+            # The user changed the screen while inference was in flight. Re-observe.
+            return StepResult(False, False, None, "", "Decision discarded after pause")
+
         # Parse action from response
         try:
             action = parse_action(response.action)
         except ValueError:
-            if self.agent_config.verbose:
-                traceback.print_exc()
-            # If action is empty, provide meaningful error message
-            error_msg = response.action if response.action.strip() else "模型返回了空的动作，可能是推理被截断"
-            action = finish(message=error_msg)
+            return StepResult(False, True, None, response.thinking,
+                              "Invalid model action: " + (response.action or "empty response"))
 
         if self.agent_config.verbose:
             # Print thinking process (cleaned up for readability)
@@ -330,17 +353,24 @@ class PhoneAgent:
         device_width, device_height = get_screen_size(self.agent_config.device_id)
         logger.info(f"Using device resolution {device_width}x{device_height} for coordinate conversion (screenshot is {screenshot.width}x{screenshot.height})")
 
-        # Execute action
-        try:
-            result = self.action_handler.execute(
-                action, device_width, device_height
-            )
-        except Exception as e:
-            if self.agent_config.verbose:
-                traceback.print_exc()
-            result = self.action_handler.execute(
-                finish(message=str(e)), device_width, device_height
-            )
+        from contextlib import nullcontext
+        with getattr(self, 'action_lock', None) or nullcontext():
+            if self._checkpoint():
+                return StepResult(False, False, None, "", "Decision discarded after pause")
+            if self._stop_requested:
+                return StepResult(False, True, None, "", "Task stopped by user")
+            self._emit("action", action=action, device_width=device_width, device_height=device_height)
+            try:
+                result = self.action_handler.execute(
+                    action, device_width, device_height
+                )
+            except Exception as e:
+                if self.agent_config.verbose:
+                    traceback.print_exc()
+                return StepResult(False, True, action, response.thinking, str(e))
+
+        self._emit("action_result", action=action, success=result.success,
+                   message=result.message, elapsed=time.monotonic() - step_started)
 
         # Add assistant response to context
         self._context.append(

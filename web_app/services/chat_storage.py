@@ -103,6 +103,55 @@ class ChatStorage:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
         self._init_db()
+        self._init_context_storage()
+
+    def _init_context_storage(self):
+        """Versioned additive migration; back up existing conversations before upgrading."""
+        with self._get_conn() as conn:
+            exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='chat_context_schema'").fetchone()
+            version = conn.execute('SELECT version FROM chat_context_schema').fetchone()[0] if exists else 0
+            if version > 1:
+                raise RuntimeError('Chat context schema is newer than this application')
+            if version == 1:
+                return
+            if conn.execute('SELECT COUNT(*) FROM chat_messages').fetchone()[0]:
+                backup_path = str(self.db_path)+'.context-v0.'+datetime.now().strftime('%Y%m%d%H%M%S%f')+'.bak'
+                with sqlite3.connect(backup_path) as backup:
+                    conn.backup(backup)
+            conn.execute('BEGIN IMMEDIATE')
+            conn.execute('CREATE TABLE chat_context_schema (version INTEGER NOT NULL)')
+            conn.execute('INSERT INTO chat_context_schema VALUES (1)')
+            conn.execute('CREATE TABLE chat_context_events (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, data TEXT NOT NULL)')
+            conn.execute('CREATE INDEX chat_context_event_session ON chat_context_events(session_id)')
+            conn.execute('CREATE TABLE chat_context_status (session_id TEXT PRIMARY KEY, data TEXT NOT NULL)')
+
+    def context_rows(self, session_id, through_id=None, after_seq=0):
+        with self._get_conn() as conn:
+            rows = conn.execute('''SELECT rowid AS seq, * FROM chat_messages
+                WHERE session_id=? AND rowid>? AND rowid <= COALESCE(
+                    (SELECT rowid FROM chat_messages WHERE id=? AND session_id=?),
+                    CASE WHEN ? IS NULL THEN 9223372036854775807 ELSE -1 END)
+                AND role IN ('user','assistant') ORDER BY rowid''',
+                (session_id, after_seq, through_id, session_id, through_id)).fetchall()
+            return [dict(r) for r in rows]
+
+    def context_events(self, session_id):
+        with self._get_conn() as conn:
+            return [json.loads(r[0]) for r in conn.execute(
+                'SELECT data FROM chat_context_events WHERE session_id=? ORDER BY rowid', (session_id,))]
+
+    def save_context_event(self, event):
+        with self._get_conn() as conn:
+            conn.execute('INSERT INTO chat_context_events VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
+                         (event['id'],event['session_id'],json.dumps(event, ensure_ascii=False)))
+
+    def context_status(self, session_id, value=None):
+        with self._get_conn() as conn:
+            if value is not None:
+                conn.execute('INSERT INTO chat_context_status VALUES (?,?) ON CONFLICT(session_id) DO UPDATE SET data=excluded.data',
+                             (session_id, json.dumps(value, ensure_ascii=False)))
+            row = conn.execute('SELECT data FROM chat_context_status WHERE session_id=?', (session_id,)).fetchone()
+            return json.loads(row[0]) if row else {}
 
     @contextmanager
     def _get_conn(self):
@@ -287,6 +336,8 @@ class ChatStorage:
             cursor.execute("DELETE FROM chat_screenshots WHERE session_id = ?", (session_id,))
             cursor.execute("DELETE FROM chat_logs WHERE session_id = ?", (session_id,))
             cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+            cursor.execute('DELETE FROM chat_context_events WHERE session_id=?', (session_id,))
+            cursor.execute('DELETE FROM chat_context_status WHERE session_id=?', (session_id,))
             cursor.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
             return cursor.rowcount > 0
 
@@ -376,11 +427,23 @@ class ChatStorage:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM chat_messages
-                WHERE session_id = ?
-                ORDER BY created_at ASC LIMIT ?
+                SELECT * FROM (SELECT rowid AS sequence,* FROM chat_messages
+                WHERE session_id = ? ORDER BY rowid DESC LIMIT ?) ORDER BY sequence ASC
             """, (session_id, limit))
-            return [ChatMessage(**dict(row)) for row in cursor.fetchall()]
+            return [ChatMessage(**{k: row[k] for k in row.keys() if k != 'sequence'}) for row in cursor.fetchall()]
+
+    def get_context_messages(self, session_id: str, through_id: str, limit: int = 40) -> List[ChatMessage]:
+        """Latest messages through a stable boundary, including equal-time inserts."""
+        with self._get_conn() as conn:
+            rows = conn.execute("""
+                SELECT * FROM (
+                    SELECT rowid AS sequence, * FROM chat_messages
+                    WHERE session_id = ? AND rowid <= (
+                        SELECT rowid FROM chat_messages WHERE id = ? AND session_id = ?
+                    ) ORDER BY rowid DESC LIMIT ?
+                ) ORDER BY sequence ASC
+            """, (session_id, through_id, session_id, limit)).fetchall()
+            return [ChatMessage(**{k: row[k] for k in row.keys() if k != 'sequence'}) for row in rows]
 
     def get_message(self, message_id: str) -> Optional[ChatMessage]:
         """Get a specific message."""
@@ -500,7 +563,7 @@ class ChatStorage:
         if not session:
             return None
 
-        messages = self.get_messages(session_id)
+        messages = self.get_messages(session_id, limit=-1)
         logs = self.get_logs(session_id, limit=5000)  # Increased limit to ensure all logs are returned
         screenshots = self.get_screenshots(session_id)
 
@@ -519,8 +582,11 @@ class ChatStorage:
 
         # Build detailed messages
         detailed_messages = []
+        context_events = {e['message_id']: e for e in self.context_events(session_id)}
         for msg in messages:
             msg_dict = msg.to_dict()
+            if msg.id in context_events:
+                msg_dict['context_event'] = context_events[msg.id]
             msg_dict['logs'] = logs_by_message.get(msg.id, [])
             msg_dict['screenshots'] = screenshots_by_message.get(msg.id, [])
             detailed_messages.append(msg_dict)
@@ -555,6 +621,8 @@ class ChatStorage:
             cursor.execute(f"DELETE FROM chat_screenshots WHERE session_id IN ({placeholders})", old_ids)
             cursor.execute(f"DELETE FROM chat_logs WHERE session_id IN ({placeholders})", old_ids)
             cursor.execute(f"DELETE FROM chat_messages WHERE session_id IN ({placeholders})", old_ids)
+            cursor.execute(f"DELETE FROM chat_context_events WHERE session_id IN ({placeholders})", old_ids)
+            cursor.execute(f"DELETE FROM chat_context_status WHERE session_id IN ({placeholders})", old_ids)
             cursor.execute(f"DELETE FROM chat_sessions WHERE id IN ({placeholders})", old_ids)
 
             logger.info(f"Cleaned up {len(old_ids)} old chat sessions")

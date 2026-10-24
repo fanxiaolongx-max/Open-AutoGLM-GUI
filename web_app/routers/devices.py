@@ -5,11 +5,13 @@ Devices API router.
 
 import os
 import tempfile
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Optional
 
+from web_app.services.manual_control import manual_endpoint
 from web_app.auth import verify_token
 from web_app.services.device_service import device_service
 
@@ -100,6 +102,7 @@ async def get_screenshot_base64(device_id: str, _: bool = Depends(verify_token))
 
 
 @router.post("/{device_id}/unlock")
+@manual_endpoint
 async def unlock_device(
     device_id: str,
     request: UnlockRequest = None,
@@ -107,6 +110,11 @@ async def unlock_device(
 ):
     """Unlock a device."""
     pin = request.pin if request else None
+    from web_app.services.manual_control import ensure_manual
+    try:
+        ensure_manual(device_id)
+    except PermissionError as exc:
+        raise HTTPException(409, str(exc))
     success = await device_service.unlock_device(device_id, pin)
     if not success:
         raise HTTPException(status_code=400, detail="Failed to unlock device")
@@ -114,11 +122,17 @@ async def unlock_device(
 
 
 @router.post("/{device_id}/camera/start")
+@manual_endpoint
 async def start_camera(
     device_id: str,
     _: bool = Depends(verify_token)
 ):
     """Launch the device camera app via ADB for use as remote monitor."""
+    from web_app.services.manual_control import ensure_manual
+    try:
+        ensure_manual(device_id)
+    except PermissionError as exc:
+        raise HTTPException(409, str(exc))
     success, message = await device_service.launch_camera_app(device_id)
     if not success:
         raise HTTPException(status_code=400, detail=message)
@@ -126,11 +140,17 @@ async def start_camera(
 
 
 @router.post("/{device_id}/camera/launch-ipwebcam")
+@manual_endpoint
 async def launch_ipwebcam(
     device_id: str,
     _: bool = Depends(verify_token)
 ):
     """Launch IP Webcam app (com.pas.webcam) on the device. User then taps Start server in the app."""
+    from web_app.services.manual_control import ensure_manual
+    try:
+        ensure_manual(device_id)
+    except PermissionError as exc:
+        raise HTTPException(409, str(exc))
     success, message = await device_service.launch_ipwebcam_app(device_id)
     if not success:
         raise HTTPException(status_code=400, detail=message)
@@ -147,11 +167,17 @@ async def get_device_wlan_ip(device_id: str, _: bool = Depends(verify_token)):
 
 
 @router.post("/{device_id}/lock")
+@manual_endpoint
 async def lock_device(
     device_id: str,
     _: bool = Depends(verify_token)
 ):
     """Lock a device screen."""
+    from web_app.services.manual_control import ensure_manual
+    try:
+        ensure_manual(device_id)
+    except PermissionError as exc:
+        raise HTTPException(409, str(exc))
     success = await device_service.lock_device(device_id)
     if not success:
         raise HTTPException(status_code=400, detail="Failed to lock device")
@@ -297,7 +323,9 @@ async def download_file(
     return Response(
         content=content,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        # HTTP headers must be Latin-1 encodable. RFC 6266/5987 supports
+        # Unicode and special characters through a UTF-8 percent-encoded name.
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"}
     )
 
 
@@ -352,8 +380,18 @@ async def execute_adb_command(
     Execute slash-style ADB command for chat direct mode.
     This endpoint intentionally returns structured result even on command failure.
     """
-    return await device_service.execute_adb_chat_command(
-        device_id=device_id,
-        command=request.command,
-        timeout_seconds=request.timeout_seconds,
-    )
+    from web_app.services.manual_control import ensure_manual
+    from web_app.services.automation_runtime import get_runtime
+    import time
+    try:
+        ensure_manual(device_id)
+    except PermissionError as exc:
+        raise HTTPException(409, str(exc))
+    runtime = get_runtime()
+    runtime.manual_busy[device_id] = time.monotonic()+request.timeout_seconds+5
+    try:
+        result = await device_service.execute_adb_chat_command(
+            device_id=device_id, command=request.command, timeout_seconds=request.timeout_seconds)
+        return result
+    finally:
+        runtime.manual_busy.pop(device_id, None)

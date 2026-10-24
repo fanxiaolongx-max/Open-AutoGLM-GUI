@@ -226,6 +226,15 @@ class LoginRequiredMiddleware:
         await response(scope, receive, send)
 
 
+def consume_quiet_start_once(path=None):
+    marker = path or (Path.home()/'.autoglm'/'.quiet-next-start')
+    try:
+        marker.unlink()
+        return True
+    except FileNotFoundError:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
@@ -244,6 +253,15 @@ async def lifespan(app: FastAPI):
     set_scrcpy_loop(asyncio.get_event_loop())
     logger.info("Main event loop registered for scrcpy callbacks")
 
+    from web_app.services.automation_runtime import get_runtime
+    from web_app.services.automation_catalog import catalog
+    from web_app.services.automation_bridge import install_bridge
+    runtime = get_runtime()
+    await runtime.start()
+    install_bridge(runtime)
+    quiet_start = consume_quiet_start_once()
+    await catalog.start()
+
     # Start the scheduler
     await scheduler_service.start()
     logger.info("Scheduler started")
@@ -255,45 +273,16 @@ async def lifespan(app: FastAPI):
         from web_app.services.task_service import task_service
         from web_app.services.device_service import device_service
 
-        # Get task to find devices
+        from web_app.services.schedule_execution import submit_schedule, watch_schedule
         task = scheduler_service.get_task(task_id)
         if not task:
-            logger.error(f"Scheduled task {task_id} not found")
             return
-
-        device_ids = task.devices if task.devices else []
-        if not device_ids:
-            # Use all connected devices if none specified
-            devices = device_service.get_all_devices()
-            device_ids = [d.id for d in devices]
-
-        if not device_ids:
-            logger.warning(f"No devices available for scheduled task {task_id}")
+        try:
+            record = submit_schedule(task)
+            asyncio.create_task(watch_schedule(task, record))
+        except Exception as exc:
+            scheduler_service.add_task_log(task_id, False, str(exc))
             scheduler_service.mark_task_finished(task_id)
-            return
-
-        logger.info(f"Running scheduled task {task_id}: {task_content[:50]}...")
-
-        # Run task in background
-        async def run_scheduled():
-            try:
-                result = await task_service.run_task(task_content, device_ids, is_scheduled=True, task_type="scheduled")
-                # Record log
-                success_count = sum(1 for r in result.results if r.get("success", False))
-                failed_count = len(result.results) - success_count
-                success = result.status == "completed" and failed_count == 0
-                message = f"完成: {success_count} 成功, {failed_count} 失败"
-                details = "\n".join(result.logs) if result.logs else ""
-                # Collect screenshots from task result for Telegram notification
-                screenshots = getattr(result, '_device_screenshots', None)
-                scheduler_service.add_task_log(task_id, success, message, details, screenshots=screenshots)
-            except Exception as e:
-                logger.error(f"Scheduled task {task_id} failed: {e}")
-                scheduler_service.add_task_log(task_id, False, f"执行失败: {str(e)}", "")
-            finally:
-                scheduler_service.mark_task_finished(task_id)
-
-        asyncio.create_task(run_scheduled())
 
     scheduler_service.add_task_callback(on_scheduled_task)
     logger.info("Scheduler callback registered")
@@ -336,8 +325,11 @@ async def lifespan(app: FastAPI):
                 f"📱 设备: {device_count} 台已连接\n"
                 f"🤖 状态: 已就绪"
             )
-            await telegram_bot_service.send_system_notification(startup_msg)
-            logger.info("Startup notification sent")
+            if not quiet_start:
+                await telegram_bot_service.send_system_notification(startup_msg)
+                logger.info("Startup notification sent")
+            else:
+                logger.info("Maintenance restart: startup notification suppressed once")
     except Exception as e:
         logger.warning(f"Failed to start Telegram bot: {e}")
 
@@ -347,6 +339,10 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down AutoGLM Web Server...")
     
+    await scheduler_service.stop()
+    await catalog.close()
+    await runtime.close()
+
     # Stop scrcpy streams
     try:
         from web_app.services.scrcpy_service import scrcpy_service
@@ -384,7 +380,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Error stopping tunnel: {e}")
     
-    await scheduler_service.stop()
     logger.info("Scheduler stopped")
 
 
@@ -415,6 +410,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(tasks_router)
+from web_app.routers.automation import router as automation_router
+app.include_router(automation_router)
 app.include_router(scheduler_router)
 app.include_router(models_router)
 app.include_router(settings_router)
@@ -428,9 +425,17 @@ app.include_router(camera_router)
 app.include_router(streams_router)
 app.include_router(database_router)
 
+# Revalidate extracted modules too, so upgrades do not mix old and new exports.
+class RevalidatedStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers['Cache-Control'] = 'no-cache, must-revalidate'
+        return response
+
+
 # Mount static files
 if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", RevalidatedStaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/")
@@ -458,7 +463,7 @@ async def index():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy"}
+    return {"status": "healthy", "capabilities": {"automation": True}}
 
 
 @app.get("/api")

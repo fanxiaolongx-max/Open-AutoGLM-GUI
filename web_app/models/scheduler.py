@@ -7,6 +7,7 @@ Pure data classes without Qt dependencies.
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from enum import Enum
 
 
@@ -65,6 +66,22 @@ class ScheduledTask:
     # 执行设备列表
     devices: list = field(default_factory=list)  # 设备 ID 列表，支持多选
 
+    timezone: str = ""
+    busy_policy: str = "queue"
+    recipe_id: str = ""
+    recipe_revision: int | None = None
+    recipe_parameters: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.timezone:
+            from web_app.services.automation_runtime import get_runtime
+            self.timezone = get_runtime().settings['timezone']
+        ZoneInfo(self.timezone)
+
+    def _parse(self, value):
+        parsed = datetime.fromisoformat(value)
+        return parsed.replace(tzinfo=ZoneInfo(self.timezone)) if parsed.tzinfo is None else parsed
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -77,17 +94,17 @@ class ScheduledTask:
 
     def calculate_next_run(self) -> datetime | None:
         """Calculate the next run time based on schedule type."""
-        now = datetime.now()
+        now = datetime.now(ZoneInfo(self.timezone))
 
         if self.schedule_type == ScheduleType.ONCE.value:
             if self.run_at:
-                run_time = datetime.fromisoformat(self.run_at)
+                run_time = self._parse(self.run_at)
                 return run_time if run_time > now else None
             return None
 
         elif self.schedule_type == ScheduleType.INTERVAL.value:
             if self.last_run:
-                last = datetime.fromisoformat(self.last_run)
+                last = self._parse(self.last_run)
                 return last + timedelta(minutes=self.interval_minutes)
             return now + timedelta(minutes=self.interval_minutes)
 
@@ -148,5 +165,5 @@ class ScheduledTask:
         if not self.next_run:
             return False
 
-        next_time = datetime.fromisoformat(self.next_run)
-        return datetime.now() >= next_time
+        next_time = self._parse(self.next_run)
+        return datetime.now(ZoneInfo(self.timezone)) >= next_time

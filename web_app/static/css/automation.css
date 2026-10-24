@@ -1,0 +1,50 @@
+/* Shared additions to existing pages; all rules are scoped to avoid changing the host UI. */
+.automation-section{color:var(--text-primary);font-size:14px;min-width:0}
+.automation-section.panel{background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:18px;margin-bottom:16px}
+.automation-section h2{font-size:17px;margin:0 0 14px}.automation-section h3{font-size:15px;margin:20px 0 10px}
+.automation-section p{line-height:1.6;margin:8px 0}.automation-section .muted,.automation-section small{color:var(--text-secondary)}
+.automation-section label{display:flex;flex-direction:column;gap:6px;margin:10px 0;color:var(--text-secondary)}
+.automation-section .inline{flex-direction:row;align-items:center}.automation-section input,.automation-section textarea,.automation-section select{background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px 10px;border-radius:7px;max-width:100%;font:inherit}
+.automation-section label>input:not([type=checkbox]),.automation-section label>textarea,.automation-section label>select{width:100%}
+.automation-section textarea{min-height:76px;resize:vertical}.automation-section input[type=number]{max-width:150px}.automation-section input[type=checkbox]{width:auto}
+.automation-section button,.automation-section .upload{background:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:7px;padding:7px 11px;cursor:pointer;font:inherit}
+.automation-section button:hover{border-color:var(--accent-primary);color:var(--accent-primary)}.automation-section button:disabled{opacity:.45;cursor:default}
+.automation-section button.active,.automation-section button.primary{background:var(--accent-primary);border-color:var(--accent-primary);color:white}
+.automation-section .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0}
+.automation-section .columns{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2fr);gap:18px}
+.automation-section .columns>.panel{padding:14px;border:1px solid var(--border-color);border-radius:9px;min-width:0}
+.automation-section .task{display:flex;flex-direction:column;gap:6px;text-align:left;width:100%;margin:8px 0;overflow-wrap:anywhere}
+.automation-section .execution{padding:12px 0;border-bottom:1px solid var(--border-color)}
+.automation-section .step,.automation-section .parameter{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:10px 0}.automation-section .step input:not([type=number]){flex:1}.automation-section .parameter input{max-width:180px}
+.automation-section .replay{display:grid;grid-template-columns:minmax(180px,1fr) minmax(0,1fr);gap:18px;margin-top:12px}.automation-section .timeline{max-height:520px;overflow:auto}
+.automation-section .timeline button{display:flex;flex-direction:column;text-align:left;gap:5px;width:100%;margin-bottom:7px;overflow-wrap:anywhere}
+.automation-section .selected{border-color:var(--accent-primary);background:var(--bg-tertiary)}
+.automation-section .image-box{position:relative;width:100%;max-width:320px;margin:auto}.automation-section .image-box img{width:100%;display:block;border-radius:6px}.automation-section .image-box svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.automation-section pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg-tertiary);padding:10px;font-size:12px;max-height:320px;overflow:auto;border-radius:6px}
+.automation-section details{margin:12px 0}.automation-section summary{cursor:pointer;color:var(--text-secondary)}.automation-section .thumbnail{max-width:180px;max-height:280px}.automation-section .upload input{display:none}
+.automation-section .completed,.automation-section .passed{color:var(--success)}.automation-section .failed,.automation-section .interrupted{color:var(--error)}.automation-section .waiting_for_user,.automation-section .paused{color:var(--warning)}
+.automation-section .auto-state{font-weight:600}.automation-section .auto-control-bar>.muted{display:block;font-size:12px;margin-top:5px}
+.auto-tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}.chat-acceptance-options{margin:8px 16px;color:var(--text-secondary);font-size:12px}.chat-acceptance-options input{margin-top:8px}
+.task-detail-content.has-automation{width:min(95vw,1100px);max-width:1100px}.task-detail-content.has-automation .automation-section.panel{border:0;padding:0;margin:0}
+.phone-preview-window .auto-recorder-section{flex:none;width:100%;max-height:230px;overflow:auto;background:var(--bg-card);padding:10px;border-bottom:1px solid var(--border-color);font-size:12px;cursor:default}
+.phone-preview-window .auto-recorder-section p{font-size:11px;margin:0 0 4px}.phone-preview-window .auto-recorder-section button{font-size:11px;padding:5px 7px}.phone-preview-window .auto-recorder-section input:not([type=checkbox]){min-width:80px;flex:1}
+@media(max-width:850px){.automation-section .columns,.automation-section .replay{grid-template-columns:1fr}.automation-section .timeline{max-height:260px}.automation-section.panel{padding:12px}}
+/* Recording and history tools belong to the existing floating phone window. */
+.phone-preview-window .auto-recorder-section,.phone-preview-window .auto-replay-section{position:absolute;top:0;right:calc(100% + 12px);bottom:auto;left:auto;width:280px;max-height:100%;overflow:auto;padding:12px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;box-shadow:0 4px 20px var(--shadow-lg);z-index:11;line-height:1.5;cursor:default}
+.phone-preview-window.tools-on-right .auto-recorder-section,.phone-preview-window.tools-on-right .auto-replay-section{left:calc(100% + 100px);right:auto}
+.phone-preview-window.is-replay .phone-preview-header,.phone-preview-window:has(.auto-recorder-section) .phone-preview-header{opacity:1}
+.phone-preview-window .phone-nav-btn[aria-pressed=true]{background:var(--accent-primary)}.phone-preview-window .phone-nav-btn:disabled,.phone-preview-window select:disabled{opacity:.35;cursor:not-allowed}
+.phone-preview-window .stream-status-dot.history{background:#60a5fa}
+.phone-history-frame{position:absolute;inset:0;overflow:hidden;background:#101827;line-height:1.5}
+.phone-history-frame>img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+.phone-history-frame>svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.phone-history-empty{display:flex;height:100%;align-items:center;justify-content:center;padding:20px;color:#cbd5e1;text-align:center;font-size:13px}
+.phone-history-badge{position:absolute;bottom:8px;left:8px;right:8px;background:rgba(15,23,42,.8);color:#e2e8f0;border-radius:5px;padding:5px;font-size:11px;text-align:center;pointer-events:none}
+.automation-section .replay-seek{width:100%;padding:0;accent-color:var(--accent-primary)}
+@media(max-width:900px){.phone-preview-window .auto-recorder-section,.phone-preview-window .auto-replay-section,.phone-preview-window.tools-on-right .auto-recorder-section,.phone-preview-window.tools-on-right .auto-replay-section{top:auto;bottom:0;left:0;right:0;width:100%;max-height:48%;z-index:15;opacity:.96}}
+
+.phone-history-point{position:absolute;width:14px;height:14px;border:2px solid white;border-radius:50%;background:#fb5f5f;transform:translate(-50%,-50%);pointer-events:none}
+
+.phone-preview-window .phone-nav-btn.has-paused-recording{outline:1px solid #f59e0b;color:#fbbf24}
+
+.automation-backend-warning{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;margin-bottom:16px;border:1px solid var(--warning);border-radius:8px;color:var(--text-primary);background:var(--bg-card)}

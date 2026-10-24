@@ -32,14 +32,14 @@ class ActionHandler:
     Args:
         device_id: Optional ADB device ID for multi-device setups.
         confirmation_callback: Optional callback for sensitive action confirmation.
-            Should return True to proceed, False to cancel.
+            Should return True to proceed, False to cancel, or None to reobserve after manual handling.
         takeover_callback: Optional callback for takeover requests (login, captcha).
     """
 
     def __init__(
         self,
         device_id: str | None = None,
-        confirmation_callback: Callable[[str], bool] | None = None,
+        confirmation_callback: Callable[[str], bool | None] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
         tap_preview_callback: Callable[[int, int, int, int, str], tuple[bool, int, int]] | None = None,
     ):
@@ -217,7 +217,10 @@ class ActionHandler:
 
         # Check for sensitive operation
         if "message" in action:
-            if not self.confirmation_callback(action["message"]):
+            confirmed = self.confirmation_callback(action["message"])
+            if confirmed is None:
+                return ActionResult(False, False, "人工已处理敏感操作，请重新观察当前页面并继续")
+            if not confirmed:
                 return ActionResult(
                     success=False,
                     should_finish=True,

@@ -211,6 +211,9 @@ class SchedulerStorage:
 
     def save_task(self, task: ScheduledTask):
         """Save or update a task."""
+        from web_app.services.automation_runtime import get_runtime
+        get_runtime().store.put('schedule_extra', {'id': task.id, **{
+            k: getattr(task, k) for k in ('timezone','busy_policy','recipe_id','recipe_revision','recipe_parameters')}})
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -255,7 +258,11 @@ class SchedulerStorage:
 
     def _row_to_task(self, row: sqlite3.Row) -> ScheduledTask:
         """Convert database row to ScheduledTask."""
+        from web_app.services.automation_runtime import get_runtime
+        extra = get_runtime().store.get('schedule_extra', row['id']) or {}
+        extra.pop('id', None)
         return ScheduledTask(
+            **extra,
             id=row['id'],
             name=row['name'],
             task_content=row['task_content'],

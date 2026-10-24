@@ -6,6 +6,7 @@ Uses SQLite database for storage instead of JSON files.
 
 import asyncio
 import logging
+from zoneinfo import ZoneInfo
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -148,24 +149,11 @@ class SchedulerService:
         """Check and trigger tasks that should run."""
         for task in self.tasks.values():
             if task.should_run_now() and task.id not in self.running_tasks:
-                # 检查是否有手动任务或 Chat 任务正在运行
-                manual_running, task_info = self._is_manual_task_running()
-                if manual_running:
-                    logger.info(f"跳过定时任务 [{task.name}]: 当前有 {task_info} 正在运行")
-                    # 记录跳过日志
-                    self.add_task_log(
-                        task.id,
-                        success=False,
-                        message=f"跳过执行: 当前有 {task_info} 正在运行",
-                        details="定时任务被跳过，等待当前任务完成后在下次调度时间执行"
-                    )
-                    continue
-
                 # Mark as running
                 self.running_tasks.add(task.id)
 
                 # Mark as run
-                task.last_run = datetime.now().isoformat()
+                task.last_run = datetime.now(ZoneInfo(task.timezone)).isoformat()
                 task.run_count += 1
                 task.update_next_run()
 
@@ -251,7 +239,7 @@ class SchedulerService:
         # Mark as running
         self.running_tasks.add(task.id)
 
-        task.last_run = datetime.now().isoformat()
+        task.last_run = datetime.now(ZoneInfo(task.timezone)).isoformat()
         task.run_count += 1
         task.update_next_run()
         self._storage.save_task(task)

@@ -49,6 +49,7 @@ class ModelConfig:
     extra_body: dict[str, Any] = field(default_factory=dict)
     lang: str = "cn"  # Language for UI messages: 'cn' or 'en'
     protocol: str = "openai"  # Protocol type: 'openai', 'ollama', 'anthropic', 'gemini'
+    request_timeout: float = 180
 
 
 @dataclass
@@ -102,6 +103,7 @@ class ModelClient:
             elif base_url.endswith('/v1'):
                 base_url = base_url[:-3]  # Remove /v1
             self.client = anthropic.Anthropic(
+                timeout=self.config.request_timeout, max_retries=0,
                 api_key=self.config.api_key or "EMPTY",
                 base_url=base_url,
             )
@@ -134,6 +136,7 @@ class ModelClient:
             else:
                 api_key = self.config.api_key or "EMPTY"
             self.client = OpenAI(
+                timeout=self.config.request_timeout, max_retries=0,
                 base_url=base_url or self.config.base_url,
                 api_key=api_key,
             )
@@ -167,6 +170,47 @@ class ModelClient:
             return self._request_gemini(messages)
         else:
             return self._request_openai(messages)
+
+    def request_text(self, messages: list[dict[str, str]]) -> ModelResponse:
+        """Text conversation without action parsing, streaming or console output."""
+        started = time.time()
+        protocol = self.config.protocol.lower()
+        system = "\n".join(m['content'] for m in messages if m['role'] == 'system')
+        conversation = [m for m in messages if m['role'] != 'system']
+        if protocol == 'anthropic':
+            response = self.client.messages.create(
+                model=self.config.model_name, system=system, messages=conversation,
+                max_tokens=self.config.max_tokens, temperature=self.config.temperature,
+            )
+            content = ''.join(p.text for p in response.content if p.type == 'text')
+            incoming, outgoing = response.usage.input_tokens, response.usage.output_tokens
+        elif protocol == 'gemini':
+            # Keep system instructions outside user supplied conversation text.
+            model = genai.GenerativeModel(self.config.model_name, system_instruction=system)
+            response = model.generate_content(
+                [{'role': 'model' if m['role'] == 'assistant' else 'user',
+                  'parts': [m['content']]} for m in conversation],
+                request_options={'timeout': self.config.request_timeout},
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=self.config.max_tokens, temperature=self.config.temperature),
+            )
+            content = response.text or ''
+            usage = getattr(response, 'usage_metadata', None)
+            incoming = getattr(usage, 'prompt_token_count', 0) or 0
+            outgoing = getattr(usage, 'candidates_token_count', 0) or 0
+        else:
+            response = self.client.chat.completions.create(
+                model=self.config.model_name, messages=messages,
+                max_tokens=self.config.max_tokens, temperature=self.config.temperature,
+                extra_body=self.config.extra_body or None,
+            )
+            content = response.choices[0].message.content or ''
+            usage = response.usage
+            incoming = getattr(usage, 'prompt_tokens', 0) or 0
+            outgoing = getattr(usage, 'completion_tokens', 0) or 0
+        return ModelResponse('', '', content, total_time=time.time()-started,
+                             input_tokens=incoming, output_tokens=outgoing,
+                             total_tokens=incoming+outgoing)
 
     def _request_openai(self, messages: list[dict[str, Any]]) -> ModelResponse:
         """Send request using OpenAI protocol with retry logic."""
@@ -505,6 +549,7 @@ class ModelClient:
         # Generate response (Gemini doesn't support streaming in the same way)
         response = self.client.generate_content(
             gemini_contents,
+            request_options={"timeout": self.config.request_timeout},
             generation_config=genai.types.GenerationConfig(
                 max_output_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,

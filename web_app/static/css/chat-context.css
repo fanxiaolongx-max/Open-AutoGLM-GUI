@@ -1,0 +1,12 @@
+.chat-context-bar { flex-shrink:0; padding:7px 16px; border-bottom:1px solid var(--border-color); font-size:12px; color:var(--text-secondary); background:var(--bg-secondary); }
+.chat-context-bar summary { cursor:pointer; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.chat-context-bar progress { width:90px; height:6px; accent-color:#647bf5; }
+.chat-context-bar.compacting { color:#b77912; }
+.chat-context-bar.compacting progress { accent-color:#e5a028; }
+.chat-context-description { margin:7px 0 0; line-height:1.6; }
+.chat-message.context-compaction { max-width:100%; justify-content:center; }
+.chat-message.context-compaction .chat-bubble { width:min(100%,680px); background:var(--bg-secondary); border:1px dashed #92a0be; box-shadow:none; }
+.chat-message.context-compaction .chat-avatar { font-size:18px; }
+.chat-compaction-detail summary { cursor:pointer; color:var(--text-secondary); white-space:pre-wrap; font-size:12px; line-height:1.7; }
+.chat-compaction-detail p { color:var(--text-secondary); font-size:12px; line-height:1.6; }
+.chat-compaction-summary { white-space:pre-wrap; font-size:12px; max-height:260px; overflow:auto; padding:10px; background:var(--bg-tertiary); border-radius:6px; }

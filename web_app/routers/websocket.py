@@ -146,16 +146,17 @@ def on_task_tokens(task_id: str, input_tokens: int, output_tokens: int, total_to
     if _main_loop is None:
         return
     try:
-        # Get session_id from task_service's chat context
-        session_id = None
-        if task_service._chat_context:
-            session_id = task_service._chat_context.session_id
-        
+        from web_app.services.automation_runtime import get_runtime
+        record = get_runtime().store.get('task', task_id)
+        session_id = record['options'].get('session_id') if record else None
+        message_id = record['options'].get('message_id') if record else None
+
         _main_loop.call_soon_threadsafe(
             lambda: asyncio.create_task(manager.broadcast({
                 "type": "task_tokens",
                 "task_id": task_id,
                 "session_id": session_id,  # Include session_id for correct routing
+                "message_id": message_id,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": total_tokens,

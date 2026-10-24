@@ -103,6 +103,7 @@ class ModelServiceConfig:
     description: str = ""  # 服务描述
     protocol: str = ModelProtocol.OPENAI.value  # 协议类型
     category: str = ""  # 分类（用于UI分组显示）
+    context_window: int = 0  # Total context capacity; 0 uses an explicitly labelled fallback.
 
     def __post_init__(self):
         if not self.id:

@@ -254,6 +254,8 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
                             "id": message.get("id", 0),
                         }))
 
+                except PermissionError as exc:
+                    await websocket.send_text(json.dumps({'type': 'control_blocked', 'message': str(exc)}))
                 except json.JSONDecodeError:
                     pass
 

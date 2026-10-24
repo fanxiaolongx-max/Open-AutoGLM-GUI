@@ -32,6 +32,12 @@ class ScheduledTaskCreate(BaseModel):
     monthly_day: int = 1
     monthly_time: str = "09:00"
     devices: list[str] = []
+    timezone: str = ""
+    busy_policy: str = "queue"
+    recipe_id: str = ""
+    recipe_revision: Optional[int] = None
+    recipe_parameters: dict = {}
+
 
 
 class ScheduledTaskUpdate(BaseModel):
@@ -48,6 +54,12 @@ class ScheduledTaskUpdate(BaseModel):
     monthly_day: int = 1
     monthly_time: str = "09:00"
     devices: list[str] = []
+    timezone: str = ""
+    busy_policy: str = "queue"
+    recipe_id: str = ""
+    recipe_revision: Optional[int] = None
+    recipe_parameters: dict = {}
+
 
 
 class ToggleRequest(BaseModel):
@@ -76,6 +88,22 @@ async def create_scheduled_task(
     _: bool = Depends(verify_token)
 ):
     """Create a new scheduled task."""
+    if request.busy_policy not in {'queue', 'skip'}:
+        raise HTTPException(422, 'busy_policy must be queue or skip')
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from web_app.services.automation_runtime import get_runtime
+    try:
+        ZoneInfo(request.timezone or get_runtime().settings['timezone'])
+    except ZoneInfoNotFoundError:
+        raise HTTPException(422, 'Unknown timezone')
+    if request.recipe_id:
+        from web_app.services.automation_catalog import catalog
+        try:
+            recipe = catalog.recipe(request.recipe_id, request.recipe_revision)
+            catalog.bind(recipe, request.recipe_parameters)
+            request.recipe_revision = recipe['revision']
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(422, str(exc))
     task = ScheduledTask(
         name=request.name,
         task_content=request.task_content,
@@ -89,6 +117,9 @@ async def create_scheduled_task(
         monthly_day=request.monthly_day,
         monthly_time=request.monthly_time,
         devices=request.devices,
+        timezone=request.timezone, busy_policy=request.busy_policy,
+        recipe_id=request.recipe_id, recipe_revision=request.recipe_revision,
+        recipe_parameters=request.recipe_parameters,
     )
     task_id = scheduler_service.add_task(task)
     return {"success": True, "task_id": task_id, "task": task.to_dict()}
@@ -105,6 +136,25 @@ async def update_scheduled_task(
     if not existing:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    for field in ('timezone','busy_policy','recipe_id','recipe_revision','recipe_parameters'):
+        if field not in request.model_fields_set:
+            setattr(request,field,getattr(existing,field))
+    if request.busy_policy not in {'queue', 'skip'}:
+        raise HTTPException(422, 'busy_policy must be queue or skip')
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from web_app.services.automation_runtime import get_runtime
+    try:
+        ZoneInfo(request.timezone or get_runtime().settings['timezone'])
+    except ZoneInfoNotFoundError:
+        raise HTTPException(422, 'Unknown timezone')
+    if request.recipe_id:
+        from web_app.services.automation_catalog import catalog
+        try:
+            recipe = catalog.recipe(request.recipe_id, request.recipe_revision)
+            catalog.bind(recipe, request.recipe_parameters)
+            request.recipe_revision = recipe['revision']
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(422, str(exc))
     task = ScheduledTask(
         id=task_id,
         name=request.name,
@@ -119,6 +169,9 @@ async def update_scheduled_task(
         monthly_day=request.monthly_day,
         monthly_time=request.monthly_time,
         devices=request.devices,
+        timezone=request.timezone, busy_policy=request.busy_policy,
+        recipe_id=request.recipe_id, recipe_revision=request.recipe_revision,
+        recipe_parameters=request.recipe_parameters,
         last_run=existing.last_run,
         run_count=existing.run_count,
         created_at=existing.created_at,
@@ -150,50 +203,16 @@ async def run_task_now(task_id: str, background_tasks: BackgroundTasks, _: bool 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Get devices
-    device_ids = task.devices if task.devices else []
-    if not device_ids:
-        # Use all connected devices if none specified
-        devices = device_service.get_all_devices()
-        device_ids = [d.id for d in devices]
-
-    if not device_ids:
-        raise HTTPException(status_code=400, detail="No devices available")
-
-    # Check if a task is already running
-    current = task_service.get_current_task()
-    if current:
-        raise HTTPException(status_code=409, detail="A task is already running")
-
-    # Update task stats
-    from datetime import datetime
-    task.last_run = datetime.now().isoformat()
-    task.run_count += 1
-    task.update_next_run()
-    scheduler_service._save_tasks()
-
-    # Run in background
-    async def run_scheduled():
-        try:
-            result = await task_service.run_task(task.task_content, device_ids, is_scheduled=True, task_type="scheduled")
-            # Record log
-            success_count = sum(1 for r in result.results if r.get("success", False))
-            failed_count = len(result.results) - success_count
-            success = result.status == "completed" and failed_count == 0
-            message = f"完成: {success_count} 成功, {failed_count} 失败"
-            details = "\n".join(result.logs) if result.logs else ""
-            scheduler_service.add_task_log(task_id, success, message, details)
-            # Broadcast task finished
-            from web_app.routers.websocket import broadcast_task_finished
-            await broadcast_task_finished(result.id, success, message)
-        except Exception as e:
-            scheduler_service.add_task_log(task_id, False, f"执行失败: {str(e)}", "")
-            from web_app.routers.websocket import broadcast_task_finished
-            await broadcast_task_finished("", False, f"Task failed: {str(e)}")
-
-    background_tasks.add_task(run_scheduled)
-
-    return {"success": True, "message": "Task triggered"}
+    from web_app.services.schedule_execution import submit_schedule, watch_schedule
+    from web_app.services.automation_runtime import Conflict
+    import asyncio
+    try:
+        record = submit_schedule(task)
+    except (ValueError, Conflict) as exc:
+        raise HTTPException(409, str(exc))
+    scheduler_service.running_tasks.add(task.id)
+    asyncio.create_task(watch_schedule(task, record))
+    return {'success': True, 'task_id': record['id'], 'message': 'Task queued'}
 
 
 @router.patch("/tasks/{task_id}/toggle")

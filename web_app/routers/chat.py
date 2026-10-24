@@ -43,6 +43,32 @@ class AddScreenshotRequest(BaseModel):
     description: Optional[str] = ""
 
 
+class ConversationRequest(BaseModel):
+    user_message_id: str
+    assistant_message_id: str
+    devices: list[dict[str, str]] = []
+
+
+@router.post('/sessions/{session_id}/respond')
+async def respond_to_message(session_id: str, request: ConversationRequest, _: bool = Depends(verify_token)):
+    """Read conversation intent before queuing or touching any phone."""
+    from web_app.services.conversation_service import respond, ConversationError
+    try:
+        return await respond(session_id, request.user_message_id, request.assistant_message_id, request.devices)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ConversationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        from web_app.services.context_service import ContextBudgetError
+        if isinstance(exc, ContextBudgetError):
+            raise HTTPException(422, str(exc)) from exc
+        raise HTTPException(502, '对话处理失败；尚未操作设备。') from exc
+    except Exception as exc:
+        logger.warning('Conversation model request failed: %s', type(exc).__name__)
+        raise HTTPException(502, 'AI 对话请求失败，请检查模型服务后重试；尚未操作设备。') from exc
+
+
 # ========== Session Endpoints ==========
 
 @router.get("/sessions")
@@ -80,6 +106,28 @@ async def get_session_detail(session_id: str, _: bool = Depends(verify_token)):
     if not detail:
         raise HTTPException(status_code=404, detail="Session not found")
     return detail
+
+
+@router.get('/sessions/{session_id}/context')
+async def get_context(session_id: str, _: bool = Depends(verify_token)):
+    from web_app.services.chat_storage import chat_storage
+    from web_app.services.context_service import state_payload, window_for, snapshot, ContextManager
+    from web_app.services.model_service import model_service
+    if not chat_storage.get_session(session_id):
+        raise HTTPException(404, 'Session not found')
+    result = state_payload(chat_storage, session_id)
+    active = model_service.get_active_service()
+    if active and result.get('status') not in {'compressing','failed','interrupted'}:
+        from phone_agent.model.client import ModelConfig
+        from web_app.services.conversation_service import SYSTEM_PROMPT
+        config = ModelConfig(model_name=active.model_name, max_tokens=active.max_tokens)
+        manager = ContextManager(chat_storage,None,config,active,lambda _:None)
+        result.update(manager.metrics([{'role':'system','content':SYSTEM_PROMPT}]+snapshot(chat_storage,session_id,None)), status='ready')
+    elif not result.get('context_window'):
+        window, source = window_for(active)
+        result.update(context_window=window, limit_source=source,
+                      model_name=getattr(active,'model_name',''), status='ready', ratio=0)
+    return result
 
 
 @router.delete("/sessions/{session_id}")
@@ -142,6 +190,19 @@ async def get_messages(
 ):
     """Get messages for a session."""
     return chat_service.get_messages(session_id, limit)
+
+
+@router.get('/sessions/{session_id}/messages/{message_id}')
+async def get_message(session_id: str, message_id: str, _: bool = Depends(verify_token)):
+    from web_app.services.chat_storage import chat_storage
+    from web_app.services.conversation_service import pending_replies
+    message = chat_storage.get_message(message_id)
+    if not message or message.session_id != session_id:
+        raise HTTPException(404, 'Message not found')
+    if message.status == 'thinking' and message_id not in pending_replies:
+        chat_service.update_message(message_id, status='error', content='上次对话因服务重启或请求中断而未完成，请重新发送；尚未提交手机任务。')
+        message = chat_storage.get_message(message_id)
+    return message.to_dict()
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -259,7 +320,7 @@ async def add_screenshot(
 
 
 @router.get("/screenshots/{screenshot_id}")
-async def get_screenshot_image(screenshot_id: str):
+async def get_screenshot_image(screenshot_id: str, _: bool = Depends(verify_token)):
     """Get screenshot image by ID (returns PNG image)."""
     image_data = chat_service.get_screenshot(screenshot_id)
     if not image_data:

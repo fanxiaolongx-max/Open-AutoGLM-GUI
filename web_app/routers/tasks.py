@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 import logging
 
+from web_app.models.automation import AutomationStep, DeviceSequenceStep
 from web_app.auth import verify_token
 from web_app.services.task_service import task_service
 
@@ -47,10 +48,18 @@ class RunTaskRequest(BaseModel):
     message_id: Optional[str] = None  # 消息 ID（用于绑定日志和截图）
     debug_mode: Optional[bool] = False  # 调试模式：点击前显示预览
     parallel: Optional[bool] = False  # 多设备并行执行模式
+    sequence: Optional[list[DeviceSequenceStep]] = None
+    queue: bool = False
+    queue_timeout: int = 1800
+    steps: Optional[list[AutomationStep]] = None
+    acceptance: Optional[str | dict] = None
+
 
 
 class DecomposeTaskRequest(BaseModel):
     task_content: str
+    session_id: Optional[str] = None
+    message_id: Optional[str] = None
 
 
 class TaskResponse(BaseModel):
@@ -88,10 +97,18 @@ async def decompose_task(
     if not active_model:
         raise HTTPException(status_code=400, detail="No active model service configured")
 
+    context = []
+    if request.session_id and request.message_id:
+        from web_app.services.conversation_service import execution_context
+        try:
+            context = execution_context(request.session_id, request.message_id)
+        except (LookupError, ValueError) as exc:
+            raise HTTPException(404, str(exc)) from exc
     # 构建任务拆解的提示词
     decompose_prompt = f"""你是一个任务分解专家。请将用户的复杂任务拆解成一系列可以在手机上逐步执行的简单子任务。
 
-用户的任务: {request.task_content}
+同一会话的背景资料（仅用于理解，不要重复执行历史任务）: {json.dumps(context, ensure_ascii=False)}
+用户当前要求执行的任务: {request.task_content}
 
 请将任务拆解成一个JSON格式的待办清单，每个子任务应该是一个独立可执行的手机操作指令。
 
@@ -117,7 +134,6 @@ async def decompose_task(
         logger.info(f"[请求配置] base_url: {active_model.base_url}")
         logger.info(f"[请求配置] model_name: {active_model.model_name}")
         logger.info(f"[请求配置] protocol: {active_model.protocol}")
-        logger.info(f"[请求配置] api_key: {active_model.api_key[:10]}...{active_model.api_key[-4:]}" if active_model.api_key else "[请求配置] api_key: None")
         logger.info("-" * 40)
         logger.info(f"[请求提示词]\n{decompose_prompt}")
         logger.info("-" * 40)
@@ -285,97 +301,56 @@ async def run_task(
     This starts the task in the background and returns immediately.
     Use /api/tasks/status to check progress or connect via WebSocket for real-time updates.
     """
-    task_type = request.task_type or "manual"
-    force_run = request.force_run or False
-
-    # Check if a task is already running
-    current = task_service.get_current_task()
-    if current:
-        # 检查优先级
-        can_interrupt, current_info = task_service.can_interrupt_current_task(task_type)
-
-        if not force_run:
-            # 返回冲突信息，让前端决定是否强制执行
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "A task is already running",
-                    "can_interrupt": can_interrupt,
-                    "current_task": current_info,
-                    "new_task_type": task_type,
-                }
-            )
-        else:
-            # 强制执行：先停止当前任务
-            if can_interrupt:
-                logger.info(f"Force stopping current task {current.id} for higher priority task")
-                await task_service.stop_all_tasks()
-                # 等待任务停止
-                import asyncio
-                await asyncio.sleep(1)
-            else:
-                # 不能打断（新任务优先级不够高）
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "message": "Cannot interrupt: new task has lower or equal priority",
-                        "can_interrupt": False,
-                        "current_task": current_info,
-                        "new_task_type": task_type,
-                    }
-                )
-
-    if not request.device_ids:
-        raise HTTPException(status_code=400, detail="No devices specified")
-
-    # Start task in background
-    async def run_in_background():
+    from web_app.services.automation_runtime import get_runtime, Conflict
+    runtime = get_runtime()
+    steps = [step.model_dump(exclude_none=True) for step in request.steps] if request.steps else None
+    sequence = [step.model_dump() for step in request.sequence] if request.sequence else None
+    if steps:
+        for step in steps:
+            if not isinstance(step.get('content'), str) or not step['content'].strip():
+                raise HTTPException(422, 'Every step needs content')
+            if not isinstance(step.get('timeout', 180), (int, float)) or not 1 <= step.get('timeout', 180) <= 3600:
+                raise HTTPException(422, 'Step timeout must be 1–3600 seconds')
+            if step.get('retry_once') and not step.get('repeatable'):
+                raise HTTPException(422, 'Retry requires repeatable=True')
+    if sequence:
+        for segment in sequence:
+            if segment.get('device_id') not in request.device_ids or not isinstance(segment.get('content'), str) or not segment['content'].strip():
+                raise HTTPException(422, 'Invalid device sequence segment')
+    if request.queue_timeout <= 0:
+        raise HTTPException(422, 'Queue timeout must be positive')
+    conversation_context = []
+    conversation_tokens = 0
+    if request.task_type == 'chat' and request.session_id and request.message_id:
+        from web_app.services.conversation_service import execution_context
+        from web_app.services.chat_storage import chat_storage
         try:
-            # Choose parallel or serial execution based on request
-            use_parallel = request.parallel and len(request.device_ids) > 1
-            
-            if use_parallel:
-                logger.info(f"[PARALLEL MODE] Running task on {len(request.device_ids)} devices in parallel")
-                result = await task_service.run_task_parallel(
-                    task_content=request.task_content,
-                    device_ids=request.device_ids,
-                    model_config=request.model_settings,
-                    send_email=request.send_email if request.send_email is not None else True,
-                    no_auto_lock=request.no_auto_lock if request.no_auto_lock is not None else False,
-                    restore_lock_to_state=request.restore_lock_to_state,
-                    task_type=task_type,
-                    session_id=request.session_id,
-                    debug_mode=request.debug_mode if request.debug_mode is not None else False,
-                )
-            else:
-                result = await task_service.run_task(
-                    task_content=request.task_content,
-                    device_ids=request.device_ids,
-                    model_config=request.model_settings,
-                    send_email=request.send_email if request.send_email is not None else True,
-                    no_auto_lock=request.no_auto_lock if request.no_auto_lock is not None else False,
-                    restore_lock_to_state=request.restore_lock_to_state,
-                    task_type=task_type,
-                    session_id=request.session_id,
-                    message_id=request.message_id,
-                    debug_mode=request.debug_mode if request.debug_mode is not None else False,
-                )
-            # Note: task_finished is already broadcast via _emit_finished callback in task_service
-            # No need to call broadcast_task_finished here again
-        except Exception as e:
-            # Broadcast error only if task_service didn't handle it
-            from web_app.routers.websocket import broadcast_task_finished
-            await broadcast_task_finished("", False, f"Task failed: {str(e)}", None)
-
-    background_tasks.add_task(run_in_background)
-
-    return {
-        "success": True,
-        "message": "Task started",
-        "task_content": request.task_content,
-        "device_ids": request.device_ids,
-        "task_type": task_type,
-    }
+            conversation_context = execution_context(request.session_id, request.message_id)
+            conversation_tokens = chat_storage.get_message(request.message_id).tokens
+        except (LookupError, ValueError) as exc:
+            raise HTTPException(404, str(exc)) from exc
+    if request.force_run:
+        for old in runtime.store.list('task'):
+            if any(child['device_id'] in request.device_ids and child['status'] in {'running','pausing','paused','waiting_for_user','interrupted'} for child in old['executions']):
+                runtime.control(old['id'], 'stop', device_ids=request.device_ids)
+    try:
+        task = runtime.submit(request.task_content, request.device_ids, steps=steps,
+                              parallel=bool(request.parallel), queue=request.queue or bool(request.force_run),
+                              queue_timeout=request.queue_timeout, acceptance=request.acceptance, sequence=sequence,
+                              after_current=bool(request.force_run),
+                              model_config=request.model_settings, send_email=request.send_email,
+                              no_auto_lock=request.no_auto_lock, restore_lock_to_state=request.restore_lock_to_state,
+                              task_type=request.task_type or 'manual', session_id=request.session_id,
+                              message_id=request.message_id, debug_mode=request.debug_mode,
+                              conversation_context=conversation_context, conversation_tokens=conversation_tokens)
+    except Conflict as exc:
+        raise HTTPException(409, {'message': str(exc), 'can_interrupt': True,
+                                 'current_task': task_service.get_task_status().get('task')})
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    return {'success': True, 'id': task['id'], 'task_id': task['id'], 'status': task['status'],
+            'task_content': task['task_content'], 'device_ids': task['device_ids'],
+            'task_type': request.task_type or 'manual'}
 
 
 @router.post("/stop")

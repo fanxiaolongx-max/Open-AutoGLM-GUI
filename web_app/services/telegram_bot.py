@@ -103,6 +103,7 @@ class TelegramBotService:
             self._application.add_handler(CommandHandler("start", self._cmd_start))
             self._application.add_handler(CommandHandler("help", self._cmd_help))
             self._application.add_handler(CommandHandler("task", self._cmd_task))
+            self._application.add_handler(CommandHandler("recipe", self._cmd_recipe))
             self._application.add_handler(CommandHandler("chat", self._cmd_chat))  # Persistent chat mode
             self._application.add_handler(CommandHandler("status", self._cmd_status))
             self._application.add_handler(CommandHandler("devices", self._cmd_devices))
@@ -401,6 +402,27 @@ class TelegramBotService:
         # Show new main menu
         await self._show_main_menu(update, is_query=False)
 
+    async def _cmd_recipe(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """/recipe lists recipes; /recipe ID DEVICE {JSON parameters} queues one."""
+        if not self._check_authorization(update):
+            await update.message.reply_text("未授权的用户")
+            return
+        from web_app.services.automation_catalog import catalog
+        import json
+        if not context.args:
+            recipes = [r for r in catalog.store.list('recipe') if not r.get('archived')]
+            await update.message.reply_text("配方列表：\n"+"\n".join(r['id']+" · "+r['name'] for r in recipes)+
+                                            '\n用法：/recipe 配方ID 设备ID {"参数名":"值"}')
+            return
+        try:
+            if len(context.args) < 2:
+                raise ValueError('需要配方 ID 和设备 ID')
+            values = json.loads(' '.join(context.args[2:]) or '{}')
+            task = catalog.run_recipe(context.args[0], [context.args[1]], values, task_type='chat')
+            await update.message.reply_text('配方已加入设备队列：'+task['id']+'\n可在 Web 自动化工作台查看进度。')
+        except (ValueError, KeyError) as exc:
+            await update.message.reply_text('无法运行配方：'+str(exc))
+
     async def _cmd_task(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /task command - show device selection."""
         if not self._check_authorization(update):
@@ -592,18 +614,9 @@ class TelegramBotService:
             # Token callback to save tokens to database (both session and message level)
             message_tokens_accumulated = [0]  # Use list for mutable closure
             def token_callback(task_id: str, input_tokens: int, output_tokens: int, total_tokens: int):
-                try:
-                    # Update session total tokens
-                    chat_service.update_session_tokens(session_id, total_tokens)
-                    
-                    # Accumulate and update message tokens
-                    message_tokens_accumulated[0] += total_tokens
-                    chat_service.update_message(assistant_msg['id'], tokens=message_tokens_accumulated[0])
-                    
-                    logger.info(f"Chat mode: saved {total_tokens} tokens to session {session_id}, message {assistant_msg['id'][:8]} (total: {message_tokens_accumulated[0]})")
-                except Exception as e:
-                    logger.error(f"Failed to save tokens to database: {e}")
-            
+                # Token persistence is centralized by automation_bridge.
+                return
+
             # Register token callback
             task_service.add_token_callback(token_callback)
             
@@ -1002,7 +1015,12 @@ class TelegramBotService:
                 
                 # Also stop via task_service
                 from web_app.services.task_service import task_service
-                await task_service.stop_all_tasks()
+                from web_app.services.automation_runtime import get_runtime, TERMINAL
+                runtime = get_runtime()
+                device = self._chat_mode_device.get(chat_id_int)
+                for record in runtime.store.list('task'):
+                    if device in record['device_ids'] and record['status'] not in TERMINAL:
+                        runtime.control(record['id'], 'stop')
                 
                 # Get device before clearing state
                 device_id = self._chat_mode_device.get(chat_id_int)
@@ -1047,7 +1065,12 @@ class TelegramBotService:
                 
                 # Also stop via task_service for immediate effect
                 from web_app.services.task_service import task_service
-                await task_service.stop_all_tasks()
+                from web_app.services.automation_runtime import get_runtime, TERMINAL
+                runtime = get_runtime()
+                device = self._chat_mode_device.get(chat_id_int)
+                for record in runtime.store.list('task'):
+                    if device in record['device_ids'] and record['status'] not in TERMINAL:
+                        runtime.control(record['id'], 'stop')
                 
                 # Send new message (original might be a photo)
                 device_id = self._chat_mode_device.get(chat_id_int, "")
@@ -1536,40 +1559,7 @@ class TelegramBotService:
                 import base64
                 from io import BytesIO
                 
-                # === TASK CONFLICT DETECTION ===
-                # Check if another task is already running
-                current_task = task_service.get_current_task()
-                if current_task:
-                    can_interrupt, current_info = task_service.can_interrupt_current_task("chat")
-                    
-                    if not can_interrupt:
-                        # Bot task has highest priority (chat=3), this shouldn't happen
-                        # But let's handle it gracefully
-                        await query.edit_message_text(
-                            f"⚠️ **有任务正在执行**\n\n"
-                            f"📋 {current_info['task_type_display']}: {current_info['task_content'][:30]}...\n"
-                            f"⏱️ 进度: {current_info['progress']}%\n\n"
-                            f"请等待当前任务完成后再试。",
-                            parse_mode='Markdown'
-                        )
-                        # Clean up
-                        if chat_id in self._pending_tasks:
-                            del self._pending_tasks[chat_id]
-                        if chat_id in self._selected_devices:
-                            del self._selected_devices[chat_id]
-                        if chat_id in self._pending_action:
-                            del self._pending_action[chat_id]
-                        return
-                    
-                    # Can interrupt - notify and stop current task
-                    await query.edit_message_text(
-                        f"⚠️ **正在停止当前任务**\n\n"
-                        f"📋 {current_info['task_type_display']}: {current_info['task_content'][:30]}...\n"
-                        f"⏳ Bot 任务优先级更高，将强制停止...\n\n"
-                        f"请稍候...",
-                        parse_mode='Markdown'
-                    )
-                    
+                # Device conflicts are handled by the shared FIFO queue.
                 # === BOT TASK HISTORY: Create chat session ===
                 # Use bot_ prefix to distinguish from Web tasks
                 user_id = update.effective_user.id if update and update.effective_user else "unknown"
@@ -1621,6 +1611,10 @@ class TelegramBotService:
                 
                 # Progress callback
                 def progress_update_callback(task_id: str, progress: int):
+                    from web_app.services.automation_runtime import get_runtime
+                    record = get_runtime().store.get('task', task_id)
+                    if not record or record['options'].get('session_id') != session_id:
+                        return
                     asyncio.create_task(
                         self._update_progress_message(
                             chat_id=chat_id,
@@ -1631,6 +1625,10 @@ class TelegramBotService:
                 
                 # Log callback (for progress text and screenshot trigger)
                 def log_update_callback(task_id: str, message: str, task_type: str):
+                    from web_app.services.automation_runtime import get_runtime
+                    record = get_runtime().store.get('task', task_id)
+                    if not record or record['options'].get('session_id') != session_id:
+                        return
                     # Increment log counter
                     if chat_id in self._log_counters:
                         self._log_counters[chat_id] += 1
@@ -1651,23 +1649,6 @@ class TelegramBotService:
                         # Accumulate tokens
                         self._token_counters[chat_id] += tokens_total
                         
-                        # Save to database (both session and message level)
-                        try:
-                            # chat_service is already imported in the outer scope
-                            if session_id:
-                                chat_service.update_session_tokens(session_id, tokens_total)
-                                
-                                # Also update message-level tokens
-                                # Get message_id from task_service context (created during run_task)
-                                msg_id = task_service._chat_context.message_id if hasattr(task_service, '_chat_context') else None
-                                if msg_id:
-                                    # Accumulate tokens for this message
-                                    accumulated = self._token_counters.get(chat_id, 0)
-                                    chat_service.update_message(msg_id, tokens=accumulated)
-                                    logger.debug(f"Bot task: saved {tokens_total} tokens to message {msg_id[:8]} (total: {accumulated})")
-                        except Exception as e:
-                            logger.error(f"Failed to save token to database: {e}")
-                    
                     # Store recent logs (keep last 10, skip token lines and empty lines)
                     if message and not message.startswith('[TOKENS]'):
                         # Clean the message for display
