@@ -1,614 +1,250 @@
-# Open-AutoGLM
-
-[Readme in English](README_EN.md)
+# Open-AutoGLM-GUI (鱼塘管理器)
 
 <div align="center">
-<img src="resources/logo.svg" width="20%"/>
+
+**下一代多设备 Android AI Phone Agent 集中管理与可视化自动化工作台**
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![Android ADB](https://img.shields.io/badge/Android-ADB%20%7C%20Scrcpy-brightgreen.svg)](https://github.com/Genymobile/scrcpy)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+[English README](README_EN.md) · [核心特性](#-核心功能速览) · [解决的痛点](#-为什么选择本项目解决的核心痛点) · [快速上手](#-快速上手) · [常见问题](#-常见问题与排查)
+
 </div>
 
-<p align="center">
-    👋 加入我们的 <a href="resources/WECHAT.md" target="_blank">微信</a> 社区
-</p>
-<p align="center">
-    🎤 在我们的产品 <a href="https://autoglm.zhipuai.cn/autotyper/" target="_blank">智谱 AI 输入法</a> 体验"用嘴发指令"
-</p>
+---
+
+## 💡 为什么选择本项目？解决的核心痛点
+
+传统的手机自动化（如 Appium、Airtest、按键精灵）通常依赖繁琐的控件选择器或写死坐标，App 稍微改版流程即彻底失效；而单纯的纯文本 AI 往往缺乏真实交互界面，每次执行重度依赖逐帧推理，既昂贵又耗时。
+
+**Open-AutoGLM-GUI** 专为解决多设备实机环境下的**「难维护、难复用、缺管控、难远程」**四大痛点而生：
+
+| 传统手机自动化与纯脚本 | 纯学术 Agent / 命令行工具 | **Open-AutoGLM-GUI (鱼塘管理器)** |
+|---|---|---|
+| **控件经常变动，维护成本极高**<br>App UI 迭代后选择器失效，需重写代码 | **黑盒运行，无可视化**<br>控制台文字滚动，中途卡死无感知 | **多模态视觉 Agent + 实时可视化**<br>大模型直接“看懂”界面语义，自适应 UI 变化；右下角悬浮窗毫秒级实时流。 |
+| **规则硬编码，缺乏泛化能力**<br>只能按死步骤执行，无法应对弹窗与变化 | **纯 AI 决策，耗时且昂贵**<br>每次重复任务都消耗大量 Token，耗时几分钟 | **示教录制 ➔ 配方沉淀 ➔ 参数化重放**<br>一次示教沉淀为可复用配方，支持 `{keyword}` 动态参数，兼具 AI 的泛化与脚本的极速。 |
+| **遇到验证码/支付直接报错中断**<br>缺乏人机协作机制 | **无接管路径**<br>遇到敏感权限只能抛异常退出 | **人工接管 (Take-over) & 智能后验**<br>遇到人脸/支付主动暂停并提醒接管；任务执行完毕自动结合历史上下文智能校验结果。 |
+| **仅限单机 USB，多设备切换混乱**<br>多部设备来回插拔，管理繁琐 | **无法外网远程协同**<br>离开局域网便无法控制 | **集中管控 + 一键公网穿透 + Telegram 联动**<br>一键平滑切换所有设备；内置 Cloudflare Tunnel 零配置公网访问；Telegram 远程随时下发。 |
 
 ---
 
-## 目录
+## 🌟 核心功能速览
 
-- [项目简介](#项目简介)
-- [主要特性](#主要特性)
-- [设备预览与控制（重点）](#设备预览与控制重点)
-- [快速开始](#快速开始)
-- [使用方式](#使用方式)
-  - [Web 界面](#web-界面)
-  - [Telegram Bot](#telegram-bot)
-  - [命令行 (CLI)](#命令行-cli)
-  - [Python API](#python-api)
-- [环境配置](#环境配置)
-- [模型服务](#模型服务)
-- [远程调试](#远程调试)
-- [支持的应用](#支持的应用)
-- [常见问题](#常见问题)
-- [引用](#引用)
+### 1. 📱 任务执行与多设备对话中心
+用自然语言描述需求（如 *“打开美团搜索附近的火锅店并按评分排序”*、*“在小红书收藏第三篇露营攻略”*），多模态 AI 智能体直接基于视觉理解界面，自主拆解并执行 Tap、Type、Swipe、Launch 等操作。
+
+- **思考链 (CoT) 过程透明**：每一步的意图拆解、识别坐标与执行结果实时可见。
+- **上下文智能压缩 (Context Compaction)**：自动裁剪冗余历史步骤，降低 50%+ 显存与 Token 开销。
+- **智能后验校验**：任务完成自动后验界面状态，容忍滚动后视图，杜绝误判与假死。
+- **任务历史与标签追溯**：清晰标记手动（manual）、计划（scheduled）、触发（trigger）、试运行（trial）不同来源。
+
+<div align="center">
+  <img src="resources/screenshots/task_execution.png" alt="任务执行中心" width="92%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
+  <p><em>图 1：任务执行中心（多设备选择、自然语言下发、思考链可视化与任务日志）</em></p>
+</div>
 
 ---
 
-## 项目简介
+### 2. 🧪 自动化工作台：示教录制与配方沉淀
+不仅能依赖大模型实时决策，更提供工业级**自动化工程沉淀能力**：
 
-Open-AutoGLM 是一个基于视觉语言模型的**手机智能助理框架**，能够理解手机屏幕内容并自动执行操作。用户只需用自然语言描述需求，如"打开小红书搜索美食"，系统即可自动完成整个操作流程。
+- **示教录制 (Demonstration)**：直接在悬浮手机窗上操作，系统自动捕获交互并转化为可编辑的步骤流。
+- **配方化沉淀 (Recipes)**：将成功任务一键提取为结构化配方，支持 `{keyword}`、`{city}` 等参数模板，随取随用。
+- **条件触发与定时计划**：支持基于时间（Cron / 周期）与基于系统状态（设备上线、电量充饱、前序配方成功）自动排期触发。
+- **持久化后台运行**：由后端异步调度引擎驱动，关闭浏览器仍稳定运行，不漏跑、不重复。
 
-### 工作原理
-
-```
-用户指令 → 截取屏幕 → AI 理解界面 → 生成操作 → 执行动作 → 循环直到完成
-```
-
-### 支持的设备
-
-| 设备类型 | 连接方式 | Web 界面 | CLI 命令行 |
-|---------|---------|:--------:|:----------:|
-| **Android** | ADB | ✅ | ✅ |
-| **HarmonyOS** | HDC | ❌ | ✅ |
-| **iOS** | WebDriverAgent | ❌ | ✅ |
-
-> 💡 Web 界面目前仅支持 Android 设备，鸿蒙和 iOS 请使用命令行
+<div align="center">
+  <img src="resources/screenshots/automation_recipe.png" alt="自动化工作台与配方" width="85%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
+  <p><em>图 2：自动化工作台（参数化配方库、步骤编排与一键试运行）</em></p>
+</div>
 
 ---
 
-## 主要特性
+### 3. 🎮 悬浮手机窗与毫秒级直通控制
+告别多设备分散乱象，所有设备交互收拢于统一的悬浮手机预览窗：
 
-### 两种使用方式
-
-| 方式 | 启动命令 | 适用场景 |
-|-----|---------|---------| 
-| **🌐 Web 服务器** | `python run_web.py` | 浏览器访问、多用户、远程控制 |
-| **⌨️ 命令行** | `python main.py` | 脚本自动化、开发调试 |
-
-### 核心功能
-
-- 🎮 **设备预览与控制（重点）** - 实时视频流预览 + 鼠标/触控/键盘控制 + 多设备快速切换
-- 🤖 **AI 驱动** - 基于 AutoGLM 视觉语言模型，智能理解屏幕内容
-- 📱 **多设备支持** - 同时管理 Android、HarmonyOS、iOS 设备
-- 🤖 **Telegram Bot** - 远程控制，随时随地发送任务
-- ⏰ **定时任务** - 支持单次、每日、每周自动执行
-- 📧 **邮件报告** - 复杂任务完成后自动发送执行报告
-- 🔧 **规则引擎** - 自定义应用映射、动作规则和提示词
-- 🌐 **远程调试** - WiFi 无线连接和二维码配对
-- 🌍 **Cloudflare 一键公网访问** - 无需账号，一键生成临时公网链接用于远程访问
-- 📊 **实时预览** - 任务执行时实时显示手机屏幕（scrcpy 主链路）
-- 💾 **数据持久化** - SQLite 数据库存储会话和消息历史
+- **毫秒级低延迟视频流**：基于 `scrcpy-server + ffmpeg` WebSocket 视频流直出，支持自适应码率与多设备平滑热切换。
+- **触控与键盘直通**：鼠标点击、长按、滑动即时映射；PC 键盘按键与中文输入全局透传。
+- **统一工具箱**：窗内集成 **「实（实时控制）/ 录（示教录制）/ 回（动作回放）」** 极简入口，避免界面到处散落重复按钮。
+- **多设备矩阵墙 (Grid)**：支持网格平铺查看所有已连接设备屏幕与在线状态。
 
 ---
 
-## 设备预览与控制（重点）
+### 4. 🎯 规则引擎与系统配置
+提供高度可定制的规则与策略系统，保障 Agent 执行的稳定与合规：
 
-本项目的 Web 端预览不是“仅截图查看”，而是围绕真实操作做了完整链路设计：
+- **智能应用映射**：内置 50+ 款主流 Android 社交、电商、外卖、出行应用的包名与主 Activity。
+- **自定义动作规则**：支持规则优先级覆盖、动作白名单/黑名单限制。
+- **自定义系统提示词 (Prompt)**：可根据业务需要注入定制化的先验规则与业务约束。
 
-- 实时流预览：优先 `scrcpy`，失败自动降级 `screenrecord` / `screencap`
-- 低延迟控制：点击、拖动、滚轮、键盘按键可直接传到设备
-- 多设备切换：切换后自动重连目标设备，后端可保留流会话以提升切回速度
-- 兼容优先：默认走稳定路径，必要时可手动开启高级控制注入
-
-### 1. 预览流架构
-
-Web 端预览走 `/api/scrcpy`：
-
-1. 前端请求启动流（分辨率/帧率/码率可调）
-2. 后端按优先级启动：
-   - `scrcpy-server + ffmpeg`（主链路）
-   - `adb screenrecord + ffmpeg`（兼容链路）
-   - `adb screencap loop`（兜底链路）
-3. WebSocket 下发视频帧，前端 `canvas` 渲染并支持交互
-
-### 2. 输入控制逻辑
-
-当前提供两条输入路径：
-
-- 默认路径（稳定）：ADB 输入注入
-  - 点击/滑动：`adb shell input tap/swipe`
-  - 按键：`adb shell input keyevent`
-  - 优点：兼容广、行为稳定
-- 高级路径（可开关）：scrcpy 控制注入（侧边栏 `CI`）
-  - 默认开启，可手动关闭
-  - 开启后触控/滚轮/按键优先走 scrcpy 控制通道
-  - 控制发送失败会自动回退 ADB，不影响基本可用性
-
-### 3. 键盘透传
-
-- 在预览画布上点击聚焦后，键盘按键可透传到设备
-- 支持常用按键：字母、数字、方向键、回车、退格、Tab、Esc 等
-- `Ctrl/Meta/Alt` 组合键默认不拦截，避免影响浏览器快捷键
-
-### 4. 切换设备与保活策略
-
-- 切换预览设备时会断开当前 WS 并连接目标设备
-- 后端流可保持运行（无 viewer 默认不自动停流），减少切回冷启动等待
-- 新连接建立后可快速进入首帧与交互状态
-
-### 5. 自动解锁时序
-
-预览启动时自动解锁不再阻塞流启动，而是改为：
-
-1. 先启动流管线
-2. 再触发自动解锁
-3. 在“等待首帧”阶段利用解锁动作促发首帧
-
-这对“锁屏导致首帧迟迟不出”的场景更友好。
-
-### 6. 模拟器切换提示
-
-切换到模拟器设备时，界面会弹出横幅提示：
-
-- 若切换后黑屏，请手动点击模拟器屏幕唤醒
-
-### 7. 预览相关参数（可选）
-
-| 环境变量 | 默认值 | 说明 |
-|---|---:|---|
-| `SCRCPY_AUTO_STOP_DELAY` | `0` | 无 viewer 自动停流延时（秒），`0` 表示不自动停流 |
-| `SCRCPY_AUTO_UNLOCK_ON_START` | `1` | 预览启动时是否自动解锁 |
-| `SCRCPY_FIRST_FRAME_TIMEOUT` | `40` | 首帧等待超时（秒） |
-| `SCRCPY_CONTROL_DEBUG` | `1` | 控制注入调试日志开关 |
+<div align="center">
+  <img src="resources/screenshots/rules_config.png" alt="规则引擎配置" width="92%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
+  <p><em>图 3：规则引擎与应用映射管理</em></p>
+</div>
 
 ---
 
-## 快速开始
+### 5. 🌐 远程协作与通知生态
+- **Cloudflare Tunnel 一键公网访问**：内置隧道支持，在 Web 侧边栏一键切换 `Public`，即刻生成临时公网访问链接，支持自动访问令牌认证，无需公网 IP 和端口转发。
+- **Telegram 远程控制机器人**：绑定后可在 Telegram 中直接发送文字指令下发任务、查看手机截屏、管理定时排期。
+- **邮件图文报告**：长周期或无人值守任务完成后，自动生成包含执行耗时、步骤日志和界面截图的完整图文邮件通知。
 
-### 1. 安装依赖
+---
+
+## ⚡ 快速上手
+
+### 1. 环境准备
+
+- **操作系统**：macOS / Linux / Windows
+- **Python**：3.10+
+- **ADB 工具**：
+  ```bash
+  # macOS
+  brew install android-platform-tools
+
+  # Ubuntu / Debian
+  sudo apt install adb
+
+  # Windows
+  # 下载 Android SDK Platform Tools 并加入 PATH 环境变量
+  ```
+- **Android 手机设置**：
+  1. 进入 **设置 → 关于手机**，连续点击“版本号” 7 次开启开发者选项。
+  2. 进入 **系统 → 开发者选项**，开启 **USB 调试**。
+  3. *(重要)* 若为小米/vivo/OPPO 等机型，请同步开启 **USB 调试（安全设置）**（允许模拟点击）。
+
+### 2. 三步启动工作台
 
 ```bash
-# 克隆仓库
+# 1. 克隆项目并安装依赖
 git clone https://github.com/zai-org/Open-AutoGLM.git
 cd Open-AutoGLM
-
-# 创建虚拟环境（推荐）
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 安装依赖
 pip install -r requirements.txt
-pip install -e .
-```
 
-### 2. 连接设备
-
-**Android 设备：**
-```bash
-# 开启手机的 USB 调试，用数据线连接
+# 2. 连接手机并确认连接正常
 adb devices
-# 应显示: List of devices attached
-#         XXXXXXXX    device
-```
+# 输出示例：
+# List of devices attached
+# 127.0.0.1:5555    device
 
-**鸿蒙设备：**
-```bash
-hdc list targets
-```
-
-**iOS 设备：**
-参考 [iOS 配置指南](docs/ios_setup/ios_setup.md)
-
-### 3. 启动应用
-
-```bash
-# 方式一：Web 服务器（推荐）
+# 3. 启动 Web 工作台
 python run_web.py
-
-# 方式二：命令行
-python main.py --base-url https://open.bigmodel.cn/api/paas/v4 --model autoglm-phone --apikey YOUR_API_KEY
 ```
 
-启动后访问 http://localhost:8080
+启动完成后，打开浏览器访问 **`http://localhost:8080`** 即可进入图形化工作台。
 
 ---
 
-## 使用方式
+## 🤖 模型服务配置
 
-### Web 界面
+系统支持多种主流模型接入方式，可在 Web 界面 **「模型服务」** 菜单中可视化配置与测试：
 
-Web 服务器提供完整的管理界面，支持多用户远程访问。
+### 方式一：智谱 BigModel（云端原生推荐）
+无需本地 GPU，开箱即用：
+1. 访问 [智谱开放平台](https://open.bigmodel.cn/) 获取 API Key。
+2. 在 Web 端或启动命令中配置：
+   - **Base URL**: `https://open.bigmodel.cn/api/paas/v4`
+   - **Model**: `autoglm-phone`
+   - **API Key**: `YOUR_API_KEY`
 
+### 方式二：OpenAI 兼容接口 / 视觉大模型网关
+支持任何具备视觉输入能力的 OpenAI 兼容接口（如 GPT-4o、Claude 代理网关、Gemini 代理）：
+- **Base URL**: `https://your-api-gateway/v1`
+- **Model**: `gpt-4o` / 自定义模型名
+- **API Key**: `your-token`
+
+### 方式三：本地部署（vLLM / 私有化）
+适合拥有 24GB+ 显存 GPU 的私有化部署环境：
 ```bash
-# 默认启动（端口 8080）
-python run_web.py
-
-# 自定义配置
-python run_web.py --host 0.0.0.0 --port 8000
-
-# 开发模式（自动重载）
-python run_web.py --reload
-```
-
-#### 功能模块
-
-| 模块 | 功能说明 |
-|------|----------|
-| **控制台** | 系统仪表盘，显示设备状态、模型配置、任务统计 |
-| **设备中心** | 管理设备连接，支持 USB、WiFi、二维码配对 |
-| **公网访问** | 一键开启/关闭 Cloudflare Tunnel，复制临时公网链接 |
-| **模型服务** | 配置和切换多个 AI 模型服务 |
-| **对话执行** | 选择设备、输入任务描述，AI 自动执行 |
-| **定时任务** | 创建定时或周期性自动化任务 |
-| **规则管理** | 管理应用映射、动作规则和系统提示词 |
-
-#### Cloudflare 一键公网访问
-
-Web 界面侧边栏提供 Tunnel 开关，可一键开启临时公网访问（`trycloudflare.com`）：
-
-1. 安装 cloudflared（macOS）：`brew install cloudflared`
-2. 启动 `python run_web.py`
-3. 在侧边栏点击 Tunnel 胶囊开关（从 `Private` 切到 `Public`）
-4. 点击显示的公网 URL 可一键复制
-5. 远程设备使用该 URL 即可访问当前 Web 服务
-
-安全机制说明：
-
-- 隧道 URL 会自动附带访问令牌参数 `tunnel_token`
-- 该令牌仅在公网隧道域名下生效，本地/LAN 访问不受影响
-- 关闭 Tunnel 后，公网访问立即失效
-
-#### 启动后访问
-
-| 地址 | 说明 |
-|-----|------|
-| `http://localhost:8080` | Web 界面 |
-| `http://localhost:8080/docs` | API 文档 (Swagger) |
-| `http://localhost:8080/redoc` | API 文档 (ReDoc) |
-
----
-
-### Telegram Bot
-
-通过 Telegram Bot 远程控制手机，随时随地发送任务。
-
-#### 配置步骤
-
-1. **创建 Bot**: 在 Telegram 中找到 @BotFather，发送 `/newbot` 创建机器人
-2. **获取 Token**: BotFather 会返回 Bot Token
-3. **配置**: 在 Web 界面的系统设置中填入 Token 和 Chat ID
-
-#### 支持的功能
-
-| 功能 | 说明 |
-|------|------|
-| 📱 **设备管理** | 查看设备状态、截图、选择操作设备 |
-| 🤖 **任务执行** | 直接发送文本消息执行任务 |
-| ⏰ **定时任务** | 查看和管理定时任务 |
-| 📊 **模型配置** | 选择 AI 模型、调整参数 |
-| ⚙️ **系统设置** | 邮件通知、系统诊断 |
-| 📈 **统计信息** | 查看使用统计 |
-
-#### 使用示例
-
-```
-/start          - 启动 Bot，显示主菜单
-/devices        - 查看已连接设备
-/screenshot     - 获取当前设备截图
-打开微信        - 直接发送任务指令
-```
-
----
-
-### 命令行 (CLI)
-
-命令行适合脚本自动化和快速测试。
-
-```bash
-# 交互模式
-python main.py --base-url http://localhost:8000/v1 --model autoglm-phone-9b
-
-# 执行单个任务
-python main.py --base-url http://localhost:8000/v1 "打开美团搜索附近的火锅店"
-
-# 使用 API Key
-python main.py --apikey sk-xxxxx "打开微信发消息给文件传输助手"
-
-# 鸿蒙设备
-python main.py --device-type hdc "打开设置"
-
-# iOS 设备
-python main.py --device-type ios --wda-url http://localhost:8100 "打开 Safari"
-
-# 查看支持的应用
-python main.py --list-apps
-```
-
-#### 常用参数
-
-| 参数 | 说明 | 默认值 |
-|-----|------|-------|
-| `--base-url` | 模型 API 地址 | `http://localhost:8000/v1` |
-| `--model` | 模型名称 | `autoglm-phone-9b` |
-| `--apikey` | API 密钥 | `EMPTY` |
-| `--device-type` | 设备类型 (`adb`/`hdc`/`ios`) | `adb` |
-| `--device-id` | 指定设备 ID | 自动检测 |
-| `--lang` | 语言 (`cn`/`en`) | `cn` |
-| `--max-steps` | 最大执行步数 | `100` |
-
----
-
-### Python API
-
-```python
-from phone_agent import PhoneAgent
-from phone_agent.model import ModelConfig
-
-# 配置模型
-model_config = ModelConfig(
-    base_url="https://open.bigmodel.cn/api/paas/v4",
-    model_name="autoglm-phone",
-    api_key="your-api-key",
-)
-
-# 创建 Agent
-agent = PhoneAgent(model_config=model_config)
-
-# 执行任务
-result = agent.run("打开淘宝搜索无线耳机")
-print(result)
-```
-
----
-
-## 环境配置
-
-### Android 设备
-
-1. **开启开发者模式**
-   - 设置 → 关于手机 → 连续点击版本号 7 次
-
-2. **开启 USB 调试**
-   - 设置 → 开发者选项 → USB 调试 ✓
-   - 部分机型还需开启 "USB 调试（安全设置）"
-
-3. **安装 ADB 工具**
-   ```bash
-   # macOS
-   brew install android-platform-tools
-
-   # 验证安装
-   adb version
-   ```
-
-4. **安装 ADB Keyboard**（用于中文输入）
-   - 下载 [ADBKeyboard.apk](https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk)
-   - 安装后在设置中启用
-
-### 鸿蒙设备
-
-1. 开启开发者模式和 USB 调试
-2. 下载 [HDC 工具](https://developer.huawei.com/consumer/cn/download/)
-3. 配置 PATH 环境变量
-
-### iOS 设备
-
-参考 [iOS 环境配置指南](docs/ios_setup/ios_setup.md)
-
----
-
-## 模型服务
-
-### 使用第三方服务（推荐）
-
-无需本地 GPU，直接使用云端模型：
-
-**智谱 BigModel：**
-```bash
-python main.py \
-  --base-url https://open.bigmodel.cn/api/paas/v4 \
-  --model autoglm-phone \
-  --apikey YOUR_API_KEY \
-  "打开微信"
-```
-
-**ModelScope（魔搭社区）：**
-```bash
-python main.py \
-  --base-url https://api-inference.modelscope.cn/v1 \
-  --model ZhipuAI/AutoGLM-Phone-9B \
-  --apikey YOUR_API_KEY \
-  "打开微信"
-```
-
-### 本地部署模型
-
-需要 24GB+ 显存的 NVIDIA GPU：
-
-```bash
-# 使用 vLLM
 python3 -m vllm.entrypoints.openai.api_server \
   --served-model-name autoglm-phone-9b \
   --model zai-org/AutoGLM-Phone-9B \
   --port 8000
 ```
-
-### 模型下载
-
-| 模型 | 下载地址 |
-|-----|---------|
-| AutoGLM-Phone-9B | [Hugging Face](https://huggingface.co/zai-org/AutoGLM-Phone-9B) / [ModelScope](https://modelscope.cn/models/ZhipuAI/AutoGLM-Phone-9B) |
-| AutoGLM-Phone-9B-Multilingual | [Hugging Face](https://huggingface.co/zai-org/AutoGLM-Phone-9B-Multilingual) / [ModelScope](https://modelscope.cn/models/ZhipuAI/AutoGLM-Phone-9B-Multilingual) |
+Web 配置对应连接 `http://localhost:8000/v1`。
 
 ---
 
-## 远程调试
+## 🛠️ CLI 命令行模式（脚本与自动化集成）
 
-支持通过 WiFi 无线连接设备，无需 USB 数据线。
-
-### Android 设备
+除 Web 工作台外，系统完整保留轻量 CLI 模式，便于集成到外部流水线中：
 
 ```bash
-# 1. 手机开启无线调试（设置 → 开发者选项 → 无线调试）
-# 2. 获取手机 IP 和端口
-# 3. 电脑端连接
-adb connect 192.168.1.100:5555
+# 单任务直接执行
+python main.py --apikey sk-xxxxx "打开小红书搜索露营"
 
-# 验证连接
-adb devices
-```
+# 指定设备与步数上限
+python main.py --device-id 192.168.1.100:5555 --max-steps 30 "打开美团点咖啡"
 
-### 鸿蒙设备
-
-```bash
-hdc tconn 192.168.1.100:5555
-hdc list targets
+# 列出已支持的应用包名
+python main.py --list-apps
 ```
 
 ---
 
-## 支持的应用
-
-### Android（50+ 款）
-
-| 分类 | 应用 |
-|------|-----|
-| 社交通讯 | 微信、QQ、微博 |
-| 电商购物 | 淘宝、京东、拼多多 |
-| 美食外卖 | 美团、饿了么 |
-| 出行旅游 | 携程、12306、滴滴 |
-| 视频娱乐 | bilibili、抖音、爱奇艺 |
-| 音乐音频 | 网易云音乐、QQ音乐 |
-| 内容社区 | 小红书、知乎、豆瓣 |
-
-### 鸿蒙（60+ 款）
-
-运行 `python main.py --device-type hdc --list-apps` 查看完整列表。
-
----
-
-## 可用操作
-
-| 操作 | 描述 |
-|-----|------|
-| `Launch` | 启动应用 |
-| `Tap` | 点击指定坐标 |
-| `Type` | 输入文本 |
-| `Swipe` | 滑动屏幕 |
-| `Back` | 返回上一页 |
-| `Home` | 返回桌面 |
-| `Long Press` | 长按 |
-| `Double Tap` | 双击 |
-| `Wait` | 等待页面加载 |
-| `Take_over` | 请求人工接管 |
-
----
-
-## 项目结构
+## 📁 项目结构
 
 ```
 Open-AutoGLM/
-├── run_web.py           # Web 服务器入口
-├── main.py              # 命令行入口
-├── phone_agent/         # Agent 核心模块
-│   ├── agent.py         # PhoneAgent 主类
-│   ├── adb/             # Android ADB 工具
-│   ├── hdc/             # 鸿蒙 HDC 工具
-│   ├── xctest/          # iOS WebDriverAgent
-│   ├── actions/         # 操作执行器
-│   ├── config/          # 配置（应用映射、提示词）
-│   └── model/           # AI 模型客户端
-├── web_app/             # Web 服务器
-│   ├── main.py          # FastAPI 应用
-│   ├── routers/         # API 路由
-│   ├── services/        # 业务服务
-│   │   ├── telegram_bot.py  # Telegram Bot 集成
-│   │   ├── scheduler_service.py  # 定时任务
-│   │   └── email_service.py  # 邮件服务
-│   ├── models/          # 数据模型和数据库
-│   └── static/          # 静态资源（Web UI）
-└── examples/            # 使用示例
+├── run_web.py                  # Web 工作台入口
+├── main.py                     # 命令行 CLI 入口
+├── phone_agent/                # Agent 智能体核心引擎
+│   ├── agent.py                # 决策与主循环（含上下文压缩与后验）
+│   ├── actions/                # ADB / HDC 动作执行器
+│   ├── adb/                    # ADB 连接与屏幕捕获
+│   ├── config/                 # 默认应用映射与 Prompts
+│   └── model/                  # 多模态模型客户端适配器
+├── web_app/                    # Web 后端与交互服务 (FastAPI)
+│   ├── main.py                 # FastAPI 应用主路由与中间件
+│   ├── routers/                # 业务路由 (chat, devices, automation, scrcpy 等)
+│   ├── services/               # 业务引擎 (调度排期、配方运行时、Scrcpy 视频流、Telegram Bot)
+│   ├── models/                 # SQLite 数据持久化与 Pydantic 规范
+│   └── static/                 # 响应式前端页面与自动化工作台组件
+└── docs/                       # 架构设计与自动化工作台说明文档
 ```
 
 ---
 
-## 自动化执行与复用
+## ❓ 常见问题与排查
 
-自动化能力已融入原界面：对话消息和任务详情支持暂停、接管与验证；右下角原手机窗口统一承载实时控制、示教录制及历史回放；定时任务页包含任务配方和条件触发。复杂任务由后端编排，关闭浏览器后仍会执行。
+<details>
+<summary><strong>Q1: <code>adb devices</code> 显示 unauthorized 或无法识别设备？</strong></summary>
 
-默认保留现有 FastAPI / SQLite / Vue 技术栈，无需新增前端构建工具。使用方法、数据迁移、API 与验收边界见 [自动化功能说明](docs/dev_notes/AUTOMATION_WORKBENCH.md)。
+- 拔掉数据线重新插入，观察手机屏幕是否弹出“允许 USB 调试”授权框，勾选“始终允许”后确认。
+- 重启 ADB 守护进程：
+  ```bash
+  adb kill-server && adb start-server
+  ```
+- 确认数据线支持数据传输（避免仅充电线）。
+</details>
 
----
+<details>
+<summary><strong>Q2: 能够打开 App，但点击/滑动没有任何反应？</strong></summary>
 
-## 常见问题
+- 国内定制安卓系统（如 MIUI/HyperOS、ColorOS、OriginOS）有额外的安全防护机制。
+- 请进入 **开发者选项**，开启 **「USB 调试（安全设置）」** 或 **「禁止权限监控」**，允许通过 USB 模拟屏幕点击。
+</details>
 
-### 设备未找到
+<details>
+<summary><strong>Q3: 文本输入无法输入中文或显示乱码？</strong></summary>
 
-```bash
-# 重启 ADB 服务
-adb kill-server
-adb start-server
-adb devices
-```
+- 系统默认推荐使用 [ADBKeyBoard](https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk)。
+- 将手机当前默认输入法切换为 ADB Keyboard 即可实现全量中文字符精准键入。
+</details>
 
-检查项：
-- USB 调试是否开启
-- 数据线是否支持数据传输
-- 手机是否点击了"允许 USB 调试"
+<details>
+<summary><strong>Q4: 关闭浏览器后，自动化任务或定时计划还会继续执行吗？</strong></summary>
 
-### 能打开应用但无法点击
-
-开启 **设置 → 开发者选项 → USB 调试（安全设置）**
-
-### 文本输入不工作
-
-确保 ADB Keyboard 已安装并在系统设置中启用。
-
-### Windows 编码异常
-
-```bash
-set PYTHONIOENCODING=utf-8
-python main.py ...
-```
-
-### Telegram Bot 无响应
-
-1. 检查 Bot Token 是否正确
-2. 确认 Chat ID 配置正确
-3. 确保服务器能访问 Telegram API（可能需要代理）
+- **会继续执行**。任务调度、配方编排与设备控制均在 Python 后端常驻服务内驱动，前端页面仅作为展示终端。关闭页面不会影响正在执行的任务。
+</details>
 
 ---
 
-## 环境变量
+## 📜 致谢与开源协议
 
-| 变量 | 描述 | 默认值 |
-|-----|------|-------|
-| `PHONE_AGENT_BASE_URL` | 模型 API 地址 | `http://localhost:8000/v1` |
-| `PHONE_AGENT_MODEL` | 模型名称 | `autoglm-phone-9b` |
-| `PHONE_AGENT_API_KEY` | API 密钥 | `EMPTY` |
-| `PHONE_AGENT_MAX_STEPS` | 最大步数 | `100` |
-| `PHONE_AGENT_DEVICE_TYPE` | 设备类型 | `adb` |
-| `PHONE_AGENT_LANG` | 语言 | `cn` |
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | - |
-| `TELEGRAM_CHAT_ID` | Telegram Chat ID | - |
+- 本项目基于 [Apache 2.0](LICENSE) 协议开源。
+- 感谢 [AutoGLM](https://github.com/zai-org/AutoGLM) 与开源多模态智能体研究社区为 GUI 视觉定位与交互决策提供的坚实探索基础。
 
----
-
-## 引用
-
-如果你觉得我们的工作有帮助，请引用以下论文：
-
-```bibtex
-@article{liu2024autoglm,
-  title={Autoglm: Autonomous foundation agents for guis},
-  author={Liu, Xiao and Qin, Bo and Liang, Dongzhu and others},
-  journal={arXiv preprint arXiv:2411.00820},
-  year={2024}
-}
-
-@article{xu2025mobilerl,
-  title={MobileRL: Online Agentic Reinforcement Learning for Mobile GUI Agents},
-  author={Xu, Yifan and Liu, Xiao and others},
-  journal={arXiv preprint arXiv:2509.18119},
-  year={2025}
-}
-```
-
----
-
-## 许可证
-
-本项目采用 Apache 2.0 许可证。详见 [LICENSE](LICENSE) 文件。
-
-> ⚠️ **免责声明**：本项目仅供研究和学习使用。严禁用于非法获取信息、干扰系统或任何违法活动。请仔细审阅 [使用条款](resources/privacy_policy.txt)。
+> ⚠️ **合规提示**：本项目仅供技术探索、研发辅助及个人自动化用途。使用时请严格遵守各平台服务协议与法律法规，禁止用于非法抓取、对抗系统或侵害他人合法权益的行为。

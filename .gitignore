@@ -54,7 +54,8 @@ Thumbs.db
 *.log
 logs/
 /tmp/
-screenshots/
+/screenshots/
+!resources/screenshots/
 device_pins.json
 
 # Keep old files during transition
