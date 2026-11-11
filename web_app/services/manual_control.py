@@ -5,12 +5,15 @@ from functools import wraps
 
 
 def ensure_manual(device):
-    from web_app.services.automation_runtime import get_runtime
+    from web_app.services.automation_runtime import Conflict, get_runtime
     runtime = get_runtime()
     owner = runtime.owner(device)
     if owner and not runtime.manual_allowed(device):
         if owner[1]['status'] == 'running':
-            runtime.control(owner[0]['id'], 'pause')
+            try:
+                runtime.control(owner[0]['id'], 'pause', device_ids=[device])
+            except Conflict:
+                pass
         raise PermissionError('正在暂停自动任务；状态变为已暂停后可操作设备')
 
 

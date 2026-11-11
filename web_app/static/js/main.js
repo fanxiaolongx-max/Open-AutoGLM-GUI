@@ -1,8 +1,14 @@
-import {ApiError} from './automation/api.js?v=20261024-context-preview';
-import {useAutomation} from './automation/app.js?v=20261024-context-preview';
-import * as automationComponents from './automation/components.js?v=20261024-context-preview';
-import {isTerminal} from './automation/tasks.js?v=20261024-context-preview';
+import {ApiError} from './automation/api.js?v=20261111-queue-keyboard';
+import {useAutomation} from './automation/app.js?v=20261111-queue-keyboard';
+import * as automationComponents from './automation/components.js?v=20261111-queue-keyboard';
+import {isTerminal} from './automation/tasks.js?v=20261111-queue-keyboard';
 import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
+import {
+    loadSidebarState,
+    resolveSidebarWidth,
+    getSessionCompactLabel,
+    createSidebarController,
+} from './sidebar.js?v=20261111-sidebar-resize';
         // Wait for Vue to load, with fallback
         function initApp() {
             if (typeof Vue === 'undefined') {
@@ -24,6 +30,46 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                     const replayImageUnavailable = ref(false);
                     const schedulerRecipeDefinition = ref(null);
                     const currentPage = ref('chat');  // Default to chat page
+                    const appContainerRef = ref(null);
+                    const sessionSearchInputRef = ref(null);
+                    const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1440);
+                    const initialSidebarState = loadSidebarState(typeof localStorage !== 'undefined' ? localStorage : null);
+                    const navSidebarWidth = ref(initialSidebarState.nav.width);
+                    const navSidebarCollapsed = ref(initialSidebarState.nav.collapsed);
+                    const chatSidebarWidth = ref(initialSidebarState.chat.width);
+                    const chatSidebarCollapsed = ref(initialSidebarState.chat.collapsed);
+                    const activeSidebarDrag = ref('');
+                    const appContainerStyle = computed(() => {
+                        const stateSnapshot = {
+                            navWidth: navSidebarWidth.value,
+                            navCollapsed: navSidebarCollapsed.value,
+                        };
+                        return {
+                            '--nav-sidebar-width': `${resolveSidebarWidth('nav', navSidebarCollapsed.value, navSidebarWidth.value, viewportWidth.value, stateSnapshot)}px`,
+                            '--chat-sidebar-width': `${resolveSidebarWidth('chat', chatSidebarCollapsed.value, chatSidebarWidth.value, viewportWidth.value, stateSnapshot)}px`,
+                        };
+                    });
+                    const sidebarController = createSidebarController({
+                        navWidth: navSidebarWidth,
+                        navCollapsed: navSidebarCollapsed,
+                        chatWidth: chatSidebarWidth,
+                        chatCollapsed: chatSidebarCollapsed,
+                        activeDrag: activeSidebarDrag,
+                        getContainerEl: () => appContainerRef.value,
+                        getViewportWidth: () => viewportWidth.value,
+                    });
+                    const toggleNavSidebar = () => sidebarController.toggle('nav');
+                    const toggleChatSidebar = () => sidebarController.toggle('chat');
+                    const startSidebarResize = (which, event) => sidebarController.startResize(which, event);
+                    const resetSidebarWidth = (which) => sidebarController.resetWidth(which);
+                    function expandAndFocusSessionSearch() {
+                        sidebarController.setCollapsed('chat', false);
+                        Vue.nextTick(() => {
+                            if (sessionSearchInputRef.value && typeof sessionSearchInputRef.value.focus === 'function') {
+                                sessionSearchInputRef.value.focus();
+                            }
+                        });
+                    }
                     const authChecking = ref(true);
                     const isAuthenticated = ref(false);
                     const currentUsername = ref('');
@@ -221,6 +267,8 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                     const streamSourceWidth = ref(0);
                     const streamSourceHeight = ref(0);
                     const previewCanvas = ref(null);
+                    const previewTextInput = ref(null);
+                    let previewComposing = false;
                     let streamWs = null;
                     let streamAudioWs = null;
                     let streamConnectToken = 0;
@@ -576,6 +624,9 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                     const translations = {
                         zh: {
                             appTitle: '鱼塘管理器', appSubtitle: 'AI 手机自动化专家',
+                            sidebarCollapseNav: '收起导航栏', sidebarExpandNav: '展开导航栏',
+                            sidebarCollapseChat: '收起会话列表', sidebarExpandChat: '展开会话列表',
+                            sidebarResizeHint: '拖拽调整宽度，双击恢复默认', sidebarSearchSessions: '搜索会话',
                             navChat: '对话', navDevices: '设备', navMonitor: '远程监控', navTasks: '任务执行', navScheduler: '定时任务',
                             navModels: '模型配置', navFiles: '文件管理', navRules: '规则配置', navSettings: '设置', navDatabase: '高级',
                             monitorTitle: '远程监控', monitorDesc: '通过 ADB 在安卓设备上启动摄像头，将手机作为远程监控使用。启动后点击「打开实时预览」即可在网页查看画面。',
@@ -672,6 +723,9 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                         },
                         en: {
                             appTitle: 'AutoGLM Manager', appSubtitle: 'AI Phone Automation Expert',
+                            sidebarCollapseNav: 'Collapse navigation', sidebarExpandNav: 'Expand navigation',
+                            sidebarCollapseChat: 'Collapse chat history', sidebarExpandChat: 'Expand chat history',
+                            sidebarResizeHint: 'Drag to resize, double-click to reset', sidebarSearchSessions: 'Search chats',
                             navChat: 'Chat', navDevices: 'Devices', navMonitor: 'Remote Monitor', navTasks: 'Tasks', navScheduler: 'Scheduler',
                             navModels: 'Models', navFiles: 'Files', navRules: 'Rules', navSettings: 'Settings', navDatabase: 'Advanced',
                             monitorTitle: 'Remote Monitor', monitorDesc: 'Launch the device camera via ADB to use your Android phone as a remote monitor. After starting, click "Open Live Preview" to view the feed in the browser.',
@@ -1196,7 +1250,7 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                                 if (target && data.kind === 'task_finished') {
                                     apiCall(`/api/tasks/${data.task_id}`).then(task => {
                                         target.status = task.status === 'completed' ? 'success' : 'error';
-                                        target.content = task.status === 'completed' ? '执行结束，点击本消息可查看详情。' : task.executions.map(c=>c.message).join('；');
+                                        target.content = task.status === 'completed' ? '执行结束，点击本消息可查看详情。' : (task.executions.map(c=>c.message).filter(Boolean).join('；') || automation.labels[task.status] || '任务未完成');
                                         if (target.todoList) target.todoList.forEach((item,i)=> item.status = task.executions.every(c=>c.step_index>i) ? 'completed' : 'failed');
                                         chatRunning.value = false;
                                         saveCurrentSession();
@@ -1884,7 +1938,7 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                                     const ended = isTerminal(task.status);
                                     msg.status = ended ? (task.status==='completed'?'success':'error') : 'running';
                                     if (!ended) chatRunning.value = true;
-                                    msg.content = ended ? task.executions.map(c=>c.message).join('；') : '任务状态：'+task.status;
+                                    msg.content = ended ? (task.executions.map(c=>c.message).filter(Boolean).join('；') || automation.labels[task.status] || '任务未完成') : '任务状态：'+task.status;
                                 });
                             } catch (statusError) {
                                 console.error('Failed to check task status:', statusError);
@@ -5236,10 +5290,9 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
 
                     function onCanvasMouseDown(e) {
                         if (previewMode.value === 'replay' || !streamConnected.value || e.button !== 0 || e.currentTarget !== previewCanvas.value) return;
+                        e.preventDefault();
+                        focusPreviewKeyboard();
                         const canvas = previewCanvas.value;
-                        if (canvas) {
-                            try { canvas.focus({ preventScroll: true }); } catch (err) { }
-                        }
                         const coords = _getCanvasCoords(e);
                         if (!coords) return;
                         touchState.isDown = true;
@@ -5294,10 +5347,7 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
 
                     function onCanvasTouchStart(e) {
                         if (previewMode.value === 'replay' || !streamConnected.value || !e.touches.length || e.currentTarget !== previewCanvas.value) return;
-                        const canvasFocus = previewCanvas.value;
-                        if (canvasFocus) {
-                            try { canvasFocus.focus({ preventScroll: true }); } catch (err) { }
-                        }
+                        focusPreviewKeyboard();
                         const touch = e.touches[0];
                         const canvas = previewCanvas.value;
                         if (!canvas) return;
@@ -5370,13 +5420,152 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                         }, 80);
                     }
 
-                    function sendKey(keycode) {
+                    function isPreviewKeyboardReady() {
+                        return Boolean(
+                            showPhonePreview.value
+                            && previewMode.value !== 'replay'
+                            && streamConnected.value
+                            && previewDeviceId.value
+                        );
+                    }
+
+                    function focusPreviewKeyboard() {
+                        if (!isPreviewKeyboardReady()) return;
+                        const input = previewTextInput.value;
+                        const target = input || previewCanvas.value;
+                        if (target && document.activeElement !== target) {
+                            try { target.focus({ preventScroll: true }); } catch (err) {
+                                try { target.focus(); } catch (err2) { }
+                            }
+                        }
+                    }
+
+                    function sendKey(keycode, metaState = 0) {
                         if(previewMode.value==='replay')return;
                         if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-                            streamWs.send(JSON.stringify({ type: 'key', keycode: keycode }));
+                            const payload = { type: 'key', keycode: keycode };
+                            if (metaState) payload.meta_state = metaState;
+                            streamWs.send(JSON.stringify(payload));
                         } else if (previewDeviceId.value) {
                             // Fallback via REST (not ideal but works)
                             startStreamWithSettings(previewDeviceId.value, false);
+                        }
+                    }
+
+                    function sendText(text) {
+                        if (!text || previewMode.value === 'replay' || !previewDeviceId.value) return;
+                        if (streamWs && streamWs.readyState === WebSocket.OPEN) {
+                            streamWs.send(JSON.stringify({ type: 'text', text: String(text) }));
+                        } else if (previewDeviceId.value) {
+                            startStreamWithSettings(previewDeviceId.value, false);
+                        }
+                    }
+
+                    function onPreviewInputBlur(event) {
+                        previewComposing = false;
+                        const el = event?.currentTarget || previewTextInput.value;
+                        if (el) el.value = '';
+                    }
+
+                    function onPreviewCompositionStart() {
+                        previewComposing = true;
+                    }
+
+                    function onPreviewCompositionEnd(event) {
+                        previewComposing = false;
+                        const el = event?.currentTarget || previewTextInput.value;
+                        const committed = (el && el.value) ? el.value : (event?.data || '');
+                        if (el) el.value = '';
+                        if (committed && isPreviewKeyboardReady()) {
+                            sendText(committed);
+                        }
+                    }
+
+                    function onPreviewTextInput(event) {
+                        const el = event?.currentTarget || previewTextInput.value;
+                        if (!el) return;
+                        if (previewComposing || event?.isComposing) return;
+                        const value = el.value;
+                        el.value = '';
+                        if (value && isPreviewKeyboardReady()) {
+                            sendText(value);
+                        }
+                    }
+
+                    function onPreviewPaste(event) {
+                        if (!isPreviewKeyboardReady()) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const pasted = event?.clipboardData?.getData('text/plain') || event?.clipboardData?.getData('text') || '';
+                        const el = previewTextInput.value;
+                        if (el) el.value = '';
+                        if (pasted) {
+                            sendText(pasted);
+                        }
+                    }
+
+                    const PREVIEW_SPECIAL_KEYCODES = {
+                        Backspace: 67,
+                        Delete: 112,
+                        ForwardDelete: 112,
+                        Enter: 66,
+                        NumpadEnter: 66,
+                        Tab: 61,
+                        Escape: 111,
+                        ArrowUp: 19,
+                        ArrowDown: 20,
+                        ArrowLeft: 21,
+                        ArrowRight: 22,
+                        Home: 122,
+                        End: 123,
+                        PageUp: 92,
+                        PageDown: 93,
+                        Insert: 124,
+                    };
+
+                    function onPreviewInputKeydown(event) {
+                        if (!isPreviewKeyboardReady()) return;
+                        if (previewComposing || event.isComposing || event.keyCode === 229 || event.key === 'Process') {
+                            return;
+                        }
+                        if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+                            const lower = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+                            if (lower === 'v') {
+                                return;
+                            }
+                            if (lower === 'a') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                sendKey(29, 0x3000);
+                                return;
+                            }
+                            if (lower === 'c') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                sendKey(278);
+                                return;
+                            }
+                            if (lower === 'x') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                sendKey(277);
+                                return;
+                            }
+                            if (lower === 'z') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                sendKey(54, 0x3000);
+                                return;
+                            }
+                            return;
+                        }
+                        if (event.altKey) return;
+                        const keycode = PREVIEW_SPECIAL_KEYCODES[event.key] ?? (event.code === 'NumpadEnter' ? 66 : null);
+                        if (keycode !== undefined && keycode !== null) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const metaState = event.shiftKey ? 0x41 : 0;
+                            sendKey(keycode, metaState);
                         }
                     }
 
@@ -5443,6 +5632,9 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                             || !previewDeviceId.value
                             || !previewCanvas.value
                         ) {
+                            return;
+                        }
+                        if (previewTextInput.value && document.activeElement === previewTextInput.value) {
                             return;
                         }
                         if (document.activeElement !== previewCanvas.value) {
@@ -5562,6 +5754,7 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                     }
 
                     function handleWindowResize() {
+                        viewportWidth.value = window.innerWidth;
                         if (showPhonePreview.value) {
                             ensurePreviewInViewport();
                         }
@@ -6017,6 +6210,7 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
 
                     onUnmounted(() => {
                         contextMonitor.stop();
+                        sidebarController.cleanup();
                         if (ws) ws.close();
                         if (reconnectTimer) clearTimeout(reconnectTimer);
                         disconnectAudioStream();
@@ -6267,6 +6461,7 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                         canvasWidth,
                         canvasHeight,
                         previewCanvas,
+                        previewTextInput,
                         connectStream,
                         disconnectStream,
                         applyStreamSettings,
@@ -6280,6 +6475,14 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                         onCanvasTouchMove,
                         onCanvasTouchEnd,
                         sendKey,
+                        sendText,
+                        focusPreviewKeyboard,
+                        onPreviewInputKeydown,
+                        onPreviewCompositionStart,
+                        onPreviewCompositionEnd,
+                        onPreviewTextInput,
+                        onPreviewPaste,
+                        onPreviewInputBlur,
                         // Functions
                         showToast,
                         systemAlerts,
@@ -6418,6 +6621,19 @@ import {createContextMonitor} from './chat-context.js?v=20261024-compaction';
                         openDbDeleteConfirm,
                         saveDbRow,
                         confirmDeleteDbRow,
+                        // Sidebar layout controls
+                        appContainerRef,
+                        sessionSearchInputRef,
+                        appContainerStyle,
+                        navSidebarCollapsed,
+                        chatSidebarCollapsed,
+                        activeSidebarDrag,
+                        toggleNavSidebar,
+                        toggleChatSidebar,
+                        startSidebarResize,
+                        resetSidebarWidth,
+                        expandAndFocusSessionSearch,
+                        getSessionCompactLabel,
                     };
                 },
             });

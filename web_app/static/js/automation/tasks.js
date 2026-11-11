@@ -1,4 +1,4 @@
-import {api} from './api.js?v=20261024-context-preview';
+import {api} from './api.js?v=20261111-queue-keyboard';
 export const isTerminal = status => ['completed','failed','stopped','expired','cancelled'].includes(status);
 export const submitTask = request => api('/api/tasks/run','POST',request);
 export const taskSnapshot = id => api(`/api/tasks/${id}`);

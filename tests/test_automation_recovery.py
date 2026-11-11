@@ -161,3 +161,112 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(loaded.calculate_next_run().tzinfo)
         with sqlite3.connect(path) as conn:
             self.assertEqual(conn.execute('SELECT content FROM chat_messages').fetchone()[0],'history')
+
+    async def test_interrupted_task_allows_manual_control_while_blocking_queue(self):
+        import web_app.services.automation_runtime as rt
+        from web_app.services.manual_control import ensure_manual
+        interrupted=self.runtime.submit('old',['a'])
+        interrupted['executions'][0]['status']='interrupted'
+        self.runtime.save(interrupted)
+        queued=self.runtime.submit('queued',['a'])
+        self.assertTrue(self.runtime.manual_allowed('a'))
+        with patch.object(rt,'_runtime',self.runtime):
+            ensure_manual('a')
+        await self.runtime.tick()
+        self.assertEqual(self.runtime.get(queued['id'])['status'],'pending')
+        self.assertFalse(self.runtime.workers)
+
+    async def test_manual_control_pauses_only_target_device_and_handles_missing_control(self):
+        import web_app.services.automation_runtime as rt
+        from web_app.services.manual_control import ensure_manual
+        release=asyncio.Event()
+        async def runner(*args):
+            await release.wait()
+            return {'success':True,'message':'done'}
+        self.runtime.runner=runner
+        task=self.runtime.submit('both',['a','b'],parallel=True)
+        await self.runtime.tick()
+        for _ in range(40):
+            if len(self.runtime.controls)==2:break
+            await asyncio.sleep(.005)
+        self.assertEqual(len(self.runtime.controls),2)
+        with patch.object(rt,'_runtime',self.runtime):
+            with self.assertRaises(PermissionError):
+                ensure_manual('a')
+            statuses={c['device_id']:c['status'] for c in self.runtime.get(task['id'])['executions']}
+            self.assertEqual(statuses,{'a':'pausing','b':'running'})
+            release.set()
+            for _ in range(100):
+                statuses={c['device_id']:c['status'] for c in self.runtime.get(task['id'])['executions']}
+                if statuses['a']=='paused':break
+                await asyncio.sleep(.005)
+            self.assertEqual(statuses['a'],'paused')
+            ensure_manual('a')
+            self.runtime.control(task['id'],'resume',device_ids=['a'])
+            await asyncio.gather(*list(self.runtime.workers.values()))
+
+    async def test_active_owner_takes_precedence_over_interrupted_and_missing_control_raises_permission(self):
+        import web_app.services.automation_runtime as rt
+        from web_app.services.manual_control import ensure_manual
+        old=self.runtime.submit('old',['a'])
+        old['executions'][0]['status']='interrupted'
+        self.runtime.save(old)
+        live=self.runtime.submit('live',['a'])
+        live['executions'][0]['status']='running'
+        self.runtime.save(live)
+        self.assertFalse(self.runtime.manual_allowed('a'))
+        with patch.object(rt,'_runtime',self.runtime):
+            with self.assertRaises(PermissionError):
+                ensure_manual('a')
+
+    async def test_diagnose_blockers_and_stopping_interrupted_unblocks_queue(self):
+        blocker = self.runtime.submit('进入系统通用设置', ['a'])
+        blocker['executions'][0]['status'] = 'interrupted'
+        blocker['executions'][0]['message'] = 'stopped'
+        self.runtime.save(blocker)
+
+        queued = self.runtime.submit('打开设置 关于 查看安卓版本号', ['a'])
+        second = self.runtime.submit('后续排队任务', ['a'])
+        offline = self.runtime.submit('离线设备任务', ['offline'])
+
+        annotated = self.runtime.annotate(queued)
+        self.assertEqual(len(annotated['queue_blockers']), 1)
+        b = annotated['queue_blockers'][0]
+        self.assertEqual(b['kind'], 'device_owner')
+        self.assertEqual(b['blocker_task_id'], blocker['id'])
+        self.assertEqual(b['blocker_status'], 'interrupted')
+        self.assertTrue(b['can_stop_blocker'])
+
+        offline_blockers = self.runtime.annotate(offline)['queue_blockers']
+        self.assertEqual(offline_blockers[0]['kind'], 'device_offline')
+        self.assertFalse(offline_blockers[0]['can_stop_blocker'])
+
+        ran = []
+        async def ok_runner(task, child, step, control):
+            ran.append(task['id'])
+            return {'success': True, 'message': 'done'}
+        self.runtime.runner = ok_runner
+
+        stopped = self.runtime.control(blocker['id'], 'stop')
+        self.assertEqual(stopped['status'], 'stopped')
+        self.assertEqual(stopped['executions'][0]['message'], 'stopped')
+        self.assertIsNotNone(stopped['executions'][0].get('ended'))
+
+        # After clearing the interrupted task, second sees first queued ahead of it until first starts.
+        second_blockers = self.runtime.annotate(second)['queue_blockers']
+        self.assertEqual(second_blockers[0]['kind'], 'queued_behind')
+        self.assertEqual(second_blockers[0]['blocker_task_id'], queued['id'])
+
+        await self.runtime.tick()
+        await asyncio.gather(*list(self.runtime.workers.values()))
+        self.assertEqual(ran, [queued['id']])
+        self.assertEqual(self.runtime.get(queued['id'])['status'], 'completed')
+
+    async def test_shutdown_checkpoint_sets_restart_message_not_stopped(self):
+        from web_app.services.automation_runtime import Interrupted
+        c = Control(lambda *args: None)
+        c.shutdown = True
+        c.stop()
+        with self.assertRaises(Interrupted) as ctx:
+            c.checkpoint()
+        self.assertIn('restarting', str(ctx.exception).lower())

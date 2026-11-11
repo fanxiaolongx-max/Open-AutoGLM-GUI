@@ -9,11 +9,13 @@ Pure scrcpy mode:
 """
 
 import asyncio
+import base64
 from web_app.services.manual_control import manual_input
 import io
 import json
 import logging
 import os
+import shlex
 import shutil
 import struct
 import subprocess
@@ -163,10 +165,16 @@ class ScrcpyService:
     """Manages streaming sessions for all devices."""
 
     _next_port = 27183  # Starting port for adb forward
+    _ADB_KEYBOARD_IME = "com.android.adbkeyboard/.AdbIME"
 
     def __init__(self):
         self._sessions: dict[str, ScrcpySession] = {}
         self._start_locks: dict[str, asyncio.Lock] = {}
+        self._ime_meta_lock = threading.Lock()
+        self._ime_locks: dict[str, threading.Lock] = {}
+        self._ime_sessions: dict[str, dict] = {}
+        self._adb_keyboard_available: dict[str, bool] = {}
+        self._clipboard_seq = 0
 
     def _get_start_lock(self, device_id: str) -> asyncio.Lock:
         lock = self._start_locks.get(device_id)
@@ -313,6 +321,27 @@ class ScrcpyService:
             int(repeat),
             int(meta_state),
         )
+
+    @staticmethod
+    def _pack_scrcpy_text_message(text: str, max_bytes: int = 300) -> list[bytes]:
+        # TYPE_INJECT_TEXT = 1
+        packets: list[bytes] = []
+        buf = bytearray()
+        for ch in text:
+            encoded = ch.encode("utf-8")
+            if buf and len(buf) + len(encoded) > max_bytes:
+                packets.append(struct.pack(">BI", 1, len(buf)) + bytes(buf))
+                buf.clear()
+            buf.extend(encoded)
+        if buf:
+            packets.append(struct.pack(">BI", 1, len(buf)) + bytes(buf))
+        return packets
+
+    @staticmethod
+    def _pack_scrcpy_clipboard_message(text: str, sequence: int = 1, paste: bool = True) -> bytes:
+        # TYPE_SET_CLIPBOARD = 9
+        encoded = text.encode("utf-8")
+        return struct.pack(">BQ?I", 9, int(sequence) & 0xFFFFFFFFFFFFFFFF, bool(paste), len(encoded)) + encoded
 
     @staticmethod
     def _pack_scrcpy_touch_message(
@@ -2094,6 +2123,8 @@ class ScrcpyService:
         session._current_frame_meta = False
         session.display_rotation = -1
         session._last_rotation_check_ts = 0.0
+        await asyncio.to_thread(self.flush_ime_restore, device_id)
+        self._adb_keyboard_available.pop(device_id, None)
         logger.info(f"Stream stopped for {device_id}")
         return {"status": "stopped"}
 
@@ -2408,18 +2439,23 @@ class ScrcpyService:
             )
 
     @manual_input("key")
-    async def send_key(self, device_id: str, keycode: int):
+    async def send_key(self, device_id: str, keycode: int, meta_state: int = 0):
         """Send key event. Common: Back=4, Home=3."""
         session = self._sessions.get(device_id)
+        meta = int(meta_state or 0)
         if self._can_use_scrcpy_control(session):
             if _scrcpy_control_debug:
-                logger.debug(f"[SCRCPY-CTRL] key enqueue: device={device_id} keycode={keycode}")
-            down = self._pack_scrcpy_key_message(action=0, keycode=keycode, repeat=0, meta_state=0)
-            up = self._pack_scrcpy_key_message(action=1, keycode=keycode, repeat=0, meta_state=0)
+                logger.debug(
+                    f"[SCRCPY-CTRL] key enqueue: device={device_id} keycode={keycode} meta={meta}"
+                )
+            down = self._pack_scrcpy_key_message(action=0, keycode=keycode, repeat=0, meta_state=meta)
+            up = self._pack_scrcpy_key_message(action=1, keycode=keycode, repeat=0, meta_state=meta)
             if self._send_scrcpy_control_packet(session, device_id, down, "key-down"):
                 if self._send_scrcpy_control_packet(session, device_id, up, "key-up"):
                     if _scrcpy_control_debug:
-                        logger.debug(f"[SCRCPY-CTRL] key sent: device={device_id} keycode={keycode}")
+                        logger.debug(
+                            f"[SCRCPY-CTRL] key sent: device={device_id} keycode={keycode} meta={meta}"
+                        )
                     return
             logger.warning(f"[SCRCPY-CTRL] key control send failed, fallback adb: device={device_id} keycode={keycode}")
             self._schedule_stream_recovery(device_id, "key_control_send_failed")
@@ -2429,6 +2465,12 @@ class ScrcpyService:
                 f"device={device_id} keycode={keycode} control_enabled={session.control_enabled} "
                 f"has_socket={bool(session._control_socket)}"
             )
+
+        if meta & ~0x41:
+            logger.warning(
+                f"key adb skipped for modifier chord on {device_id}: keycode={keycode} meta={meta}"
+            )
+            return
 
         loop = asyncio.get_event_loop()
         try:
@@ -2449,6 +2491,264 @@ class ScrcpyService:
             logger.warning(
                 f"key adb failed {device_id}: stderr={result.stderr.decode('utf-8', errors='replace').strip()}"
             )
+
+    def _get_ime_lock(self, device_id: str) -> threading.Lock:
+        with self._ime_meta_lock:
+            lock = self._ime_locks.get(device_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._ime_locks[device_id] = lock
+            return lock
+
+    def _query_default_ime_sync(self, device_id: str) -> Optional[str]:
+        try:
+            res = subprocess.run(
+                ["adb", "-s", device_id, "shell", "settings", "get", "secure", "default_input_method"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if res.returncode != 0:
+                return None
+            lines = [line.strip() for line in (res.stdout or "").splitlines() if line.strip()]
+            ime = lines[-1] if lines else ""
+            if not ime or ime.lower() == "null":
+                return ""
+            return ime
+        except Exception as e:
+            logger.debug(f"[SCRCPY-CTRL] query default IME failed {device_id}: {e}")
+            return None
+
+    def _set_ime_sync(self, device_id: str, ime: str) -> bool:
+        try:
+            res = subprocess.run(
+                ["adb", "-s", device_id, "shell", "ime", "set", ime],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            out = f"{res.stdout or ''}\n{res.stderr or ''}".strip()
+            lowered = out.lower()
+            if res.returncode != 0 or "unknown" in lowered or "error" in lowered:
+                logger.warning(f"[SCRCPY-CTRL] ime set failed {device_id} -> {ime}: {out}")
+                return False
+            return True
+        except Exception as e:
+            logger.warning(f"[SCRCPY-CTRL] ime set error {device_id} -> {ime}: {e}")
+            return False
+
+    def _is_adb_keyboard_available_sync(self, device_id: str) -> bool:
+        cached = self._adb_keyboard_available.get(device_id)
+        if cached is not None:
+            return cached
+        try:
+            res = subprocess.run(
+                ["adb", "-s", device_id, "shell", "ime", "list", "-s"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if res.returncode == 0:
+                enabled = {line.strip() for line in (res.stdout or "").splitlines() if line.strip()}
+                if self._ADB_KEYBOARD_IME in enabled:
+                    self._adb_keyboard_available[device_id] = True
+                    return True
+                res_all = subprocess.run(
+                    ["adb", "-s", device_id, "shell", "ime", "list", "-a", "-s"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if res_all.returncode == 0:
+                    all_imes = {line.strip() for line in (res_all.stdout or "").splitlines() if line.strip()}
+                    if self._ADB_KEYBOARD_IME in all_imes:
+                        en_res = subprocess.run(
+                            ["adb", "-s", device_id, "shell", "ime", "enable", self._ADB_KEYBOARD_IME],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        if en_res.returncode == 0:
+                            self._adb_keyboard_available[device_id] = True
+                            return True
+                    self._adb_keyboard_available[device_id] = False
+                    return False
+        except Exception as e:
+            logger.debug(f"[SCRCPY-CTRL] probe ADBKeyboard failed {device_id}: {e}")
+        return False
+
+    def _restore_ime_callback(self, device_id: str, expected_gen: int):
+        lock = self._get_ime_lock(device_id)
+        with lock:
+            info = self._ime_sessions.get(device_id)
+            if not info or info.get("generation") != expected_gen:
+                return
+            self._ime_sessions.pop(device_id, None)
+            original_ime = info.get("original_ime")
+            if original_ime and original_ime != self._ADB_KEYBOARD_IME:
+                self._set_ime_sync(device_id, original_ime)
+
+    def flush_ime_restore(self, device_id: str):
+        """Synchronously restore the device's original IME if a temporary ADBKeyboard session is active."""
+        lock = self._get_ime_lock(device_id)
+        with lock:
+            info = self._ime_sessions.pop(device_id, None)
+            if not info:
+                return
+            timer = info.get("timer")
+            if timer is not None:
+                timer.cancel()
+            original_ime = info.get("original_ime")
+            if original_ime and original_ime != self._ADB_KEYBOARD_IME:
+                self._set_ime_sync(device_id, original_ime)
+
+    def _type_text_via_adb_keyboard_sync(self, device_id: str, text: str) -> bool:
+        lock = self._get_ime_lock(device_id)
+        with lock:
+            info = self._ime_sessions.get(device_id)
+            if info is None:
+                current_ime = self._query_default_ime_sync(device_id)
+                if current_ime is None:
+                    return False
+                if current_ime == self._ADB_KEYBOARD_IME:
+                    self._adb_keyboard_available[device_id] = True
+                    original_ime = None
+                else:
+                    if not self._is_adb_keyboard_available_sync(device_id):
+                        return False
+                    if not self._set_ime_sync(device_id, self._ADB_KEYBOARD_IME):
+                        return False
+                    original_ime = current_ime
+                info = {
+                    "original_ime": original_ime,
+                    "generation": 1,
+                    "timer": None,
+                }
+                self._ime_sessions[device_id] = info
+            else:
+                timer = info.get("timer")
+                if timer is not None:
+                    timer.cancel()
+                info["generation"] += 1
+
+            gen = info["generation"]
+            sent_any = False
+            ok = True
+            chunk_size = 1000
+            for idx in range(0, len(text), chunk_size):
+                chunk = text[idx:idx + chunk_size]
+                b64 = base64.b64encode(chunk.encode("utf-8")).decode("ascii")
+                try:
+                    res = subprocess.run(
+                        ["adb", "-s", device_id, "shell", "am", "broadcast", "-a", "ADB_INPUT_B64", "--es", "msg", b64],
+                        capture_output=True,
+                        text=True,
+                        timeout=8,
+                    )
+                except Exception as e:
+                    logger.warning(f"[SCRCPY-CTRL] ADBKeyboard broadcast error {device_id}: {e}")
+                    ok = False
+                    break
+                if res.returncode != 0:
+                    logger.warning(
+                        f"[SCRCPY-CTRL] ADBKeyboard broadcast failed {device_id}: {res.stderr or res.stdout}"
+                    )
+                    ok = False
+                    break
+                sent_any = True
+
+            if not ok and not sent_any:
+                self._ime_sessions.pop(device_id, None)
+                orig = info.get("original_ime")
+                if orig and orig != self._ADB_KEYBOARD_IME:
+                    self._set_ime_sync(device_id, orig)
+                return False
+
+            delay = float(getattr(self, "_ime_restore_delay", 1.2))
+            timer = threading.Timer(delay, self._restore_ime_callback, args=(device_id, gen))
+            timer.daemon = True
+            timer.start()
+            info["timer"] = timer
+            return True
+
+    @manual_input("text")
+    async def send_text(self, device_id: str, text: str) -> bool:
+        """Inject text into the focused input field on the device."""
+        if text is None:
+            return False
+        normalized = str(text).replace("\r\n", "\n").replace("\r", "\n")
+        if not normalized:
+            return False
+
+        # Prefer ADBKeyboard so CJK/IME, uppercase, symbols and newlines bypass soft Pinyin interception.
+        if await asyncio.to_thread(self._type_text_via_adb_keyboard_sync, device_id, normalized):
+            return True
+
+        session = self._sessions.get(device_id)
+        is_printable_ascii = all(32 <= ord(ch) <= 126 for ch in normalized)
+
+        if self._can_use_scrcpy_control(session):
+            if is_printable_ascii:
+                packets = self._pack_scrcpy_text_message(normalized)
+                sent_all = True
+                for pkt in packets:
+                    if not self._send_scrcpy_control_packet(session, device_id, pkt, "text"):
+                        sent_all = False
+                        break
+                if sent_all:
+                    return True
+
+            self._clipboard_seq += 1
+            clip_pkt = self._pack_scrcpy_clipboard_message(
+                normalized,
+                sequence=self._clipboard_seq,
+                paste=True,
+            )
+            if self._send_scrcpy_control_packet(session, device_id, clip_pkt, "clipboard-paste"):
+                return True
+            logger.warning(f"[SCRCPY-CTRL] text control send failed, fallback adb: device={device_id}")
+            self._schedule_stream_recovery(device_id, "text_control_send_failed")
+
+        if not all((32 <= ord(ch) <= 126) or ch == "\n" for ch in normalized):
+            logger.warning(
+                f"text adb skipped for non-ASCII text on {device_id} (ADBKeyboard/scrcpy unavailable)"
+            )
+            return False
+
+        def _adb_input_ascii_sync() -> bool:
+            lines = normalized.split("\n")
+            for idx, line in enumerate(lines):
+                if line:
+                    escaped = shlex.quote(line.replace(" ", "%s"))
+                    try:
+                        res = subprocess.run(
+                            ["adb", "-s", device_id, "shell", "input", "text", escaped],
+                            capture_output=True,
+                            timeout=10,
+                        )
+                    except Exception as e:
+                        logger.warning(f"text adb error {device_id}: {e}")
+                        return False
+                    if res.returncode != 0:
+                        logger.warning(
+                            f"text adb failed {device_id}: stderr={res.stderr.decode('utf-8', errors='replace').strip()}"
+                        )
+                        return False
+                if idx < len(lines) - 1:
+                    try:
+                        res_enter = subprocess.run(
+                            ["adb", "-s", device_id, "shell", "input", "keyevent", "66"],
+                            capture_output=True,
+                            timeout=5,
+                        )
+                    except Exception as e:
+                        logger.warning(f"text adb enter error {device_id}: {e}")
+                        return False
+                    if res_enter.returncode != 0:
+                        return False
+            return True
+
+        return await asyncio.to_thread(_adb_input_ascii_sync)
 
     # ──────────────────────────────────────────────────────────────────────
     # WebSocket management
@@ -2568,6 +2868,13 @@ class ScrcpyService:
                 await self.stop_stream(device_id)
             except Exception as e:
                 logger.warning(f"Error cleaning up stream for {device_id}: {e}")
+        with self._ime_meta_lock:
+            remaining_ime_devices = list(self._ime_sessions.keys())
+        for device_id in remaining_ime_devices:
+            try:
+                await asyncio.to_thread(self.flush_ime_restore, device_id)
+            except Exception as e:
+                logger.warning(f"Error restoring IME for {device_id}: {e}")
         self._sessions.clear()
         logger.info("All streaming sessions cleaned up")
 

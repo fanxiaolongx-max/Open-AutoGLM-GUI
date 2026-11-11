@@ -95,3 +95,30 @@ class APITests(unittest.TestCase):
             {'device_id':'a','content':'second'},{'device_id':'b','content':'third'}])
         task=self.client.get('/api/tasks/'+response.json()['task_id']).json()
         self.assertEqual([c['device_id'] for c in task['executions']],['b','a','b'])
+
+    def test_non_terminal_blocker_visible_past_limit_and_partial_stop(self):
+        interrupted=self.runtime.submit('old interrupted',['a'])
+        interrupted['executions'][0]['status']='interrupted'
+        self.runtime.save(interrupted)
+        for idx in range(4):
+            done=self.runtime.submit(f'done-{idx}',['b'])
+            done['executions'][0]['status']='completed'
+            self.runtime.save(done)
+        queued=self.post_task(queue=True).json()['task_id']
+
+        listed=self.client.get('/api/automation/tasks?limit=2').json()['tasks']
+        ids=[t['id'] for t in listed]
+        self.assertIn(interrupted['id'], ids)
+        self.assertIn(queued, ids)
+
+        detail=self.client.get(f'/api/tasks/{queued}').json()
+        self.assertEqual(detail['queue_blockers'][0]['blocker_task_id'], interrupted['id'])
+        self.assertEqual(detail['queue_blockers'][0]['blocker_status'], 'interrupted')
+
+        # Stop works both with empty/omitted body and with device_ids filter
+        resp=self.client.post(f"/api/tasks/{interrupted['id']}/stop",json={'device_ids':['a']})
+        self.assertEqual(resp.status_code,200)
+        self.assertEqual(resp.json()['status'],'stopped')
+        after=self.client.get(f'/api/tasks/{queued}').json()
+        self.assertEqual(after['queue_blockers'],[])
+        self.assertEqual(self.client.post(f'/api/tasks/{queued}/stop').status_code,200)

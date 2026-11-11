@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoGLM Web Server</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=2">
-    <link rel="stylesheet" href="/static/css/automation.css?v=20261024-context-preview">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261111-sidebar-resize">
+    <link rel="stylesheet" href="/static/css/automation.css?v=20261111-queue-keyboard">
     <link rel="stylesheet" href="/static/css/chat-context.css?v=20261024-compaction">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <style>
@@ -1537,6 +1537,26 @@
             cursor: crosshair;
         }
 
+        .phone-preview-key-input {
+            position: absolute;
+            left: 12px;
+            bottom: 24px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            padding: 0;
+            border: 0;
+            margin: 0;
+            resize: none;
+            overflow: hidden;
+            pointer-events: none;
+            font-size: 16px;
+            line-height: 1;
+            background: transparent;
+            color: transparent;
+            caret-color: transparent;
+        }
+
         .phone-preview-image {
             display: block;
             width: 100%;
@@ -1818,7 +1838,10 @@
 
         /* Chat Sessions Sidebar */
         .chat-sessions-sidebar {
-            width: 220px;
+            flex: 0 0 var(--chat-sidebar-width, 220px);
+            width: var(--chat-sidebar-width, 220px);
+            min-width: 0;
+            position: relative;
             background: rgba(245, 245, 245, 0.5);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
@@ -1826,6 +1849,8 @@
             display: flex;
             flex-direction: column;
             height: 100%;
+            overflow: visible;
+            transition: width 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), flex-basis 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
 
         [data-theme="dark"] .chat-sessions-sidebar {
@@ -1839,6 +1864,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
         }
 
         [data-theme="dark"] .chat-sessions-header {
@@ -1849,19 +1876,32 @@
             font-size: 13px;
             margin: 0;
             color: var(--text-primary);
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .chat-sessions-header-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
         }
 
         .chat-new-btn {
             background: linear-gradient(135deg, #3b82f6, #6366f1);
             color: white;
             border: none;
-            padding: 5px 12px;
+            padding: 5px 10px;
             border-radius: 8px;
             font-size: 12px;
             cursor: pointer;
             display: flex;
             align-items: center;
             gap: 4px;
+            white-space: nowrap;
             box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
             transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
@@ -1873,6 +1913,95 @@
 
         .chat-new-btn:active {
             transform: translateY(0) scale(0.97);
+        }
+
+        .chat-compact-search-btn {
+            display: none;
+        }
+
+        .chat-session-compact-badge {
+            display: none;
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-sessions-header {
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 6px;
+            gap: 8px;
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-sessions-header-actions {
+            flex-direction: column-reverse;
+            align-items: center;
+            width: 100%;
+            gap: 8px;
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-sessions-header h3,
+        .chat-sessions-sidebar.collapsed .chat-new-btn-label,
+        .chat-sessions-sidebar.collapsed .chat-sessions-toolbar,
+        .chat-sessions-sidebar.collapsed .chat-session-info,
+        .chat-sessions-sidebar.collapsed .chat-session-delete {
+            display: none;
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-new-btn {
+            width: 36px;
+            height: 32px;
+            padding: 0;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-compact-search-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 30px;
+            margin: 6px auto 2px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 13px;
+            flex-shrink: 0;
+            transition: all 0.15s ease;
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-compact-search-btn:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-sessions-list {
+            padding: 6px;
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-session-item {
+            width: 42px;
+            height: 38px;
+            margin: 0 auto 6px;
+            padding: 0;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-session-compact-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .chat-sessions-sidebar.collapsed .chat-session-item.active .chat-session-compact-badge {
+            color: #ffffff;
         }
 
         .chat-sessions-list {
@@ -2109,27 +2238,49 @@
 
         /* Bottom Controls Container - Premium Design */
         .sidebar-official-link {
-            position: absolute;
-            bottom: 122px;
-            left: 20px;
-            right: 20px;
+            width: 100%;
         }
 
         .sidebar-bottom-controls {
-            position: absolute;
-            bottom: 70px;
-            /* Above connection status */
-            left: 20px;
-            right: 20px;
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 8px;
+            gap: 6px;
+            width: 100%;
         }
 
         .sidebar-bottom-controls .control-button {
             min-width: 0;
-            gap: 4px;
-            padding: 10px 4px;
+            gap: 3px;
+            padding: 8px 3px;
+        }
+
+        .sidebar-bottom-controls .control-icon {
+            font-size: 14px;
+        }
+
+        .sidebar-bottom-controls .control-label {
+            font-size: 11px;
+        }
+
+        .sidebar-connection-wrap {
+            width: 100%;
+        }
+
+        .sidebar.collapsed .sidebar-bottom-controls {
+            grid-template-columns: 1fr;
+            gap: 6px;
+        }
+
+        .sidebar.collapsed .sidebar-official-link .control-button,
+        .sidebar.collapsed .sidebar-bottom-controls .control-button {
+            width: 100%;
+            padding: 8px 0;
+        }
+
+        .sidebar.collapsed .connection-status {
+            justify-content: center;
+            padding: 8px 0;
+            border-radius: 12px;
         }
 
         .control-button {
@@ -2719,123 +2870,151 @@
                 <button class="system-alert-close" @click="dismissSystemAlert(alert.id)">✕</button>
             </div>
         </div>
-        <div v-if="isAuthenticated" class="app-container">
+        <div v-if="isAuthenticated" ref="appContainerRef" class="app-container"
+            :class="{ 'is-resizing-sidebar': Boolean(activeSidebarDrag) }" :style="appContainerStyle">
             <!-- Sidebar -->
-            <aside class="sidebar">
+            <aside class="sidebar" :class="{ collapsed: navSidebarCollapsed }">
                 <div class="sidebar-header">
                     <div class="sidebar-header-top">
                         <h1>{{ t('appTitle') }}</h1>
-                        <!-- Cloudflare Tunnel Toggle -->
-                        <div class="tunnel-capsule"
-                            :class="{ active: tunnelStatus === 'running', starting: tunnelStatus === 'starting' }"
-                            @click="toggleTunnel"
-                            :title="tunnelUrl || (tunnelStatus === 'starting' ? '正在启动隧道...' : '开启公网访问')">
-                            <div class="tunnel-capsule-track">
-                                <div class="tunnel-capsule-thumb">
-                                    <span v-if="tunnelStatus === 'starting'" class="tunnel-spinner"></span>
-                                    <span v-else>{{ tunnelStatus === 'running' ? '🌐' : '🔒' }}</span>
+                        <div class="sidebar-header-actions">
+                            <!-- Cloudflare Tunnel Toggle -->
+                            <div class="tunnel-capsule"
+                                :class="{ active: tunnelStatus === 'running', starting: tunnelStatus === 'starting' }"
+                                @click="toggleTunnel"
+                                :title="tunnelUrl || (tunnelStatus === 'starting' ? '正在启动隧道...' : '开启公网访问')">
+                                <div class="tunnel-capsule-track">
+                                    <div class="tunnel-capsule-thumb">
+                                        <span v-if="tunnelStatus === 'starting'" class="tunnel-spinner"></span>
+                                        <span v-else>{{ tunnelStatus === 'running' ? '🌐' : '🔒' }}</span>
+                                    </div>
                                 </div>
+                                <span class="tunnel-capsule-label">{{ tunnelStatus === 'running' ? 'Public' : tunnelStatus
+                                    === 'starting' ? '...' : 'LAN' }}</span>
                             </div>
-                            <span class="tunnel-capsule-label">{{ tunnelStatus === 'running' ? 'Public' : tunnelStatus
-                                === 'starting' ? '...' : 'LAN' }}</span>
+                            <button type="button" class="sidebar-toggle-btn" @click="toggleNavSidebar"
+                                :title="navSidebarCollapsed ? t('sidebarExpandNav') : t('sidebarCollapseNav')"
+                                :aria-label="navSidebarCollapsed ? t('sidebarExpandNav') : t('sidebarCollapseNav')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <polyline points="11 17 6 12 11 7"></polyline>
+                                    <polyline points="18 17 13 12 18 7"></polyline>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <div class="subtitle">{{ t('appSubtitle') }}</div>
                     <!-- Tunnel URL display -->
-                    <div v-if="tunnelUrl" class="tunnel-url-bar" @click="copyTunnelUrl">
+                    <div v-if="tunnelUrl" class="tunnel-url-bar" @click="copyTunnelUrl" :title="tunnelUrl">
                         <span class="tunnel-url-dot"></span>
                         <span class="tunnel-url-text">{{ tunnelUrl.replace('https://', '') }}</span>
                         <span class="tunnel-url-copy" title="复制链接">📋</span>
                     </div>
-                    <div v-if="tunnelError" class="tunnel-error-bar">
+                    <div v-if="tunnelError" class="tunnel-error-bar" :title="tunnelError">
                         {{ tunnelError }}
                     </div>
                 </div>
 
                 <ul class="nav-menu">
-                    <li class="nav-item" :class="{ active: currentPage === 'chat' }" @click="currentPage = 'chat'">
+                    <li class="nav-item" :class="{ active: currentPage === 'chat' }" :title="t('navChat')"
+                        @click="currentPage = 'chat'">
                         <span>💬</span>
-                        <span>{{ t('navChat') }}</span>
+                        <span class="nav-label">{{ t('navChat') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'devices' }"
+                    <li class="nav-item" :class="{ active: currentPage === 'devices' }" :title="t('navDevices')"
                         @click="currentPage = 'devices'">
                         <span>📱</span>
-                        <span>{{ t('navDevices') }}</span>
+                        <span class="nav-label">{{ t('navDevices') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'monitor' }" @click="currentPage = 'monitor'">
+                    <li class="nav-item" :class="{ active: currentPage === 'monitor' }" :title="t('navMonitor')"
+                        @click="currentPage = 'monitor'">
                         <span>📷</span>
-                        <span>{{ t('navMonitor') }}</span>
+                        <span class="nav-label">{{ t('navMonitor') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'grid' }" @click="currentPage = 'grid'; loadStreamConfig()">
+                    <li class="nav-item" :class="{ active: currentPage === 'grid' }" :title="t('navGrid')"
+                        @click="currentPage = 'grid'; loadStreamConfig()">
                         <span>📺</span>
-                        <span>{{ t('navGrid') }}</span>
+                        <span class="nav-label">{{ t('navGrid') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'tasks' }" @click="currentPage = 'tasks'">
+                    <li class="nav-item" :class="{ active: currentPage === 'tasks' }" :title="t('navTasks')"
+                        @click="currentPage = 'tasks'">
                         <span>▶️</span>
-                        <span>{{ t('navTasks') }}</span>
+                        <span class="nav-label">{{ t('navTasks') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'scheduler' }"
+                    <li class="nav-item" :class="{ active: currentPage === 'scheduler' }" :title="t('navScheduler')"
                         @click="currentPage = 'scheduler'">
                         <span>⏰</span>
-                        <span>{{ t('navScheduler') }}</span>
+                        <span class="nav-label">{{ t('navScheduler') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'models' }" @click="currentPage = 'models'">
+                    <li class="nav-item" :class="{ active: currentPage === 'models' }" :title="t('navModels')"
+                        @click="currentPage = 'models'">
                         <span>🤖</span>
-                        <span>{{ t('navModels') }}</span>
+                        <span class="nav-label">{{ t('navModels') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'files' }" @click="currentPage = 'files'">
+                    <li class="nav-item" :class="{ active: currentPage === 'files' }" :title="t('navFiles')"
+                        @click="currentPage = 'files'">
                         <span>📁</span>
-                        <span>{{ t('navFiles') }}</span>
+                        <span class="nav-label">{{ t('navFiles') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'rules' }" @click="currentPage = 'rules'">
+                    <li class="nav-item" :class="{ active: currentPage === 'rules' }" :title="t('navRules')"
+                        @click="currentPage = 'rules'">
                         <span>📋</span>
-                        <span>{{ t('navRules') }}</span>
+                        <span class="nav-label">{{ t('navRules') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'settings' }"
+                    <li class="nav-item" :class="{ active: currentPage === 'settings' }" :title="t('navSettings')"
                         @click="currentPage = 'settings'">
                         <span>⚙️</span>
-                        <span>{{ t('navSettings') }}</span>
+                        <span class="nav-label">{{ t('navSettings') }}</span>
                     </li>
-                    <li class="nav-item" :class="{ active: currentPage === 'database' }"
+                    <li class="nav-item" :class="{ active: currentPage === 'database' }" :title="t('navDatabase')"
                         @click="currentPage = 'database'">
                         <span>🗄️</span>
-                        <span>{{ t('navDatabase') }}</span>
+                        <span class="nav-label">{{ t('navDatabase') }}</span>
                     </li>
                 </ul>
 
-                <div class="sidebar-official-link">
-                    <a class="control-button" href="/static/official-site.html" target="_blank"
-                        rel="noopener noreferrer"
-                        :title="currentLanguage === 'zh' ? '打开官网页面' : 'Open official site page'">
-                        <span class="control-icon">🏠</span>
-                        <span class="control-label">{{ currentLanguage === 'zh' ? '官网链接' : 'Official Site' }}</span>
-                    </a>
-                </div>
+                <div class="sidebar-footer">
+                    <div class="sidebar-official-link">
+                        <a class="control-button" href="/static/official-site.html" target="_blank"
+                            rel="noopener noreferrer"
+                            :title="currentLanguage === 'zh' ? '打开官网页面' : 'Open official site page'">
+                            <span class="control-icon">🏠</span>
+                            <span class="control-label official-link-label">{{ currentLanguage === 'zh' ? '官网链接' : 'Official Site' }}</span>
+                        </a>
+                    </div>
 
-                <!-- Bottom Controls - Theme & Language -->
-                <div class="sidebar-bottom-controls">
-                    <button class="control-button" :class="{ active: darkMode }" @click="toggleDarkMode" title="切换主题">
-                        <span class="control-icon">{{ darkMode ? '🌙' : '☀️' }}</span>
-                        <span class="control-label">{{ darkMode ? '暗黑' : '明亮' }}</span>
-                    </button>
-                    <button class="control-button" :class="{ active: currentLanguage === 'zh' }" @click="toggleLanguage"
-                        title="切换语言">
-                        <span class="control-icon">🌐</span>
-                        <span class="control-label">{{ currentLanguage === 'zh' ? '中文' : 'En' }}</span>
-                    </button>
-                    <button class="control-button" @click="logout" title="退出登录">
-                        <span class="control-icon">🚪</span>
-                        <span class="control-label">退出</span>
-                    </button>
-                </div>
+                    <!-- Bottom Controls - Theme & Language -->
+                    <div class="sidebar-bottom-controls">
+                        <button class="control-button" :class="{ active: darkMode }" @click="toggleDarkMode" title="切换主题">
+                            <span class="control-icon">{{ darkMode ? '🌙' : '☀️' }}</span>
+                            <span class="control-label">{{ darkMode ? '暗黑' : '明亮' }}</span>
+                        </button>
+                        <button class="control-button" :class="{ active: currentLanguage === 'zh' }" @click="toggleLanguage"
+                            title="切换语言">
+                            <span class="control-icon">🌐</span>
+                            <span class="control-label">{{ currentLanguage === 'zh' ? '中文' : 'En' }}</span>
+                        </button>
+                        <button class="control-button" @click="logout" title="退出登录">
+                            <span class="control-icon">🚪</span>
+                            <span class="control-label">退出</span>
+                        </button>
+                    </div>
 
-                <!-- Connection Status -->
-                <div style="position: absolute; bottom: 20px; left: 20px; right: 20px;">
-                    <div class="connection-status" :class="wsConnected ? 'connected' : 'disconnected'">
-                        <span class="status-dot"></span>
-                        <span>{{ wsConnected ? t('statusConnected') : t('statusDisconnected') }}</span>
+                    <!-- Connection Status -->
+                    <div class="sidebar-connection-wrap">
+                        <div class="connection-status" :class="wsConnected ? 'connected' : 'disconnected'"
+                            :title="wsConnected ? t('statusConnected') : t('statusDisconnected')">
+                            <span class="status-dot"></span>
+                            <span class="connection-label">{{ wsConnected ? t('statusConnected') : t('statusDisconnected') }}</span>
+                        </div>
                     </div>
                 </div>
+
+                <div v-if="!navSidebarCollapsed" class="sidebar-resizer"
+                    :class="{ dragging: activeSidebarDrag === 'nav' }"
+                    @pointerdown="startSidebarResize('nav', $event)"
+                    @dblclick="resetSidebarWidth('nav')"
+                    :title="t('sidebarResizeHint')"></div>
             </aside>
 
             <!-- Main Content -->
@@ -2848,19 +3027,32 @@
                 <!-- Chat Page (Default) -->
                 <div v-if="currentPage === 'chat'" class="fade-in chat-with-sidebar">
                     <!-- Sessions Sidebar -->
-                    <div class="chat-sessions-sidebar">
+                    <div class="chat-sessions-sidebar" :class="{ collapsed: chatSidebarCollapsed }">
                         <div class="chat-sessions-header">
                             <h3>💬 {{ t('chatHistory') }}</h3>
-                            <button class="chat-new-btn" @click="createNewSession">
-                                <span>+</span> {{ t('chatNewSession') }}
-                            </button>
+                            <div class="chat-sessions-header-actions">
+                                <button class="chat-new-btn" @click="createNewSession" :title="t('chatNewSession')">
+                                    <span>+</span><span class="chat-new-btn-label"> {{ t('chatNewSession') }}</span>
+                                </button>
+                                <button type="button" class="sidebar-toggle-btn" @click="toggleChatSidebar"
+                                    :title="chatSidebarCollapsed ? t('sidebarExpandChat') : t('sidebarCollapseChat')"
+                                    :aria-label="chatSidebarCollapsed ? t('sidebarExpandChat') : t('sidebarCollapseChat')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <polyline points="11 17 6 12 11 7"></polyline>
+                                        <polyline points="18 17 13 12 18 7"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
+                        <button type="button" class="chat-compact-search-btn"
+                            @click="expandAndFocusSessionSearch" :title="t('sidebarSearchSessions')">🔍</button>
                         <!-- Search & Actions Bar -->
                         <div class="chat-sessions-toolbar">
                             <div class="chat-search-box">
                                 <span class="chat-search-icon">🔍</span>
-                                <input v-model="sessionSearchQuery" type="text" class="chat-search-input"
-                                    placeholder="搜索会话..." @input="filterSessions" />
+                                <input ref="sessionSearchInputRef" v-model="sessionSearchQuery" type="text"
+                                    class="chat-search-input" placeholder="搜索会话..." @input="filterSessions" />
                                 <button v-if="sessionSearchQuery" class="chat-search-clear"
                                     @click="sessionSearchQuery = ''">&times;</button>
                             </div>
@@ -2877,7 +3069,9 @@
                             <TransitionGroup name="session-list" tag="div">
                                 <div v-for="session in filteredSessions" :key="session.id" class="chat-session-item"
                                     :class="{ active: currentSessionId === session.id }"
+                                    :title="(session.title || '新会话') + ' · ' + formatSessionTime(session.updatedAt)"
                                     @click="switchSession(session.id)">
+                                    <span class="chat-session-compact-badge">{{ getSessionCompactLabel(session) }}</span>
                                     <div class="chat-session-info">
                                         <div class="chat-session-title">
                                             <span v-if="session.deviceId && session.deviceId.startsWith('bot_')"
@@ -2894,6 +3088,11 @@
                                 </div>
                             </TransitionGroup>
                         </div>
+                        <div v-if="!chatSidebarCollapsed" class="sidebar-resizer"
+                            :class="{ dragging: activeSidebarDrag === 'chat' }"
+                            @pointerdown="startSidebarResize('chat', $event)"
+                            @dblclick="resetSidebarWidth('chat')"
+                            :title="t('sidebarResizeHint')"></div>
                     </div>
 
                     <!-- Main Chat Area -->
@@ -2991,7 +3190,7 @@
                                             <span class="mini-spinner"></span>{{ chatContext?.status === 'compressing' ? '正在压缩历史上下文…' : '正在理解你的消息…' }}
                                         </div>
                                         <div v-else-if="msg.status === 'running'">
-                                            <span class="mini-spinner"></span>正在执行任务...
+                                            <span class="mini-spinner"></span>{{ automation.taskIndex[msg.taskId]?.status === 'pending' ? (automation.taskIndex[msg.taskId]?.queue_blockers?.length ? '排队等待前置任务释放…' : '正在排队等待设备…') : automation.taskIndex[msg.taskId]?.status === 'interrupted' ? '任务已中断，等待处理…' : ['paused', 'waiting_for_user'].includes(automation.taskIndex[msg.taskId]?.status) ? '任务已暂停，等待处理…' : '正在执行任务...' }}
                                         </div>
                                         <div v-else class="chat-content-text">{{ msg.content }}</div>
                                         <!-- TodoList 显示 (复杂任务模式) -->
@@ -5055,13 +5254,24 @@
                     <div v-if="!automation.currentFrame || replayImageUnavailable" class="phone-history-empty">{{replayImageUnavailable?'这张截图已过期或无法显示':'请选择任务或示教记录查看历史画面'}}</div>
                     <span class="phone-history-badge">历史画面 · 不操作设备</span>
                 </div>
+                <textarea ref="previewTextInput" class="phone-preview-key-input"
+                    aria-label="设备键盘输入"
+                    autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"
+                    @keydown="onPreviewInputKeydown"
+                    @compositionstart="onPreviewCompositionStart"
+                    @compositionend="onPreviewCompositionEnd"
+                    @input="onPreviewTextInput"
+                    @paste="onPreviewPaste"
+                    @blur="onPreviewInputBlur"></textarea>
                 <!-- Streaming canvas -->
                 <canvas v-show="previewMode!=='replay' && previewDeviceId && streamConnected && streamReady && !streamOrientationSwitching"
                     ref="previewCanvas" tabindex="0" :width="canvasWidth" :height="canvasHeight"
+                    @focus="focusPreviewKeyboard"
                     @mousedown.stop="onCanvasMouseDown" @mousemove.stop="onCanvasMouseMove" @mouseup.stop="onCanvasMouseUp"
                     @mouseleave="cancelPreviewGesture" @wheel.prevent="onCanvasWheel"
                     @touchstart.stop.prevent="onCanvasTouchStart" @touchmove.stop.prevent="onCanvasTouchMove"
-                    @touchend.stop.prevent="onCanvasTouchEnd" @touchcancel.stop.prevent="cancelPreviewGesture">
+                    @touchend.stop.prevent="onCanvasTouchEnd" @touchcancel.stop.prevent="cancelPreviewGesture"
+                    @paste="onPreviewPaste">
                 </canvas>
                 <!-- Fallback static image -->
                 <img v-if="previewMode!=='replay' && previewDeviceId && !streamConnected && previewImage"
@@ -5200,7 +5410,7 @@
 
     <!-- Vue.js 3 CDN with fallback -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-    <script type="module" src="/static/js/main.js?v=20261024-context-preview"></script>
+    <script type="module" src="/static/js/main.js?v=20261111-sidebar-resize"></script>
 </body>
 
 </html>

@@ -1,4 +1,4 @@
-import {api} from './api.js?v=20261024-context-preview';
+import {api} from './api.js?v=20261111-queue-keyboard';
 const fetchPin=(id,pinned)=>api(`/api/automation/images/${id}/pin`,'POST',{pinned});
 // Components share the main application's authentication, device selection and preview.
 const {inject,toRefs,computed,ref,watch} = Vue;
@@ -210,6 +210,15 @@ export const AutomationTaskDetail = { emits:['preview','replay'], setup:shared,t
 <button v-if="selectedTask.status==='completed'" @click="saveTaskRecipe">保存为配方</button>
 <button v-if="terminal(selectedTask.status)" @click="$emit('replay',selectedTask.id)">在预览窗回放</button>
 </div>
+<div v-if="selectedTask.status==='pending' && selectedTask.queue_blockers?.length" class="auto-blocker-box">
+<div v-for="b in selectedTask.queue_blockers" :key="(b.device_id||'')+':'+(b.blocker_task_id||b.kind)" class="auto-blocker-item">
+<span class="auto-blocker-reason">⏳ {{b.reason}}<template v-if="b.blocker_start_time"> · 开始于 {{time(b.blocker_start_time)}}</template></span>
+<div class="row">
+<button v-if="b.blocker_task_id" @click="openBlocker(b.blocker_task_id)">查看阻塞任务</button>
+<button v-if="b.can_stop_blocker && b.blocker_task_id" class="primary" @click="stopBlocker(b)">结束阻塞任务并继续</button>
+</div>
+</div>
+</div>
 <label>人工处理说明<input v-model="resumeNote" placeholder="例如：已登录，请继续">
 </label>
 <p class="muted">需要接管时，打开当前设备预览进行操作；暂停状态下不会录制，除非你另外开始示教。</p>
@@ -287,6 +296,15 @@ export const AutomationTaskControls = { props:{taskId:String},emits:['open','pre
     <label v-if="['paused','waiting_for_user','interrupted'].includes(task.status)">人工处理说明<input v-model="note" placeholder="例如：已登录，请继续">
 </label>
     <p v-if="['pausing','paused','waiting_for_user','interrupted'].includes(task.status)" class="muted">{{task.executions.map(c=>c.message).filter(Boolean).join('；') || '请等待暂停确认，再在现有设备预览中操作。'}}</p>
+    <div v-if="task.status==='pending' && task.queue_blockers?.length" class="auto-blocker-box">
+        <div v-for="b in task.queue_blockers" :key="(b.device_id||'')+':'+(b.blocker_task_id||b.kind)" class="auto-blocker-item">
+            <span class="auto-blocker-reason">⏳ {{b.reason}}<template v-if="b.blocker_start_time"> · 开始于 {{time(b.blocker_start_time)}}</template></span>
+            <div class="row">
+                <button v-if="b.blocker_task_id" @click="$emit('open',b.blocker_task_id)">查看阻塞任务</button>
+                <button v-if="b.can_stop_blocker && b.blocker_task_id" class="primary" @click="stopBlocker(b)">结束阻塞任务并继续</button>
+            </div>
+        </div>
+    </div>
 </div>
 </section>
 `};

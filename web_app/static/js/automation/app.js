@@ -1,7 +1,7 @@
-import {buildTaskFrames,buildDemoFrames,markerForAction} from './replay.js?v=20261024-context-preview';
-import {submitTask,taskEvents,taskControl} from './tasks.js?v=20261024-context-preview';
-import {saveRecipeRevision,trialRecipe,portableRecipe} from './recipes.js?v=20261024-context-preview';
-import {api, terminal, statusLabels, requireAutomationBackend} from './api.js?v=20261024-context-preview';
+import {buildTaskFrames,buildDemoFrames,markerForAction} from './replay.js?v=20261111-queue-keyboard';
+import {submitTask,taskEvents,taskControl} from './tasks.js?v=20261111-queue-keyboard';
+import {saveRecipeRevision,trialRecipe,portableRecipe} from './recipes.js?v=20261111-queue-keyboard';
+import {api, terminal, statusLabels, requireAutomationBackend} from './api.js?v=20261111-queue-keyboard';
 const {ref,reactive,computed,onMounted,onUnmounted,watch} = Vue;
 export function useAutomation(host = {}) {
     const tab=ref('tasks'), error=ref(''), notice=ref(''), devices=host.devices || ref([]), tasks=ref([]), recipes=ref([]), demos=ref([]), triggers=ref([]), settings=ref(null);
@@ -80,6 +80,8 @@ export function useAutomation(host = {}) {
         notice.value='任务已保存到后端队列，可关闭此页面';await refresh();await openTask(tasks.value.find(t=>t.id===result.task_id));});}
     async function decompose(){await attempt(async()=>{const result=await api('/api/tasks/decompose','POST',{task_content:content.value});plannedSteps.value=result.todoList.map(s=>({...s,timeout:180,repeatable:false,retry_once:false}));});}
     async function control(task,action,note=resumeNote.value){await attempt(async()=>{taskIndex[task.id]=await taskControl(task.id,action,note);await refresh();});}
+    async function stopBlocker(blocker){if(!blocker?.blocker_task_id)return;await attempt(async()=>{await api(`/api/tasks/${encodeURIComponent(blocker.blocker_task_id)}/stop`,'POST',blocker.device_id?{device_ids:[blocker.device_id]}:{});notice.value='已结束阻塞任务，正在恢复排队调度';await refresh();});}
+    async function openBlocker(taskId){if(!taskId)return;await attempt(async()=>{const task=await api(`/api/tasks/${encodeURIComponent(taskId)}`);taskIndex[task.id]=task;await openTask(task);});}
     async function pinReplay(pinned){if(replayImage.value)await attempt(async()=>{await api(`/api/automation/images/${replayImage.value}/pin`,'POST',{pinned});notice.value=pinned?'截图已固定保留':'已取消固定';});}
     async function rerun(index){await attempt(async()=>{const t=await api(`/api/tasks/${selectedTask.value.id}/rerun`,'POST',{step_index:index});await refresh();await openTask(t);});}
     function recipeFromPlan(){editingRecipe.value={name:content.value,description:'',parameters:[],steps:JSON.parse(JSON.stringify(plannedSteps.value.length?plannedSteps.value:[{content:content.value,timeout:180}])),acceptance:acceptance.value};navigate('recipes');}
@@ -181,5 +183,5 @@ export function useAutomation(host = {}) {
     else onMounted(()=>attempt(initialize));
     watch(notice,message=>{if(message)host.notify?.(message,'success');});
     onUnmounted(()=>{disposed=true;stop();});
-    return {tab,error,notice,ready,backendUnavailable,reconnect:()=>attempt(ready.value?refresh:initialize),devices,tasks,recipes,demos,triggers,settings,selectedDevices,content,acceptance,plannedSteps,parallel,queueTimeout,selectedTask,events,filter,selectedEvent,resumeNote,previewDevice,canvas,text,packageName,recordText,recordImages,selectedDemo,triggerHistory,editingRecipe,parameterValues,recipeDevice,triggerParams,schedule,trigger,triggerValues,triggerDefinition,selectTriggerRecipe,labels,filteredEvents,recording,replayImage,overlay,terminal,replaySource,replayDemo,replayPosition,replaySpeed,playing,replayFrames,currentFrame,frameMarker,replayTasks,stopPlayback,seekReplay,stepReplay,togglePlayback,selectReplayTask,selectReplayDemo,taskIndex,ensureTask,handleEvent,attempt,refresh:()=>attempt(refresh),openTask,run,decompose,control,pinReplay,rerun,recipeFromPlan,newRecipe,editRecipe,moveStep,saveRecipe,runRecipe,recipeAction,importRecipe,saveTaskRecipe,connectPreview,input,startDemo,demoAction,draftDemo,saveTrigger,editTrigger,newTrigger,bindLatest,disableTrigger,history,saveSchedule,saveSettings,brief,taskSource,time};
+    return {tab,error,notice,ready,backendUnavailable,reconnect:()=>attempt(ready.value?refresh:initialize),devices,tasks,recipes,demos,triggers,settings,selectedDevices,content,acceptance,plannedSteps,parallel,queueTimeout,selectedTask,events,filter,selectedEvent,resumeNote,previewDevice,canvas,text,packageName,recordText,recordImages,selectedDemo,triggerHistory,editingRecipe,parameterValues,recipeDevice,triggerParams,schedule,trigger,triggerValues,triggerDefinition,selectTriggerRecipe,labels,filteredEvents,recording,replayImage,overlay,terminal,replaySource,replayDemo,replayPosition,replaySpeed,playing,replayFrames,currentFrame,frameMarker,replayTasks,stopPlayback,seekReplay,stepReplay,togglePlayback,selectReplayTask,selectReplayDemo,taskIndex,ensureTask,handleEvent,attempt,refresh:()=>attempt(refresh),openTask,run,decompose,control,stopBlocker,openBlocker,pinReplay,rerun,recipeFromPlan,newRecipe,editRecipe,moveStep,saveRecipe,runRecipe,recipeAction,importRecipe,saveTaskRecipe,connectPreview,input,startDemo,demoAction,draftDemo,saveTrigger,editTrigger,newTrigger,bindLatest,disableTrigger,history,saveSchedule,saveSettings,brief,taskSource,time};
 }

@@ -233,7 +233,14 @@ async def scrcpy_websocket(websocket: WebSocket, device_id: str):
                         await scrcpy_service.send_key(
                             device_id,
                             keycode=message.get("keycode", 0),
+                            meta_state=int(message.get("meta_state", 0) or 0),
                         )
+
+                    elif msg_type == "text":
+                        raw_text = message.get("text")
+                        text = str(raw_text) if raw_text is not None else ""
+                        if text:
+                            await scrcpy_service.send_text(device_id, text=text)
 
                     elif msg_type == "scroll":
                         await scrcpy_service.send_scroll(

@@ -1,11 +1,11 @@
 """Authenticated automation API. Legacy static task routes are registered first."""
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from typing import Optional
 
 from web_app.models.automation import RecipeDefinition, TriggerDefinition
 from web_app.auth import verify_token
-from web_app.services.automation_runtime import get_runtime, Conflict
+from web_app.services.automation_runtime import get_runtime, Conflict, TERMINAL
 from web_app.services.automation_catalog import catalog
 
 router = APIRouter(dependencies=[Depends(verify_token)], tags=['automation'])
@@ -70,29 +70,43 @@ async def settings(request: RuntimeSettings):
     return runtime.store.put('settings', runtime.settings)
 
 
+class StopRequest(BaseModel):
+    device_ids: Optional[list[str]] = None
+
+
 @router.get('/api/automation/tasks')
 async def tasks(limit: int = Query(50, ge=1, le=500)):
-    return {'tasks': get_runtime().store.list('task')[-limit:][::-1]}
+    runtime = get_runtime()
+    all_tasks = runtime.store.list('task')
+    recent = all_tasks[-limit:][::-1]
+    seen = {t['id'] for t in recent}
+    non_terminal = [t for t in reversed(all_tasks) if t['status'] not in TERMINAL and t['id'] not in seen]
+    return {'tasks': runtime.annotate_many(non_terminal + recent, records=all_tasks)}
 
 
 @router.get('/api/tasks/{task_id}')
 async def task(task_id: str):
-    return call(get_runtime().get, task_id)
+    runtime = get_runtime()
+    return runtime.annotate(call(runtime.get, task_id))
 
 
 @router.post('/api/tasks/{task_id}/pause')
 async def pause(task_id: str):
-    return call(get_runtime().control, task_id, 'pause')
+    runtime = get_runtime()
+    return runtime.annotate(call(runtime.control, task_id, 'pause'))
 
 
 @router.post('/api/tasks/{task_id}/resume')
 async def resume(task_id: str, request: Resume):
-    return call(get_runtime().control, task_id, 'resume', request.note)
+    runtime = get_runtime()
+    return runtime.annotate(call(runtime.control, task_id, 'resume', request.note))
 
 
 @router.post('/api/tasks/{task_id}/stop')
-async def stop(task_id: str):
-    return call(get_runtime().control, task_id, 'stop')
+async def stop(task_id: str, request: Optional[StopRequest] = Body(default=None)):
+    runtime = get_runtime()
+    updated = call(runtime.control, task_id, 'stop', device_ids=request.device_ids if request else None)
+    return runtime.annotate(updated)
 
 
 @router.get('/api/tasks/{task_id}/events')
@@ -302,8 +316,10 @@ async def device_input(device_id: str, request: DeviceInput):
             from phone_agent.device_factory import get_device_factory
             # Switch/restore the input method exactly as the agent does.
             from phone_agent.actions.handler import ActionHandler
+            from web_app.services.scrcpy_service import scrcpy_service
             handler = ActionHandler(device_id)
             def type_text():
+                scrcpy_service.flush_ime_restore(device_id)
                 try:
                     handler.setup_keyboard()
                     get_device_factory().type_text(request.text, device_id)

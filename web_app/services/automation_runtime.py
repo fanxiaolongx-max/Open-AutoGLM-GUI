@@ -59,13 +59,13 @@ class Control:
                 self.condition.wait(.25)
             self.waited += time.monotonic() - start
             if self.stopped:
-                raise Interrupted('stopped')
+                raise Interrupted('Server restarting; confirm resume' if self.shutdown else 'stopped')
             if not self.online():
                 raise Interrupted('Device disconnected; confirm resume after reconnection')
             if self.timeout and time.monotonic()-self.started-self.waited > self.timeout:
                 raise TimeoutError('Active execution timeout')
             if self.stopped:
-                raise Interrupted('stopped')
+                raise Interrupted('Server restarting; confirm resume' if self.shutdown else 'stopped')
             stale = self.generation != self.seen
             self.seen = self.generation
             return stale
@@ -268,15 +268,19 @@ class Runtime:
             for t in self.store.list('task') for c in t['executions'])
 
     def owner(self, device):
+        interrupted = None
         for t in self.store.list('task'):
             for c in t['executions']:
-                if c['device_id'] == device and c['status'] in ACTIVE | {'interrupted'}:
-                    return t, c
-        return None
+                if c['device_id'] == device:
+                    if c['status'] in ACTIVE:
+                        return t, c
+                    if c['status'] == 'interrupted' and interrupted is None:
+                        interrupted = (t, c)
+        return interrupted
 
     def manual_allowed(self, device):
         owner = self.owner(device)
-        return not owner or owner[1]['status'] in {'paused', 'waiting_for_user'}
+        return not owner or owner[1]['status'] in {'paused', 'waiting_for_user', 'interrupted'}
 
     def control(self, task_id, action, note='', device_ids=None):
         task = self.get(task_id)
@@ -292,6 +296,8 @@ class Runtime:
                     control.stop()
                 else:
                     child['status'] = 'stopped'
+                    child['message'] = 'stopped'
+                    child['ended'] = child.get('ended') or time.time()
             elif action == 'pause' and status == 'running' and control:
                 eligible = True
                 control.pause()
@@ -352,7 +358,7 @@ class Runtime:
                     if child['status'] != 'pending':
                         continue
                     if time.time()-child.get('queued_at', child['created']) > task['options'].get('queue_timeout', 1800):
-                        child.update(status='expired', message='Queue timeout')
+                        child.update(status='expired', message='Queue timeout', ended=time.time())
                         self.save(task)
                         continue
                     if d in head_seen:
@@ -370,6 +376,148 @@ class Runtime:
                     worker = asyncio.create_task(self.execute(task['id'], child['id']))
                     self.workers[child['id']] = worker
                     worker.add_done_callback(lambda _, key=child['id']: self.workers.pop(key, None))
+
+    def _build_queue_context(self, records=None, online=None):
+        records = self.store.list('task') if records is None else records
+        ordered = sorted(records, key=lambda t: (not t['options'].get('after_current', False), t['start_time']))
+        owners = {}
+        active_execs = 0
+        for t in records:
+            for c in t['executions']:
+                st = c['status']
+                if st in ACTIVE:
+                    active_execs += 1
+                    owners[c['device_id']] = (t, c)
+                elif st == 'interrupted' and c['device_id'] not in owners:
+                    owners[c['device_id']] = (t, c)
+        return {
+            'ordered': ordered,
+            'owners': owners,
+            'online': self.devices() if online is None else online,
+            'active_workers': max(len(self.workers), active_execs),
+            'now_mono': time.monotonic(),
+        }
+
+    def diagnose_blockers(self, task, ctx=None):
+        if task.get('status') != 'pending' and not any(c.get('status') == 'pending' for c in task.get('executions', [])):
+            return []
+        ctx = self._build_queue_context() if ctx is None else ctx
+        labels = {
+            'running': '执行中',
+            'pausing': '正在暂停',
+            'paused': '已暂停（等待继续或停止）',
+            'waiting_for_user': '等待人工接管',
+            'interrupted': '已中断（等待确认恢复或停止）',
+            'pending': '排队中',
+        }
+        ordered = ctx['ordered']
+        owners = ctx['owners']
+        online = ctx['online']
+        active_workers = ctx['active_workers']
+        now_mono = ctx['now_mono']
+        task_pos = next((i for i, t in enumerate(ordered) if t['id'] == task['id']), len(ordered))
+        blockers = []
+        seen_keys = set()
+
+        for index, child in enumerate(task['executions']):
+            if child['status'] != 'pending':
+                continue
+            d = child['device_id']
+            blocker = None
+            incomplete_prev = next((c for c in task['executions'][:index] if c['status'] not in TERMINAL), None)
+            if not self.settings.get('enabled', True):
+                blocker = {
+                    'device_id': d,
+                    'kind': 'disabled',
+                    'reason': f'自动化调度已关闭，设备 {d} 无法自动启动',
+                    'can_stop_blocker': False,
+                }
+            elif not task.get('parallel') and incomplete_prev:
+                st = incomplete_prev['status']
+                blocker = {
+                    'device_id': d,
+                    'kind': 'sequence_wait',
+                    'blocker_task_id': task['id'],
+                    'blocker_status': st,
+                    'reason': f"等待本任务前置设备 {incomplete_prev['device_id']}（{labels.get(st, st)}）完成",
+                    'can_stop_blocker': False,
+                }
+            elif d in owners and owners[d][0]['id'] != task['id']:
+                bt, bc = owners[d]
+                st = bc['status']
+                blocker = {
+                    'device_id': d,
+                    'kind': 'device_owner',
+                    'blocker_task_id': bt['id'],
+                    'blocker_task_content': bt['task_content'],
+                    'blocker_status': st,
+                    'blocker_message': bc.get('message', ''),
+                    'blocker_start_time': bt.get('start_time'),
+                    'can_stop_blocker': True,
+                    'reason': f"设备 {d} 正被前置任务阻塞：{bt['task_content']}（{labels.get(st, st)}）",
+                }
+            elif d not in online:
+                blocker = {
+                    'device_id': d,
+                    'kind': 'device_offline',
+                    'reason': f'设备 {d} 当前离线，等待重新连接',
+                    'can_stop_blocker': False,
+                }
+            elif d in self.reservations or self.manual_busy.get(d, 0) > now_mono:
+                blocker = {
+                    'device_id': d,
+                    'kind': 'manual_busy',
+                    'reason': f'设备 {d} 正在手动控制或占用中，等待释放',
+                    'can_stop_blocker': False,
+                }
+            else:
+                ahead = [
+                    t for t in ordered[:task_pos]
+                    if t['id'] != task['id']
+                    and any(c['device_id'] == d and c['status'] == 'pending' for c in t['executions'])
+                ]
+                if ahead:
+                    first = ahead[0]
+                    blocker = {
+                        'device_id': d,
+                        'kind': 'queued_behind',
+                        'blocker_task_id': first['id'],
+                        'blocker_task_content': first['task_content'],
+                        'blocker_status': 'pending',
+                        'blocker_start_time': first.get('start_time'),
+                        'ahead_count': len(ahead),
+                        'can_stop_blocker': True,
+                        'reason': f"设备 {d} 前方还有 {len(ahead)} 个排队任务（队首：{first['task_content']}）",
+                    }
+                elif active_workers >= self.settings['concurrency']:
+                    blocker = {
+                        'device_id': d,
+                        'kind': 'concurrency',
+                        'reason': f"已达到最大并发设备数上限（{active_workers}/{self.settings['concurrency']}）",
+                        'can_stop_blocker': False,
+                    }
+            if blocker:
+                key = (d, blocker['kind'], blocker.get('blocker_task_id', ''))
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    blockers.append(blocker)
+        return blockers
+
+    def annotate(self, task, records=None, online=None):
+        if task.get('status') != 'pending' and not any(c.get('status') == 'pending' for c in task.get('executions', [])):
+            return {**task, 'queue_blockers': []}
+        ctx = self._build_queue_context(records=records, online=online)
+        return {**task, 'queue_blockers': self.diagnose_blockers(task, ctx=ctx)}
+
+    def annotate_many(self, items, records=None):
+        has_pending = any(
+            t.get('status') == 'pending' or any(c.get('status') == 'pending' for c in t.get('executions', []))
+            for t in items
+        )
+        if not has_pending:
+            return [{**t, 'queue_blockers': []} for t in items]
+        ctx = self._build_queue_context(records=records)
+        return [{**t, 'queue_blockers': self.diagnose_blockers(t, ctx=ctx)} for t in items]
 
     def update_child(self, task_id, child_id, **changes):
         # Serialize worker-thread updates and asyncio control updates.
@@ -505,6 +653,8 @@ class Runtime:
                     self.save(latest)
             self.emit(task['id'], d, kind, {**data, 'subtask': child['step_index']})
         agent.event_callback = event
+        from web_app.services.scrcpy_service import scrcpy_service
+        await asyncio.to_thread(scrcpy_service.flush_ime_restore, d)
         was_locked = await device_service.is_screen_locked(d)
         if 'initial_lock_state' not in child:
             child['initial_lock_state'] = was_locked
