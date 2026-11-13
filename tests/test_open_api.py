@@ -103,6 +103,7 @@ class OpenAPITests(unittest.TestCase):
             self.assertIn("open-autoglm/SKILL.md", namelist)
             self.assertIn("open-autoglm/README.md", namelist)
             self.assertIn("open-autoglm/scripts/autoglm_client.py", namelist)
+            self.assertIn("open-autoglm/scripts/mcp_server.py", namelist)
             self.assertIn("open-autoglm/references/api_reference.md", namelist)
 
             # Check SKILL.md embeds the api_key
@@ -115,6 +116,11 @@ class OpenAPITests(unittest.TestCase):
             self.assertIn("class AutoGLMClient", client_py)
             self.assertIn(self.api_key, client_py)
             compile(client_py, "autoglm_client.py", "exec")
+
+            # Check mcp_server.py is valid python code
+            mcp_py = zf.read("open-autoglm/scripts/mcp_server.py").decode("utf-8")
+            self.assertIn("open_autoglm_get_screenshot", mcp_py)
+            compile(mcp_py, "mcp_server.py", "exec")
 
 
 if __name__ == "__main__":
