@@ -44,6 +44,7 @@ from web_app.routers import (
     camera_router,
     streams_router,
     auth_router,
+    open_api_router,
 )
 from web_app.services.auth_service import SESSION_COOKIE_NAME, auth_service
 from web_app.services.scheduler_service import scheduler_service
@@ -157,7 +158,7 @@ class TunnelAccessTokenMiddleware:
 
 
 class LoginRequiredMiddleware:
-    """Require a valid browser session for every functional endpoint."""
+    """Require a valid browser session or valid API Key for every functional endpoint."""
 
     PUBLIC_PATHS = {
         "/",
@@ -165,6 +166,8 @@ class LoginRequiredMiddleware:
         "/api/auth/status",
         "/api/auth/login",
         "/api/auth/logout",
+        "/api/v1/health",
+        "/api/v1/ping",
     }
     PROTECTED_PREFIXES = ("/api", "/ws", "/docs", "/redoc", "/openapi.json")
 
@@ -183,6 +186,21 @@ class LoginRequiredMiddleware:
             return ""
         morsel = cookie.get(SESSION_COOKIE_NAME)
         return morsel.value if morsel else ""
+
+    @staticmethod
+    def _api_token(scope) -> str:
+        # 1. Header: X-API-Key
+        token = TunnelAccessTokenMiddleware._header(scope, b"x-api-key").strip()
+        if token:
+            return token
+        # 2. Header: Authorization: Bearer <token>
+        auth = TunnelAccessTokenMiddleware._header(scope, b"authorization").strip()
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip()
+        # 3. Query param: api_key
+        query = scope.get("query_string", b"").decode("utf-8", errors="ignore")
+        values = parse_qs(query).get("api_key", [])
+        return values[0].strip() if values else ""
 
     @classmethod
     def _requires_login(cls, path: str) -> bool:
@@ -206,9 +224,18 @@ class LoginRequiredMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # 1. Valid browser session cookie
         if auth_service.verify_session(self._cookie_token(scope)):
             await self.app(scope, receive, send)
             return
+
+        # 2. Valid API key (for Open API, Agent SKILL, curl, scripts)
+        api_token = self._api_token(scope)
+        if api_token:
+            from web_app.services.api_key_service import api_key_service
+            if api_key_service.validate_key(api_token):
+                await self.app(scope, receive, send)
+                return
 
         if scope["type"] == "websocket":
             await send({
@@ -219,7 +246,7 @@ class LoginRequiredMiddleware:
             return
 
         response = JSONResponse(
-            {"detail": "请先登录"},
+            {"detail": "请先登录或提供有效的 API Key (Authorization: Bearer <key> 或 X-API-Key)"},
             status_code=401,
             headers={"Cache-Control": "no-store"},
         )
@@ -424,6 +451,7 @@ app.include_router(scrcpy_router)
 app.include_router(camera_router)
 app.include_router(streams_router)
 app.include_router(database_router)
+app.include_router(open_api_router)
 
 # Revalidate extracted modules too, so upgrades do not mix old and new exports.
 class RevalidatedStaticFiles(StaticFiles):

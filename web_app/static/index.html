@@ -3200,13 +3200,18 @@
                 </ul>
 
                 <div class="sidebar-footer">
-                    <div class="sidebar-official-link">
+                    <div class="sidebar-official-link" style="display: flex; gap: 6px;">
                         <a class="control-button" href="/static/official-site.html" target="_blank"
                             rel="noopener noreferrer"
                             :title="currentLanguage === 'zh' ? '打开官网页面' : 'Open official site page'">
                             <span class="control-icon">🏠</span>
                             <span class="control-label official-link-label">{{ currentLanguage === 'zh' ? '官网链接' : 'Official Site' }}</span>
                         </a>
+                        <button class="control-button" @click="openApiSkillModal"
+                            :title="currentLanguage === 'zh' ? '开放常用功能 API 与 Agent SKILL 导出' : 'Open API & SKILL Export'">
+                            <span class="control-icon">⚡</span>
+                            <span class="control-label official-link-label">API/SKILL</span>
+                        </button>
                     </div>
 
                     <!-- Bottom Controls - Theme & Language -->
@@ -3342,6 +3347,7 @@
                                 </span>
                             </div>
                             <div class="chat-header-right">
+                                <button class="btn btn-sm btn-glass api-skill-btn" @click="openApiSkillModal" title="开放 API 接口与一键生成 API Key / 下载 Agent SKILL">🔑 开放 API / SKILL</button>
                                 <button class="btn btn-sm btn-secondary" @click="openRecipeLibrary">任务配方</button>
                                 <div class="email-toggle" v-if="complexTaskMode" style="margin-right: 12px;">
                                     <span>⏱️ {{ t('chatTimeout') }}</span>
@@ -5622,6 +5628,202 @@
                     <div style="display: flex; gap: 12px; margin-top: 16px;">
                         <button class="btn btn-secondary" style="flex: 1;" @click="cancelTapPreview">取消</button>
                         <button class="btn btn-primary" style="flex: 1;" @click="confirmTapPreview">确认点击</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Open API & Agent SKILL Modal -->
+        <div v-cloak v-if="showApiSkillModal" class="task-detail-modal" @click.self="closeApiSkillModal">
+            <div class="task-detail-content api-skill-modal-content" style="max-width: 840px; width: 92vw; max-height: 88vh; display: flex; flex-direction: column;">
+                <div class="task-detail-header" style="padding: 18px 24px;">
+                    <div>
+                        <h3 style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px;">
+                            <span>⚡</span> 开放常用功能 API & Agent SKILL
+                        </h3>
+                        <p style="margin: 4px 0 0; font-size: 12px; color: var(--text-secondary);">
+                            提供标准 REST API 接口供其他项目调用，并可一键打包导出通用 Agent SKILL
+                        </p>
+                    </div>
+                    <button class="task-detail-close" @click="closeApiSkillModal">✕</button>
+                </div>
+                <div class="task-detail-body" style="padding: 20px 24px; overflow-y: auto; flex: 1;">
+                    <!-- Top Section: API Key Generator Card -->
+                    <div class="api-key-box" style="background: var(--glass-card-bg); border: 1px solid var(--glass-card-border); border-radius: var(--radius-xl); padding: 18px; margin-bottom: 20px; backdrop-filter: blur(var(--glass-blur-sm)); box-shadow: var(--shadow-sm);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <span style="font-weight: 600; font-size: 14px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                <span>🔑</span> 访问密钥 (API Key)
+                            </span>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-sm btn-glass" @click="generateNewApiKey" :disabled="apiKeyLoading" title="重新生成一个新 API 密钥">
+                                    <span>🔄</span> {{ apiKeyLoading ? '生成中...' : '生成新密钥' }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Key Display Bar -->
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <div style="position: relative; flex: 1;">
+                                <input :type="showFullApiKey ? 'text' : 'password'"
+                                    :value="currentApiKey || '正在加载 API Key...'"
+                                    readonly
+                                    class="form-input"
+                                    style="width: 100%; font-family: var(--font-mono); font-size: 13px; padding-right: 40px; background: var(--glass-input-bg); letter-spacing: 0.5px;">
+                                <button type="button" @click="showFullApiKey = !showFullApiKey"
+                                    style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 15px; opacity: 0.7;">
+                                    {{ showFullApiKey ? '🙈' : '👁️' }}
+                                </button>
+                            </div>
+                            <button class="btn btn-secondary" @click="copyApiKey" title="复制 API Key">
+                                📋 复制
+                            </button>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px;">
+                            <span>💡 鉴权方式：在 Header 中携带 <code>Authorization: Bearer &lt;API_KEY&gt;</code> 或 <code>X-API-Key: &lt;API_KEY&gt;</code></span>
+                            <span style="color: var(--accent-primary);">当前服务器: <code>{{ apiServerBaseUrl }}</code></span>
+                        </div>
+                    </div>
+
+                    <!-- Hero Section: Download Agent SKILL Button -->
+                    <div class="skill-download-hero" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.1)); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: var(--radius-xl); padding: 20px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 260px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                <h4 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">
+                                    📦 通用 Agent SKILL 扩展包
+                                </h4>
+                                <span class="badge" style="background: var(--accent-gradient); color: #fff; font-size: 11px;">开箱即用</span>
+                            </div>
+                            <p style="margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary);">
+                                内含自动配置当前服务器地址与密钥的 <code>SKILL.md</code>、零依赖原生 Python CLI (<code>autoglm_client.py</code>) 与完整接口定义。支持直接导入 <strong>Antigravity / Claude Code / Cursor</strong> 或任何外部项目！
+                            </p>
+                        </div>
+                        <button class="btn btn-primary" @click="downloadAgentSkill" style="padding: 10px 22px; font-size: 14px; font-weight: 600; box-shadow: var(--shadow-glow); white-space: nowrap;">
+                            <span>📥</span> 一键下载 SKILL (ZIP)
+                        </button>
+                    </div>
+
+                    <!-- Multi-Tabs Section -->
+                    <div style="margin-bottom: 14px;">
+                        <div class="auto-tabs" style="margin-bottom: 14px;">
+                            <button class="btn btn-sm" :class="{ 'btn-primary': activeApiSkillTab === 'agent', 'btn-ghost': activeApiSkillTab !== 'agent' }" @click="activeApiSkillTab = 'agent'">
+                                🤖 Agent 导入指引
+                            </button>
+                            <button class="btn btn-sm" :class="{ 'btn-primary': activeApiSkillTab === 'python', 'btn-ghost': activeApiSkillTab !== 'python' }" @click="activeApiSkillTab = 'python'">
+                                🐍 Python SDK / CLI
+                            </button>
+                            <button class="btn btn-sm" :class="{ 'btn-primary': activeApiSkillTab === 'curl', 'btn-ghost': activeApiSkillTab !== 'curl' }" @click="activeApiSkillTab = 'curl'">
+                                💻 cURL / HTTP
+                            </button>
+                            <button class="btn btn-sm" :class="{ 'btn-primary': activeApiSkillTab === 'endpoints', 'btn-ghost': activeApiSkillTab !== 'endpoints' }" @click="activeApiSkillTab = 'endpoints'">
+                                📋 常用 API 清单
+                            </button>
+                        </div>
+
+                        <!-- Tab 1: Agent SKILL Guide -->
+                        <div v-if="activeApiSkillTab === 'agent'" class="tab-pane" style="background: var(--glass-card-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); padding: 16px;">
+                            <h5 style="margin: 0 0 8px; font-size: 14px; color: var(--text-primary);">📁 如何在 AI 编码助手 / Agent 中使用：</h5>
+                            <ol style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.8; color: var(--text-secondary);">
+                                <li>点击上方 <strong>“一键下载 SKILL (ZIP)”</strong> 并解压得到 <code>open-autoglm</code> 文件夹。</li>
+                                <li>将解压出的 <code>open-autoglm</code> 文件夹复制到你的 Agent 技能目录下：
+                                    <ul style="margin: 4px 0; color: var(--text-primary); font-family: var(--font-mono); font-size: 12px;">
+                                        <li>• Antigravity / Gemini: <code>~/.gemini/antigravity/skills/open-autoglm/</code></li>
+                                        <li>• Claude Code: <code>~/.claude/skills/open-autoglm/</code></li>
+                                        <li>• 其他项目: 任意目录直接通过内置的 <code>autoglm_client.py</code> 即可调用</li>
+                                    </ul>
+                                </li>
+                                <li>解压即已自动预填当前服务器连接配置与 API Key，AI 助手将自动掌握查手机、发任务、点击、滑动、输入文字和截屏能力！</li>
+                            </ol>
+                        </div>
+
+                        <!-- Tab 2: Python SDK / CLI -->
+                        <div v-if="activeApiSkillTab === 'python'" class="tab-pane" style="background: var(--glass-card-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); padding: 16px;">
+                            <h5 style="margin: 0 0 8px; font-size: 14px; color: var(--text-primary);">🐍 零依赖原生 Python 调用示例：</h5>
+                            <pre style="background: var(--glass-input-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 12px; font-family: var(--font-mono); font-size: 12px; overflow-x: auto; color: var(--text-primary); line-height: 1.6;"><code>from scripts.autoglm_client import AutoGLMClient
+
+client = AutoGLMClient(base_url="{{ apiServerBaseUrl }}", api_key="{{ currentApiKey }}")
+
+# 1. 查询设备
+devices = client.get_devices()
+
+# 2. 发起手机 AI 任务（等待完成）
+task = client.run_task("打开微信发朋友圈", wait=True)
+
+# 3. 实时远程点击或输入文字
+client.tap(500, 1000)
+client.text("自动输入的文本")
+
+# 4. 获取当前手机截屏并保存
+client.get_screenshot(save_path="screenshot.png")</code></pre>
+                        </div>
+
+                        <!-- Tab 3: cURL -->
+                        <div v-if="activeApiSkillTab === 'curl'" class="tab-pane" style="background: var(--glass-card-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); padding: 16px;">
+                            <h5 style="margin: 0 0 8px; font-size: 14px; color: var(--text-primary);">💻 常用 cURL 请求示例：</h5>
+                            <pre style="background: var(--glass-input-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 12px; font-family: var(--font-mono); font-size: 12px; overflow-x: auto; color: var(--text-primary); line-height: 1.6;"><code># 查询设备列表
+curl -H "Authorization: Bearer {{ currentApiKey }}" "{{ apiServerBaseUrl }}/api/v1/devices"
+
+# 提交自然语言任务
+curl -X POST "{{ apiServerBaseUrl }}/api/v1/tasks/run" \
+  -H "Authorization: Bearer {{ currentApiKey }}" \
+  -H "Content-Type: application/json" \
+  -d '{"task": "打开设置查看版本号"}'
+
+# 屏幕点击 (x:500, y:1000)
+curl -X POST "{{ apiServerBaseUrl }}/api/v1/devices/DEVICE_ID/action" \
+  -H "Authorization: Bearer {{ currentApiKey }}" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "tap", "x": 500, "y": 1000}'
+
+# 获取当前截屏
+curl -H "Authorization: Bearer {{ currentApiKey }}" "{{ apiServerBaseUrl }}/api/v1/devices/DEVICE_ID/screenshot" -o screen.png</code></pre>
+                        </div>
+
+                        <!-- Tab 4: Endpoints Reference -->
+                        <div v-if="activeApiSkillTab === 'endpoints'" class="tab-pane" style="background: var(--glass-card-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); padding: 16px;">
+                            <div class="db-table-wrap">
+                                <table class="db-table" style="font-size: 12px;">
+                                    <thead>
+                                        <tr>
+                                            <th>方法</th>
+                                            <th>接口路径</th>
+                                            <th>功能说明</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><span class="badge" style="background: #10b981; color:#fff;">GET</span></td>
+                                            <td><code>/api/v1/devices</code></td>
+                                            <td>查询所有连接的 Android 设备信息与状态</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge" style="background: #6366f1; color:#fff;">POST</span></td>
+                                            <td><code>/api/v1/tasks/run</code></td>
+                                            <td>提交 AutoGLM 智能手机操作任务（支持自然语言）</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge" style="background: #10b981; color:#fff;">GET</span></td>
+                                            <td><code>/api/v1/tasks/{task_id}</code></td>
+                                            <td>根据任务 ID 查询执行进度、状态与实时日志</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge" style="background: #ef4444; color:#fff;">POST</span></td>
+                                            <td><code>/api/v1/tasks/{task_id}/stop</code></td>
+                                            <td>立即停止指定的正在执行的任务</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge" style="background: #10b981; color:#fff;">GET</span></td>
+                                            <td><code>/api/v1/devices/{device_id}/screenshot</code></td>
+                                            <td>获取设备实时屏幕截图（PNG 二进制流或 Base64）</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge" style="background: #6366f1; color:#fff;">POST</span></td>
+                                            <td><code>/api/v1/devices/{device_id}/action</code></td>
+                                            <td>远程低级控制：tap(点击)、swipe(滑动)、text(输入)、key(按键)、shell</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -6179,6 +6179,95 @@ import {
                         currentPage.value='scheduler';schedulerTab.value='schedule';
                     }
 
+                    // API Key & Agent SKILL Modal
+                    const showApiSkillModal = ref(false);
+                    const activeApiSkillTab = ref('agent');
+                    const currentApiKey = ref('');
+                    const showFullApiKey = ref(false);
+                    const apiKeyLoading = ref(false);
+                    const apiServerBaseUrl = ref(window.location.origin);
+
+                    async function openApiSkillModal() {
+                        showApiSkillModal.value = true;
+                        apiServerBaseUrl.value = window.location.origin;
+                        if (!currentApiKey.value) {
+                            await loadApiKeys();
+                        }
+                    }
+
+                    function closeApiSkillModal() {
+                        showApiSkillModal.value = false;
+                    }
+
+                    async function loadApiKeys() {
+                        try {
+                            apiKeyLoading.value = true;
+                            const res = await fetch('/api/v1/keys?unmask=true');
+                            if (res.ok) {
+                                const data = await res.json();
+                                if (data.primary_key && data.primary_key.key) {
+                                    currentApiKey.value = data.primary_key.key;
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Failed to load API keys:', err);
+                        } finally {
+                            apiKeyLoading.value = false;
+                        }
+                    }
+
+                    async function generateNewApiKey() {
+                        try {
+                            apiKeyLoading.value = true;
+                            const res = await fetch('/api/v1/keys/generate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: 'Agent Key' })
+                            });
+                            if (res.ok) {
+                                const data = await res.json();
+                                currentApiKey.value = data.api_key;
+                                showToast('已成功生成新的 API Key！', 'success');
+                            } else {
+                                const err = await res.json();
+                                showToast(err.detail || '生成 API Key 失败', 'error');
+                            }
+                        } catch (err) {
+                            showToast('请求失败: ' + err.message, 'error');
+                        } finally {
+                            apiKeyLoading.value = false;
+                        }
+                    }
+
+                    function copyApiKey() {
+                        if (!currentApiKey.value) return;
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(currentApiKey.value).then(() => {
+                                showToast('API Key 已复制到剪贴板！', 'success');
+                            }).catch(() => {
+                                fallbackCopy(currentApiKey.value);
+                            });
+                        } else {
+                            fallbackCopy(currentApiKey.value);
+                        }
+                    }
+
+                    function fallbackCopy(text) {
+                        const input = document.createElement('input');
+                        input.value = text;
+                        document.body.appendChild(input);
+                        input.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(input);
+                        showToast('API Key 已复制到剪贴板！', 'success');
+                    }
+
+                    function downloadAgentSkill() {
+                        const key = encodeURIComponent(currentApiKey.value || '');
+                        window.location.href = `/api/v1/skill/download?api_key=${key}`;
+                        showToast('正在下载 Agent SKILL 扩展包 (.zip)...', 'info');
+                    }
+
                     // Lifecycle
                     onMounted(async () => {
                         console.log('App mounted, initializing...');
@@ -6634,6 +6723,18 @@ import {
                         resetSidebarWidth,
                         expandAndFocusSessionSearch,
                         getSessionCompactLabel,
+                        // API Key & Agent SKILL
+                        showApiSkillModal,
+                        activeApiSkillTab,
+                        currentApiKey,
+                        showFullApiKey,
+                        apiKeyLoading,
+                        apiServerBaseUrl,
+                        openApiSkillModal,
+                        closeApiSkillModal,
+                        generateNewApiKey,
+                        copyApiKey,
+                        downloadAgentSkill,
                     };
                 },
             });
